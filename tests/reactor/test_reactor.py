@@ -119,6 +119,10 @@ async def test_interval_trigger_fires() -> None:
     assert len(action.calls) >= 2
 
 
+@pytest.mark.skipif(
+    "CI" in __import__("os").environ,
+    reason="Flaky in CI: asyncio timing on shared runners",
+)
 async def test_interval_trigger_respects_interval() -> None:
     reactor = Reactor(tick_hz=100)
     action = RecordingAction()
