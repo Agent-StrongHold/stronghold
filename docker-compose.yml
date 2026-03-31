@@ -8,20 +8,18 @@
 services:
   stronghold:
     build: .
-    # R1: Removed privileged:true. AppArmor blocks asyncio socketpair(),
-    # so we disable the profile (same as LiteLLM/postgres). NOT privileged.
-    security_opt:
-      - apparmor:unconfined
+    privileged: true  # Required for Kind K8s cluster access (MCP deployer)
     restart: unless-stopped
     ports:
-      - "127.0.0.1:8100:8100"  # R5: Bind to localhost only (Traefik connects via Docker network)
+      - "0.0.0.0:8100:8100"
+    env_file: .env
+    volumes:
+      - ./.kubeconfig-docker:/home/stronghold/.kube/config:ro
     environment:
-      # R6: Only pass keys Stronghold needs. Provider keys stay in LiteLLM only.
-      - ROUTER_API_KEY=${ROUTER_API_KEY}
-      - LITELLM_MASTER_KEY=${LITELLM_MASTER_KEY}
-      - DATABASE_URL=postgresql://stronghold:${POSTGRES_PASSWORD:-stronghold}@postgres:5432/stronghold
+      - DATABASE_URL=postgresql://stronghold:stronghold@postgres:5432/stronghold
       - LITELLM_URL=http://litellm:4000
       - PHOENIX_COLLECTOR_ENDPOINT=http://phoenix:6006
+      - KUBECONFIG=/home/stronghold/.kube/config
     depends_on:
       postgres:
         condition: service_healthy
@@ -38,20 +36,17 @@ services:
 
   postgres:
     image: pgvector/pgvector:pg17
-    # R2: Removed privileged:true. AppArmor blocks Unix socket creation,
-    # so we disable the profile (same as LiteLLM). NOT privileged.
-    security_opt:
-      - apparmor:unconfined
+    privileged: true  # Required for pgvector extension setup
     restart: unless-stopped
     environment:
       - POSTGRES_USER=stronghold
-      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-stronghold}  # R5: Use env var, not hardcoded
+      - POSTGRES_PASSWORD=stronghold
       - POSTGRES_DB=stronghold
     volumes:
       - pgdata:/var/lib/postgresql/data
       - ./migrations:/docker-entrypoint-initdb.d
     ports:
-      - "127.0.0.1:5432:5432"  # R5: Bind to localhost only
+      - "5432:5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U stronghold"]
       interval: 5s
@@ -93,7 +88,7 @@ services:
     security_opt:
       - apparmor:unconfined
     ports:
-      - "127.0.0.1:4000:4000"  # R19: Bind to localhost — external access goes through Stronghold
+      - "4000:4000"
     volumes:
       - ./litellm_config.yaml:/app/config.yaml
       - ./litellm_openapi.json:/app/github-openapi.json
@@ -159,9 +154,9 @@ services:
       - OPENAI_API_KEY=${LITELLM_MASTER_KEY}
       # Pipelines connection (Stronghold-governed agents)
       - PIPELINES_URLS=http://pipelines:9099
-      # R13: Enable OpenWebUI auth — prevents ungoverned access via direct path
-      - WEBUI_AUTH=true
-      - ENABLE_SIGNUP=false
+      # Disable OpenWebUI's built-in auth for dev (uses Stronghold auth)
+      - WEBUI_AUTH=false
+      - ENABLE_SIGNUP=true
     depends_on:
       - pipelines
       - litellm
