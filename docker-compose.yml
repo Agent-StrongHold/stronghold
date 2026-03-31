@@ -8,18 +8,17 @@
 services:
   stronghold:
     build: .
-    privileged: true  # Required for Kind K8s cluster access (MCP deployer)
+    security_opt:
+      - apparmor:unconfined
     restart: unless-stopped
     ports:
-      - "0.0.0.0:8100:8100"
-    env_file: .env
-    volumes:
-      - ./.kubeconfig-docker:/home/stronghold/.kube/config:ro
+      - "127.0.0.1:8100:8100"
     environment:
-      - DATABASE_URL=postgresql://stronghold:stronghold@postgres:5432/stronghold
+      - ROUTER_API_KEY=${ROUTER_API_KEY}
+      - LITELLM_MASTER_KEY=${LITELLM_MASTER_KEY}
+      - DATABASE_URL=postgresql://stronghold:${POSTGRES_PASSWORD:-stronghold}@postgres:5432/stronghold
       - LITELLM_URL=http://litellm:4000
       - PHOENIX_COLLECTOR_ENDPOINT=http://phoenix:6006
-      - KUBECONFIG=/home/stronghold/.kube/config
     depends_on:
       postgres:
         condition: service_healthy
@@ -36,17 +35,18 @@ services:
 
   postgres:
     image: pgvector/pgvector:pg17
-    privileged: true  # Required for pgvector extension setup
+    security_opt:
+      - apparmor:unconfined
     restart: unless-stopped
     environment:
       - POSTGRES_USER=stronghold
-      - POSTGRES_PASSWORD=stronghold
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-stronghold}
       - POSTGRES_DB=stronghold
     volumes:
       - pgdata:/var/lib/postgresql/data
       - ./migrations:/docker-entrypoint-initdb.d
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U stronghold"]
       interval: 5s
@@ -88,7 +88,7 @@ services:
     security_opt:
       - apparmor:unconfined
     ports:
-      - "4000:4000"
+      - "127.0.0.1:4000:4000"
     volumes:
       - ./litellm_config.yaml:/app/config.yaml
       - ./litellm_openapi.json:/app/github-openapi.json
@@ -154,9 +154,8 @@ services:
       - OPENAI_API_KEY=${LITELLM_MASTER_KEY}
       # Pipelines connection (Stronghold-governed agents)
       - PIPELINES_URLS=http://pipelines:9099
-      # Disable OpenWebUI's built-in auth for dev (uses Stronghold auth)
-      - WEBUI_AUTH=false
-      - ENABLE_SIGNUP=true
+      - WEBUI_AUTH=true
+      - ENABLE_SIGNUP=false
     depends_on:
       - pipelines
       - litellm
