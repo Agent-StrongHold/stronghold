@@ -120,7 +120,7 @@ async def test_interval_trigger_fires() -> None:
 
 
 async def test_interval_trigger_respects_interval() -> None:
-    reactor = Reactor(tick_hz=500)
+    reactor = Reactor(tick_hz=100)
     action = RecordingAction()
 
     reactor.register(
@@ -128,7 +128,7 @@ async def test_interval_trigger_respects_interval() -> None:
         action,
     )
 
-    await run_reactor_briefly(reactor, ticks=50)
+    await run_reactor_briefly(reactor, ticks=100)
 
     # First fire is immediate (last_fired=0), but won't fire again
     assert len(action.calls) == 1
