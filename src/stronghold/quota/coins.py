@@ -484,7 +484,8 @@ class PgCoinLedger:
         hard_limit = int(row["hard_limit_microchips"] or row["budget_microchips"] or 0)
         effective_budget = hard_limit + credited_microchips
         remaining = max(effective_budget - used_microchips, 0)
-        soft_limit = int(Decimal(str(effective_budget)) * Decimal(str(row["soft_limit_ratio"] or 0)))
+        ratio = Decimal(str(row["soft_limit_ratio"] or 0))
+        soft_limit = int(Decimal(str(effective_budget)) * ratio)
         return {
             "id": row["id"],
             "owner_type": row["owner_type"],
