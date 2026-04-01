@@ -1,0 +1,18 @@
+# Stronghold model overlay — only Stronghold-specific metadata.
+# Model definitions come from LiteLLM; this file adds quality/tier/strengths/speed.
+model_overrides:
+  mistral-large:
+    quality: 0.68
+    tier: frontier
+    strengths: [code, reasoning]
+    speed: 60
+  cerebras-llama8b:
+    quality: 0.35
+    tier: small
+    strengths: [chat]
+    speed: 2000
+  gemini-2.5-pro:
+    quality: 0.82
+    tier: frontier
+    strengths: [reasoning, code]
+    speed: 80
