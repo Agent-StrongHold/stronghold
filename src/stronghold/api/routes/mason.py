@@ -136,6 +136,76 @@ async def get_status() -> JSONResponse:
     return JSONResponse(_queue().status())
 
 
+@router.get("/v1/stronghold/mason/scan")
+async def scan_codebase() -> JSONResponse:
+    """Scan codebase for good-first-issue opportunities.
+
+    Returns suggestions for approachable tasks that teach
+    new contributors about the architecture.
+    """
+    from pathlib import Path
+
+    from stronghold.agents.mason.scanner import (
+        format_as_github_issue,
+        scan_for_good_first_issues,
+    )
+
+    project_root = Path(__file__).resolve().parents[4]
+    suggestions = scan_for_good_first_issues(project_root)
+    return JSONResponse(
+        {
+            "count": len(suggestions),
+            "suggestions": [
+                {
+                    "title": s.title,
+                    "category": s.category,
+                    "scope": s.estimated_scope,
+                    "files": list(s.files),
+                    "what_youll_learn": s.what_youll_learn,
+                    "github_payload": format_as_github_issue(s),
+                }
+                for s in suggestions
+            ],
+        }
+    )
+
+
+@router.post("/v1/stronghold/mason/scan/create")
+async def create_scanned_issues(request: Request) -> JSONResponse:
+    """Create GitHub issues from scan results.
+
+    Body: {"indices": [0, 1, 2]} — which scan results to create as issues.
+    Or: {"all": true} to create all.
+    """
+    from pathlib import Path
+
+    from stronghold.agents.mason.scanner import (
+        format_as_github_issue,
+        scan_for_good_first_issues,
+    )
+
+    body = await request.json()
+    project_root = Path(__file__).resolve().parents[4]
+    suggestions = scan_for_good_first_issues(project_root)
+
+    indices: list[int] = body.get("indices", [])
+    if body.get("all"):
+        indices = list(range(len(suggestions)))
+
+    created: list[dict[str, str]] = []
+    for idx in indices:
+        if 0 <= idx < len(suggestions):
+            payload = format_as_github_issue(suggestions[idx])
+            created.append(payload)
+
+    return JSONResponse(
+        {
+            "created": len(created),
+            "issues": created,
+        }
+    )
+
+
 @router.post("/v1/stronghold/webhooks/github")
 async def github_webhook(request: Request) -> JSONResponse:
     """Receive GitHub webhook events.
