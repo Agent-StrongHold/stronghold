@@ -206,10 +206,15 @@ _approvals: dict[str, list[Any]] = {}
 async def get_diff(
     name: str,
     request: Request,
-    from_version: int = 1,
-    to_version: int = 2,
+    v1: int = 1,
+    v2: int = 2,
 ) -> JSONResponse:
-    """Get unified diff between two versions of a prompt."""
+    """Get unified diff between two versions of a prompt.
+
+    Query params: ?v1=<old_version>&v2=<new_version>
+    Returns structured PromptDiff with additions/deletions counts, summary,
+    semantic change flag, and per-line diff detail.
+    """
     await _require_auth(request)
     container = request.app.state.container
     pm = container.prompt_manager
@@ -218,29 +223,50 @@ async def get_diff(
     if not versions:
         raise HTTPException(status_code=404, detail=f"Prompt '{name}' not found")
 
-    old_content = versions.get(from_version, ("", {}))[0]
-    new_content = versions.get(to_version, ("", {}))[0]
+    if v1 not in versions:
+        raise HTTPException(status_code=404, detail=f"Version {v1} not found")
+    if v2 not in versions:
+        raise HTTPException(status_code=404, detail=f"Version {v2} not found")
 
-    if not old_content and not new_content:
-        raise HTTPException(
-            status_code=404,
-            detail=f"Version {from_version} or {to_version} not found",
-        )
+    old_content = versions[v1][0]
+    new_content = versions[v2][0]
 
-    from stronghold.prompts.diff import compute_diff  # noqa: PLC0415
+    from stronghold.prompts.diff import (  # noqa: PLC0415
+        PromptDiff,
+        compute_diff,
+        diff_summary,
+        diff_versions,
+        has_semantic_change,
+    )
 
-    diff_lines = compute_diff(
+    raw_diff = diff_versions(old_content, new_content)
+    prompt_diff = PromptDiff(
+        old_version=v1,
+        new_version=v2,
+        old_content=old_content,
+        new_content=new_content,
+        additions=raw_diff.additions,
+        deletions=raw_diff.deletions,
+        diff_lines=raw_diff.diff_lines,
+    )
+
+    detail_lines = compute_diff(
         old_content,
         new_content,
-        old_label=f"v{from_version}",
-        new_label=f"v{to_version}",
+        old_label=f"v{v1}",
+        new_label=f"v{v2}",
     )
 
     return JSONResponse(
         content={
             "name": name,
-            "from_version": from_version,
-            "to_version": to_version,
+            "old_version": v1,
+            "new_version": v2,
+            "additions": prompt_diff.additions,
+            "deletions": prompt_diff.deletions,
+            "summary": diff_summary(prompt_diff),
+            "has_semantic_change": has_semantic_change(old_content, new_content),
+            "diff_lines": prompt_diff.diff_lines,
             "diff": [
                 {
                     "op": d.op,
@@ -248,7 +274,7 @@ async def get_diff(
                     "old_lineno": d.old_lineno,
                     "new_lineno": d.new_lineno,
                 }
-                for d in diff_lines
+                for d in detail_lines
             ],
         }
     )

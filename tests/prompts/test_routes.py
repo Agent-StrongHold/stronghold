@@ -347,23 +347,14 @@ class TestGetDiff:
         # get_prompt route for simple names. We test through the app.routes
         # directly by calling the diff endpoint using a dedicated app where
         # the diff route is registered before the catch-all.
-        # For the production router, this hits get_prompt with name="test.soul/diff"
-        # which returns 404 (no prompt with that name).
-        # We verify the diff logic works by calling the route function directly.
-        import asyncio
-        from unittest.mock import AsyncMock, MagicMock
+        from stronghold.prompts.routes import get_diff
 
         container = prompts_app.state.container
         pm = container.prompt_manager
         versions = pm._versions.get("test.soul", {})
         assert len(versions) == 2
 
-        # Build a dedicated app with diff route registered first to test the handler
-        from fastapi import FastAPI as FA
-
-        from stronghold.prompts.routes import get_diff
-
-        diff_app = FA()
+        diff_app = FastAPI()
         diff_app.add_api_route(
             "/v1/stronghold/prompts/{name:path}/diff",
             get_diff,
@@ -373,16 +364,65 @@ class TestGetDiff:
 
         with TestClient(diff_app) as client:
             resp = client.get(
-                "/v1/stronghold/prompts/test.soul/diff?from_version=1&to_version=2",
+                "/v1/stronghold/prompts/test.soul/diff?v1=1&v2=2",
                 headers=AUTH_HEADER,
             )
             assert resp.status_code == 200
             data = resp.json()
             assert data["name"] == "test.soul"
-            assert data["from_version"] == 1
-            assert data["to_version"] == 2
+            assert data["old_version"] == 1
+            assert data["new_version"] == 2
+            assert isinstance(data["additions"], int)
+            assert isinstance(data["deletions"], int)
+            assert "summary" in data
+            assert "has_semantic_change" in data
+            assert isinstance(data["diff_lines"], list)
             assert isinstance(data["diff"], list)
             assert len(data["diff"]) > 0
+
+    def test_diff_returns_semantic_change_flag(self, prompts_app: FastAPI) -> None:
+        from stronghold.prompts.routes import get_diff
+
+        container = prompts_app.state.container
+
+        diff_app = FastAPI()
+        diff_app.add_api_route(
+            "/v1/stronghold/prompts/{name:path}/diff",
+            get_diff,
+            methods=["GET"],
+        )
+        diff_app.state.container = container
+
+        with TestClient(diff_app) as client:
+            resp = client.get(
+                "/v1/stronghold/prompts/test.soul/diff?v1=1&v2=2",
+                headers=AUTH_HEADER,
+            )
+            assert resp.status_code == 200
+            data = resp.json()
+            # v1 and v2 have different content, so semantic change is True
+            assert data["has_semantic_change"] is True
+
+    def test_diff_returns_summary(self, prompts_app: FastAPI) -> None:
+        from stronghold.prompts.routes import get_diff
+
+        container = prompts_app.state.container
+
+        diff_app = FastAPI()
+        diff_app.add_api_route(
+            "/v1/stronghold/prompts/{name:path}/diff",
+            get_diff,
+            methods=["GET"],
+        )
+        diff_app.state.container = container
+
+        with TestClient(diff_app) as client:
+            resp = client.get(
+                "/v1/stronghold/prompts/test.soul/diff?v1=1&v2=2",
+                headers=AUTH_HEADER,
+            )
+            data = resp.json()
+            assert "Version 1\u21922" in data["summary"]
 
     def test_nonexistent_prompt_returns_404(self, prompts_app: FastAPI) -> None:
         from stronghold.prompts.routes import get_diff
@@ -397,7 +437,25 @@ class TestGetDiff:
 
         with TestClient(diff_app) as client:
             resp = client.get(
-                "/v1/stronghold/prompts/nonexistent.soul/diff?from_version=1&to_version=2",
+                "/v1/stronghold/prompts/nonexistent.soul/diff?v1=1&v2=2",
+                headers=AUTH_HEADER,
+            )
+            assert resp.status_code == 404
+
+    def test_nonexistent_version_returns_404(self, prompts_app: FastAPI) -> None:
+        from stronghold.prompts.routes import get_diff
+
+        diff_app = FastAPI()
+        diff_app.add_api_route(
+            "/v1/stronghold/prompts/{name:path}/diff",
+            get_diff,
+            methods=["GET"],
+        )
+        diff_app.state.container = prompts_app.state.container
+
+        with TestClient(diff_app) as client:
+            resp = client.get(
+                "/v1/stronghold/prompts/test.soul/diff?v1=1&v2=99",
                 headers=AUTH_HEADER,
             )
             assert resp.status_code == 404

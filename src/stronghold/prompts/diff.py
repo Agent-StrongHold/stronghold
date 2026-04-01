@@ -7,7 +7,8 @@ for the API and dashboard to consume.
 from __future__ import annotations
 
 import difflib
-from dataclasses import dataclass
+import re
+from dataclasses import dataclass, field
 
 
 @dataclass(frozen=True)
@@ -18,6 +19,19 @@ class DiffLine:
     content: str
     old_lineno: int | None = None
     new_lineno: int | None = None
+
+
+@dataclass(frozen=True)
+class PromptDiff:
+    """Structured diff between two prompt versions."""
+
+    old_version: int
+    new_version: int
+    old_content: str
+    new_content: str
+    additions: int
+    deletions: int
+    diff_lines: list[str] = field(default_factory=list)
 
 
 def compute_diff(
@@ -81,3 +95,67 @@ def compute_diff(
             new_lineno += 1
 
     return result
+
+
+def diff_versions(old_content: str, new_content: str) -> PromptDiff:
+    """Compute a structured diff between two prompt content strings.
+
+    Returns a PromptDiff with addition/deletion counts and unified diff lines.
+    Version numbers default to 0 (caller can override via the dataclass).
+    """
+    old_lines = old_content.splitlines(keepends=True)
+    new_lines = new_content.splitlines(keepends=True)
+
+    raw_diff = list(
+        difflib.unified_diff(
+            old_lines,
+            new_lines,
+            fromfile="old",
+            tofile="new",
+        )
+    )
+
+    additions = 0
+    deletions = 0
+    for line in raw_diff:
+        if line.startswith("+") and not line.startswith("+++"):
+            additions += 1
+        elif line.startswith("-") and not line.startswith("---"):
+            deletions += 1
+
+    diff_strings = [line.rstrip("\n") for line in raw_diff]
+
+    return PromptDiff(
+        old_version=0,
+        new_version=0,
+        old_content=old_content,
+        new_content=new_content,
+        additions=additions,
+        deletions=deletions,
+        diff_lines=diff_strings,
+    )
+
+
+def diff_summary(diff: PromptDiff) -> str:
+    """Human-readable summary of a PromptDiff.
+
+    Returns e.g. "Version 2->3: +5 lines, -2 lines"
+    """
+    return (
+        f"Version {diff.old_version}\u2192{diff.new_version}: "
+        f"+{diff.additions} lines, -{diff.deletions} lines"
+    )
+
+
+_WS_PATTERN = re.compile(r"\s+")
+
+
+def has_semantic_change(old: str, new: str) -> bool:
+    """True if content differs after normalizing whitespace.
+
+    Collapses all runs of whitespace (spaces, tabs, newlines) to a single
+    space, then strips leading/trailing whitespace before comparing.
+    """
+    normalized_old = _WS_PATTERN.sub(" ", old).strip()
+    normalized_new = _WS_PATTERN.sub(" ", new).strip()
+    return normalized_old != normalized_new
