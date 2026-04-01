@@ -123,3 +123,12 @@ class SkillError(StrongholdError):
     """Skill loading, parsing, or forge failure."""
 
     code = "SKILL_ERROR"
+
+
+# ── Resilience ──────────────────────────────────────────────────
+
+
+class CircuitOpenError(StrongholdError):
+    """Circuit breaker is open — backend unavailable."""
+
+    code = "CIRCUIT_OPEN"
