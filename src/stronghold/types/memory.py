@@ -87,6 +87,8 @@ class Learning:
     hit_count: int = 0
     status: str = "active"
     id: int | None = None
+    weight: float = 1.0
+    last_used_at: datetime = field(default_factory=lambda: datetime.now(UTC))
 
 
 @dataclass
