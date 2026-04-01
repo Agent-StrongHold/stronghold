@@ -32,10 +32,12 @@ router = APIRouter(tags=["mason"])
 def configure_mason_router(
     queue: InMemoryMasonQueue,
     reactor: Reactor,
+    container: Any = None,
 ) -> None:
-    """Bind the Mason queue and reactor to the router's endpoints."""
+    """Bind the Mason queue, reactor, and container to the router."""
     _state["queue"] = queue
     _state["reactor"] = reactor
+    _state["container"] = container
 
 
 # Module-level state — set by configure_mason_router at startup
@@ -66,19 +68,10 @@ async def assign_issue(request: Request) -> JSONResponse:
         repo=body.get("repo", ""),
     )
 
-    from stronghold.types.reactor import Event
+    import asyncio
 
-    _reactor().emit(
-        Event(
-            name="mason.issue_assigned",
-            data={
-                "issue_number": issue.issue_number,
-                "title": issue.title,
-                "owner": issue.owner,
-                "repo": issue.repo,
-            },
-        )
-    )
+    # Dispatch Mason in the background
+    asyncio.create_task(_dispatch_mason(issue))
 
     return JSONResponse(
         {
@@ -87,6 +80,45 @@ async def assign_issue(request: Request) -> JSONResponse:
             "queue_position": sum(1 for i in queue.list_all() if i["status"] == "queued"),
         }
     )
+
+
+async def _dispatch_mason(issue: Any) -> None:
+    """Background task: route issue to Mason via Conduit."""
+    from stronghold.types.auth import SYSTEM_AUTH
+
+    queue = _queue()
+    queue.start(issue.issue_number)
+    logger.info("Mason dispatching issue #%d: %s", issue.issue_number, issue.title)
+
+    try:
+        container = _state.get("container")
+        if not container:
+            # Get container from the app state — set during startup
+            logger.warning("No container reference — cannot dispatch")
+            queue.fail(issue.issue_number, error="container not available")
+            return
+
+        await container.route_request(
+            messages=[
+                {
+                    "role": "user",
+                    "content": (
+                        f"Implement GitHub issue #{issue.issue_number}: {issue.title}\n"
+                        f"Repository: {issue.owner}/{issue.repo}\n"
+                        f"Use the workspace tool to create a worktree, then follow "
+                        f"your 8-phase evidence-driven TDD pipeline.\n"
+                        f"Use file_ops to read/write files and shell to run tests."
+                    ),
+                }
+            ],
+            auth=SYSTEM_AUTH,
+            intent_hint="code_gen",
+        )
+        queue.complete(issue.issue_number)
+        logger.info("Mason completed issue #%d", issue.issue_number)
+    except Exception as e:
+        queue.fail(issue.issue_number, error=str(e))
+        logger.warning("Mason failed issue #%d: %s", issue.issue_number, e)
 
 
 @router.post("/v1/stronghold/mason/review-pr")

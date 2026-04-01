@@ -9,6 +9,7 @@ class IntentRegistry:
     def __init__(self, routing_table: dict[str, str] | None = None) -> None:
         self._table = routing_table or {
             "code": "artificer",
+            "code_gen": "mason",
             "automation": "warden-at-arms",
             "search": "ranger",
             "creative": "scribe",

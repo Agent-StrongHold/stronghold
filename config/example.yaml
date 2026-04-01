@@ -120,6 +120,10 @@ task_types:
     keywords: [explain, why, analyze, reason, logic, prove, math]
     min_tier: large
     preferred_strengths: [reasoning]
+  code_gen:
+    keywords: [implement, issue, build, mason, tdd, acceptance criteria, worktree]
+    min_tier: medium
+    preferred_strengths: [code]
 
 routing:
   quality_weight: 0.6

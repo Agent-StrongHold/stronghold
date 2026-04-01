@@ -495,7 +495,7 @@ async def create_container(config: StrongholdConfig) -> Container:
     from stronghold.api.routes.mason import configure_mason_router  # noqa: PLC0415
 
     mason_queue = InMemoryMasonQueue()
-    configure_mason_router(mason_queue, reactor)
+    configure_mason_router(mason_queue, reactor, container)
     container.mason_queue = mason_queue  # type: ignore[attr-defined]
 
     return container
