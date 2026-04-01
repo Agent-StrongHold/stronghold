@@ -294,6 +294,8 @@ class MasonStrategy:
         criteria_met = False
         files_written = 0
         cycle = 0
+        criteria_feedback = ""  # accumulates across cycles
+        previous_impl = ""  # LLM's last implementation output
 
         for cycle in range(1, max_cycles + 1):
             await status(f"=== Build cycle {cycle}/{max_cycles} ===")
@@ -307,8 +309,16 @@ class MasonStrategy:
                 )
                 if existing_source:
                     prompt += f"Existing source (PRESERVE all):\n{existing_source[:4000]}\n\n"
+                if previous_impl and cycle > 1:
+                    prompt += f"Your PREVIOUS implementation:\n{previous_impl[:3000]}\n\n"
+                if criteria_feedback:
+                    prompt += (
+                        f"CRITERIA REVIEW from previous cycle:\n"
+                        f"{criteria_feedback}\n\n"
+                        f"You MUST address each unmet criterion listed above.\n\n"
+                    )
                 if attempt > 1 and test_output:
-                    prompt += f"Previous FAILED:\n```\n{test_output[:1500]}\n```\n\n"
+                    prompt += f"Test run FAILED:\n```\n{test_output[:1500]}\n```\n\n"
                 prompt += (
                     "Write implementation. For EACH file:\n"
                     "=== FILE: path/to/file.py ===\n"
@@ -317,6 +327,7 @@ class MasonStrategy:
                 )
 
                 impl = await ask(prompt)
+                previous_impl = impl  # save for next cycle's context
                 written = await _write_file_blocks(impl, ws, ex, tool_history, status)
                 files_written += written
                 if written > 0:
@@ -351,10 +362,12 @@ class MasonStrategy:
                 await status("  Criteria: MET")
                 break
 
-            # Not met — document and loop
+            # Not met — save feedback and loop
+            criteria_feedback = verdict
             await status(f"  Criteria NOT MET: {verdict[:80]}")
             await comment(
-                f"## Cycle {cycle}: Criteria Not Met\n\n{verdict}\n\nLooping back.\n\n---\n*Mason*"
+                f"## Cycle {cycle}: Criteria Not Met\n\n{verdict}\n\n"
+                f"Reviewing previous work and addressing gaps.\n\n---\n*Mason*"
             )
             # Re-read source for next cycle
             existing_source = ""
