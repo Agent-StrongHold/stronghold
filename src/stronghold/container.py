@@ -11,6 +11,7 @@ from stronghold.agents.factory import create_agents
 from stronghold.agents.intents import IntentRegistry
 from stronghold.agents.store import InMemoryAgentStore
 from stronghold.agents.task_queue import InMemoryTaskQueue
+from stronghold.analytics.usage import InMemoryUsageTracker
 from stronghold.api.litellm_client import LiteLLMClient
 from stronghold.classifier.engine import ClassifierEngine
 from stronghold.events import Reactor
@@ -86,6 +87,7 @@ class Container:
     prompt_cache: Any = None  # RedisPromptCache (write-through cache)
     mcp_registry: Any = None  # MCPRegistry
     mcp_deployer: Any = None  # K8sDeployer
+    usage_tracker: Any = None  # InMemoryUsageTracker (per-user usage analytics)
     conduit: Any = None  # Conduit — wired in __post_init__ or create_container
 
     def __post_init__(self) -> None:
@@ -430,6 +432,7 @@ async def create_container(config: StrongholdConfig) -> Container:
         prompt_cache=prompt_cache,
         mcp_registry=mcp_registry,
         mcp_deployer=mcp_deployer,
+        usage_tracker=InMemoryUsageTracker(),
     )
 
     # Conduit pipeline is auto-wired via __post_init__

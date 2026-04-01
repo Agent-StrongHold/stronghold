@@ -118,6 +118,7 @@ def create_app() -> FastAPI:
     from stronghold.api.routes.status import router as status_router
     from stronghold.api.routes.tasks import router as tasks_router
     from stronghold.api.routes.traces import router as traces_router
+    from stronghold.api.routes.usage import router as usage_router
     from stronghold.api.routes.webhooks import router as webhooks_router
     from stronghold.prompts.routes import router as prompts_router
 
@@ -137,6 +138,7 @@ def create_app() -> FastAPI:
     app.include_router(marketplace_router)
     app.include_router(traces_router)
     app.include_router(dashboard_router)
+    app.include_router(usage_router)
     app.include_router(webhooks_router)
     app.include_router(mcp_router)
 
