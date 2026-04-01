@@ -145,6 +145,8 @@ _HAPPY_FILES = {
     "properties/test_tenant_isolation.py",
     # Types
     "types/test_prompt_types.py",
+    # Execution modes
+    "execution/test_modes.py",
 }
 
 
