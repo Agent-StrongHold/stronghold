@@ -63,6 +63,13 @@ def create_app() -> FastAPI:
     # Load config early for middleware setup (container loads full config in lifespan)
     _mw_config = _load_config_for_middleware()
 
+    # Security headers — outermost so every response gets hardened headers.
+    from stronghold.api.middleware.security_headers import (  # noqa: PLC0415
+        SecurityHeadersMiddleware,
+    )
+
+    app.add_middleware(SecurityHeadersMiddleware)
+
     # CORS — required for OpenWebUI and dashboard cross-origin requests.
     # Use explicit cors_origins list (top-level config) if set; otherwise fall back
     # to the detailed CORSConfig.  Only add the middleware when at least one origin
