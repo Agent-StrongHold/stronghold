@@ -317,20 +317,53 @@ class TestDelegateStrategy:
 
 
 class TestPlanExecuteStrategy:
-    """PlanExecuteStrategy (Artificer): generates a plan."""
+    """PlanExecuteStrategy (Artificer): plan -> execute -> review."""
 
     @pytest.mark.asyncio
-    async def test_generates_plan(self) -> None:
+    async def test_generates_plan_and_executes(self) -> None:
         llm = FakeLLMClient()
-        llm.set_simple_response("1. Parse input\n2. Process\n3. Output")
+        # Plan returns 3 subtasks -> execute each -> review
+        plan_resp = {
+            "id": "fake",
+            "choices": [
+                {
+                    "message": {
+                        "role": "assistant",
+                        "content": "1. Parse input\n2. Process\n3. Output",
+                    },
+                    "finish_reason": "stop",
+                }
+            ],
+            "usage": {"prompt_tokens": 10, "completion_tokens": 20, "total_tokens": 30},
+        }
+        exec_resp = {
+            "id": "fake",
+            "choices": [
+                {"message": {"role": "assistant", "content": "Done"}, "finish_reason": "stop"}
+            ],
+            "usage": {"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15},
+        }
+        review_resp = {
+            "id": "fake",
+            "choices": [
+                {
+                    "message": {"role": "assistant", "content": "All steps complete."},
+                    "finish_reason": "stop",
+                }
+            ],
+            "usage": {"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15},
+        }
+        llm.set_responses(plan_resp, exec_resp, exec_resp, exec_resp, review_resp)
         strategy = PlanExecuteStrategy(max_subtasks=10)
         result = await strategy.reason(
             [{"role": "user", "content": "build a web scraper"}],
             "m",
             llm,
         )
-        assert result.response == "1. Parse input\n2. Process\n3. Output"
+        assert result.response == "All steps complete."
         assert result.done is True
+        # plan + 3 execute + review = 5 LLM calls
+        assert len(llm.calls) == 5
 
     @pytest.mark.asyncio
     async def test_plan_prompt_includes_max_subtasks(self) -> None:
