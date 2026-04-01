@@ -196,6 +196,18 @@ class SessionStore(Protocol):
         """Delete a session."""
         ...
 
+    async def revoke(self, session_id: str, *, org_id: str) -> bool:
+        """Revoke a session. Returns True if the session existed."""
+        ...
+
+    async def revoke_user(self, user_id: str, *, org_id: str) -> int:
+        """Revoke all sessions for a user within an org. Returns count revoked."""
+        ...
+
+    async def is_revoked(self, session_id: str, *, org_id: str) -> bool:
+        """Check if a session has been revoked."""
+        ...
+
 
 @runtime_checkable
 class AuditLog(Protocol):

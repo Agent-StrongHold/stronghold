@@ -115,3 +115,15 @@ class RedisSessionStore:
         if "/" not in session_id:
             return
         await self._redis.delete(self._key(session_id))
+
+    async def revoke(self, session_id: str, *, org_id: str) -> bool:
+        """Revoke a session. Stub — requires Redis set for revoked sessions."""
+        raise NotImplementedError("RedisSessionStore.revoke not yet implemented")
+
+    async def revoke_user(self, user_id: str, *, org_id: str) -> int:
+        """Revoke all sessions for a user. Stub — requires scan + revocation set."""
+        raise NotImplementedError("RedisSessionStore.revoke_user not yet implemented")
+
+    async def is_revoked(self, session_id: str, *, org_id: str) -> bool:
+        """Check if a session is revoked. Stub — requires revocation set."""
+        raise NotImplementedError("RedisSessionStore.is_revoked not yet implemented")

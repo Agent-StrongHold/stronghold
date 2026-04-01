@@ -2,13 +2,17 @@
 
 from __future__ import annotations
 
+import logging
 import re
 from typing import Any
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import JSONResponse
 
 from stronghold.sessions.store import validate_session_ownership
+from stronghold.types.security import AuditEntry
+
+logger = logging.getLogger("stronghold.api.sessions")
 
 router = APIRouter()
 
@@ -113,3 +117,71 @@ async def delete_session(session_id: str, request: Request) -> JSONResponse:
 
     await container.session_store.delete_session(session_id)
     return JSONResponse(content={"status": "deleted", "session_id": session_id})
+
+
+# ── Revocation routes (admin-only) ─────────────────────────────────
+
+
+async def _require_admin(request: Request) -> tuple[Any, Any]:
+    """Authenticate, require admin role, then check CSRF on mutations."""
+    auth, container = await _authenticate(request)
+    if not auth.has_role("admin"):
+        raise HTTPException(status_code=403, detail="Admin role required")
+    return auth, container
+
+
+@router.post("/v1/stronghold/sessions/revoke/{session_id:path}")
+async def revoke_session(session_id: str, request: Request) -> JSONResponse:
+    """Revoke (force-expire) a specific session. Admin only.
+
+    The session remains in the store but any attempt to retrieve its history
+    will return an empty list.
+    """
+    _validate_session_id(session_id)
+    auth, container = await _require_admin(request)
+
+    if not validate_session_ownership(session_id, auth.org_id):
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    revoked = await container.session_store.revoke(session_id, org_id=auth.org_id)
+    if not revoked:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    # Audit log
+    await container.audit_log.log(
+        AuditEntry(
+            boundary="session_revocation",
+            user_id=auth.user_id,
+            org_id=auth.org_id,
+            team_id=getattr(auth, "team_id", ""),
+            verdict="revoked",
+            detail=session_id,
+        )
+    )
+
+    return JSONResponse(content={"status": "revoked", "session_id": session_id})
+
+
+@router.post("/v1/stronghold/sessions/revoke-user")
+async def revoke_user_sessions(
+    request: Request,
+    user_id: str = Query(..., description="User ID whose sessions to revoke"),
+) -> JSONResponse:
+    """Revoke all sessions for a user within the caller's org. Admin only."""
+    auth, container = await _require_admin(request)
+
+    count = await container.session_store.revoke_user(user_id, org_id=auth.org_id)
+
+    # Audit log
+    await container.audit_log.log(
+        AuditEntry(
+            boundary="session_revocation_bulk",
+            user_id=auth.user_id,
+            org_id=auth.org_id,
+            team_id=getattr(auth, "team_id", ""),
+            verdict="revoked",
+            detail=f"user_id={user_id}, count={count}",
+        )
+    )
+
+    return JSONResponse(content={"status": "revoked", "user_id": user_id, "revoked_count": count})

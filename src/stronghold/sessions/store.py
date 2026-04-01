@@ -85,6 +85,7 @@ class InMemorySessionStore:
         # {session_id: [(seq, role, content, timestamp)]}
         self._sessions: dict[str, list[tuple[int, str, str, float]]] = defaultdict(list)
         self._next_seq: dict[str, int] = defaultdict(int)
+        self._revoked: set[str] = set()
 
     async def get_history(
         self,
@@ -92,7 +93,13 @@ class InMemorySessionStore:
         max_messages: int | None = None,
         ttl_seconds: int | None = None,
     ) -> list[dict[str, str]]:
-        """Retrieve conversation history, pruning expired messages."""
+        """Retrieve conversation history, pruning expired messages.
+
+        Returns empty list if the session has been revoked.
+        """
+        if session_id in self._revoked:
+            return []
+
         max_msgs = max_messages or self._config.max_messages
         ttl = ttl_seconds or self._config.ttl_seconds
         cutoff = time.time() - ttl
@@ -134,3 +141,44 @@ class InMemorySessionStore:
         """Delete a session."""
         self._sessions.pop(session_id, None)
         self._next_seq.pop(session_id, None)
+
+    async def revoke(self, session_id: str, *, org_id: str) -> bool:
+        """Revoke a session. Returns True if session existed or was already revoked.
+
+        Org-scoped: only revokes if session belongs to the given org.
+        """
+        if not validate_session_ownership(session_id, org_id):
+            return False
+        if session_id in self._revoked:
+            return True
+        if session_id not in self._sessions:
+            return False
+        self._revoked.add(session_id)
+        return True
+
+    async def revoke_user(self, user_id: str, *, org_id: str) -> int:
+        """Revoke all sessions for a user within an org. Returns count revoked.
+
+        Matches sessions where the session ID contains the user_id segment.
+        Session format: "org_id/team_id/user_id:session_name"
+        """
+        count = 0
+        for session_id in list(self._sessions.keys()):
+            if not validate_session_ownership(session_id, org_id):
+                continue
+            # Extract user_id from "org_id/team_id/user_id:session_name"
+            parts = session_id.split("/", 2)
+            if len(parts) < 3:
+                continue
+            # parts[2] is "user_id:session_name"
+            session_user = parts[2].split(":")[0]
+            if session_user == user_id and session_id not in self._revoked:
+                self._revoked.add(session_id)
+                count += 1
+        return count
+
+    async def is_revoked(self, session_id: str, *, org_id: str) -> bool:
+        """Check if a session has been revoked. Org-scoped."""
+        if not validate_session_ownership(session_id, org_id):
+            return False
+        return session_id in self._revoked

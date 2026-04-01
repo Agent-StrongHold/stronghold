@@ -80,3 +80,15 @@ class PgSessionStore:
                 "DELETE FROM sessions WHERE session_id = $1",
                 session_id,
             )
+
+    async def revoke(self, session_id: str, *, org_id: str) -> bool:
+        """Revoke a session. Stub — requires migration for revoked_sessions table."""
+        raise NotImplementedError("PgSessionStore.revoke requires DB migration")
+
+    async def revoke_user(self, user_id: str, *, org_id: str) -> int:
+        """Revoke all sessions for a user. Stub — requires migration."""
+        raise NotImplementedError("PgSessionStore.revoke_user requires DB migration")
+
+    async def is_revoked(self, session_id: str, *, org_id: str) -> bool:
+        """Check if a session is revoked. Stub — requires migration."""
+        raise NotImplementedError("PgSessionStore.is_revoked requires DB migration")
