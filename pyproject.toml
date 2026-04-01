@@ -43,6 +43,9 @@ dev = [
     "types-regex>=2024.0.0",
 ]
 
+[project.scripts]
+stronghold = "stronghold.cli.main:main"
+
 [tool.setuptools.packages.find]
 where = ["src"]
 
