@@ -85,6 +85,8 @@ class InMemorySessionStore:
         # {session_id: [(seq, role, content, timestamp)]}
         self._sessions: dict[str, list[tuple[int, str, str, float]]] = defaultdict(list)
         self._next_seq: dict[str, int] = defaultdict(int)
+        # Track when each session was first created (first append)
+        self._created_at: dict[str, float] = {}
 
     async def get_history(
         self,
@@ -92,13 +94,24 @@ class InMemorySessionStore:
         max_messages: int | None = None,
         ttl_seconds: int | None = None,
     ) -> list[dict[str, str]]:
-        """Retrieve conversation history, pruning expired messages."""
+        """Retrieve conversation history, pruning expired messages.
+
+        Returns empty list if the session itself has expired (creation time
+        older than TTL).
+        """
         max_msgs = max_messages or self._config.max_messages
         ttl = ttl_seconds or self._config.ttl_seconds
-        cutoff = time.time() - ttl
+        now = time.time()
+        cutoff = now - ttl
+
+        # Session-level TTL: if the session was created before the cutoff,
+        # treat the entire session as expired.
+        created = self._created_at.get(session_id)
+        if created is not None and created < cutoff:
+            return []
 
         entries = self._sessions.get(session_id, [])
-        # Filter by TTL
+        # Filter by per-message TTL
         valid = [(seq, role, content, ts) for seq, role, content, ts in entries if ts >= cutoff]
         # Take most recent
         valid.sort(key=lambda x: x[0])
@@ -113,6 +126,9 @@ class InMemorySessionStore:
     ) -> None:
         """Append messages to session history."""
         now = time.time()
+        # Record creation time on first append
+        if session_id not in self._created_at:
+            self._created_at[session_id] = now
         for msg in messages:
             role = msg.get("role", "")
             content = msg.get("content", "")
@@ -134,3 +150,15 @@ class InMemorySessionStore:
         """Delete a session."""
         self._sessions.pop(session_id, None)
         self._next_seq.pop(session_id, None)
+        self._created_at.pop(session_id, None)
+
+    async def cleanup_expired(self, ttl_seconds: float = 86400.0) -> int:
+        """Remove sessions older than TTL, return count of removed sessions."""
+        now = time.time()
+        cutoff = now - ttl_seconds
+        expired = [sid for sid, created in self._created_at.items() if created < cutoff]
+        for sid in expired:
+            self._sessions.pop(sid, None)
+            self._next_seq.pop(sid, None)
+            self._created_at.pop(sid, None)
+        return len(expired)
