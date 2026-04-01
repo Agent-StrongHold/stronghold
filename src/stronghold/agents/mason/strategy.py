@@ -70,31 +70,85 @@ class MasonStrategy:
                 done=True,
             )
 
+        # Step 1: LLM analyzes issue and lists files to change
+        await status("Analyzing issue — identifying files to change...")
+        analysis_messages = list(messages) + [
+            {
+                "role": "user",
+                "content": (
+                    "Analyze this issue. List ONLY the file paths that need "
+                    "to be created or modified. Output one path per line, "
+                    "nothing else. Example:\n"
+                    "src/stronghold/dashboard/agents.html\n"
+                    "src/stronghold/dashboard/skills.html\n"
+                    "tests/dashboard/test_sidebar.py"
+                ),
+            },
+        ]
+        analysis = await llm.complete(analysis_messages, model)
+        file_list_text = analysis.get("choices", [{}])[0].get("message", {}).get("content", "")
+        target_files = [
+            f.strip()
+            for f in file_list_text.strip().split("\n")
+            if f.strip()
+            and not f.strip().startswith("#")
+            and ("/" in f.strip() or f.strip().endswith((".py", ".html", ".yaml", ".md")))
+        ]
+        await status(f"Identified {len(target_files)} files to modify")
+
+        # Step 2: Read existing content of those files
+        existing_content: dict[str, str] = {}
+        if tool_executor:
+            for fp in target_files[:20]:  # cap at 20 files
+                result = await tool_executor(
+                    "file_ops",
+                    {
+                        "action": "read",
+                        "path": fp,
+                        "workspace": ws_path,
+                    },
+                )
+                result_str = str(result)
+                if "Error" not in result_str[:20] and "not found" not in result_str:
+                    existing_content[fp] = result_str[:4000]
+            if existing_content:
+                await status(f"Read {len(existing_content)} existing files")
+
+        # Step 3: LLM generates code WITH existing file context
         await status("Generating code (LLM thinking, may take a few minutes)...")
 
-        # Step 1: Ask LLM to generate code — with a heartbeat so UI shows progress
+        context_block = ""
+        if existing_content:
+            parts = []
+            for fp, content in existing_content.items():
+                parts.append(f"=== EXISTING: {fp} ===\n```\n{content}\n```")
+            context_block = (
+                "Here are the CURRENT contents of existing files. "
+                "You MUST preserve all existing code and only add/modify "
+                "what the issue requires. Do NOT remove or rewrite code "
+                "that is not related to the issue.\n\n" + "\n\n".join(parts) + "\n\n"
+            )
+
         plan_messages = list(messages) + [
             {
                 "role": "user",
                 "content": (
-                    "Implement this issue. For EACH file you need to create "
-                    "or modify, output the COMPLETE file content using this "
-                    "exact format:\n\n"
+                    f"{context_block}"
+                    "Now implement the issue. For EACH file, output the "
+                    "COMPLETE modified file using this format:\n\n"
                     "=== FILE: path/to/file.py ===\n"
-                    "```python\n"
-                    "# full file content\n"
+                    "```\n"
+                    "# complete file with your changes integrated\n"
                     "```\n\n"
-                    "Rules:\n"
-                    "- Write tests first, then implementation\n"
-                    "- Use real classes, not unittest.mock\n"
-                    "- All paths relative to repo root\n"
-                    "- Include every file needed\n"
-                    "- Be concise — output code, not explanations"
+                    "CRITICAL: For existing files, include ALL original code "
+                    "plus your additions. Do not drop anything.\n"
+                    "For new files, include the full content.\n"
+                    "Write tests first, then implementation. "
+                    "Use real classes, not unittest.mock."
                 ),
             },
         ]
 
-        # Run LLM call with heartbeat so the UI shows we're alive
         async def _heartbeat() -> None:
             elapsed = 0
             while True:
