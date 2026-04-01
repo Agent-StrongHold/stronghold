@@ -1223,7 +1223,7 @@ async def convert_coins(request: Request) -> JSONResponse:
 @router.get("/v1/stronghold/admin/coins/settings")
 async def get_coin_settings(request: Request) -> JSONResponse:
     """Get coin system settings (banking rate, etc.)."""
-    auth = await _require_admin(request)
+    await _require_admin(request)
     container = request.app.state.container
     banking_rate = 40
     if hasattr(container, "coin_ledger"):
