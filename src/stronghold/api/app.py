@@ -111,6 +111,7 @@ def create_app() -> FastAPI:
     from stronghold.api.routes.gate_endpoint import router as gate_router
     from stronghold.api.routes.marketplace import router as marketplace_router
     from stronghold.api.routes.mcp import router as mcp_router
+    from stronghold.api.routes.memory import router as memory_router
     from stronghold.api.routes.models import router as models_router
     from stronghold.api.routes.profile import router as profile_router
     from stronghold.api.routes.schedules import router as schedules_router
@@ -133,6 +134,7 @@ def create_app() -> FastAPI:
     app.include_router(agents_stream_router)
     app.include_router(skills_router)
     app.include_router(sessions_router)
+    app.include_router(memory_router)
     app.include_router(admin_router)
     app.include_router(profile_router)
     app.include_router(marketplace_router)

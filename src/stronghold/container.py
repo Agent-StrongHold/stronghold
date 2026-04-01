@@ -88,6 +88,8 @@ class Container:
     mcp_registry: Any = None  # MCPRegistry
     schedule_store: InMemoryScheduleStore = field(default_factory=InMemoryScheduleStore)
     mcp_deployer: Any = None  # K8sDeployer
+    episodic_store: Any = None  # InMemoryEpisodicStore (episodic memory backend)
+    memory_manager: Any = None  # MemoryManager (user-facing memory ops)
     conduit: Any = None  # Conduit — wired in __post_init__ or create_container
 
     def __post_init__(self) -> None:
@@ -394,6 +396,13 @@ async def create_container(config: StrongholdConfig) -> Container:
     except Exception:
         logger.info("MCP: K8s deployer unavailable (no cluster access)")
 
+    # ── Episodic memory + user-facing memory manager ──
+    from stronghold.memory.episodic.store import InMemoryEpisodicStore  # noqa: PLC0415
+    from stronghold.memory.management import MemoryManager  # noqa: PLC0415
+
+    episodic_store = InMemoryEpisodicStore()
+    memory_manager = MemoryManager(episodic_store)
+
     container = Container(
         config=config,
         auth_provider=auth_provider,
@@ -432,6 +441,8 @@ async def create_container(config: StrongholdConfig) -> Container:
         prompt_cache=prompt_cache,
         mcp_registry=mcp_registry,
         mcp_deployer=mcp_deployer,
+        episodic_store=episodic_store,
+        memory_manager=memory_manager,
     )
 
     # Conduit pipeline is auto-wired via __post_init__
