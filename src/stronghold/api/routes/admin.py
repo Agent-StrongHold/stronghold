@@ -1223,7 +1223,7 @@ async def convert_coins(request: Request) -> JSONResponse:
 @router.get("/v1/stronghold/admin/coins/settings")
 async def get_coin_settings(request: Request) -> JSONResponse:
     """Get coin system settings (banking rate, etc.)."""
-    auth = await _require_admin(request)
+    await _require_admin(request)
     container = request.app.state.container
     banking_rate = 40
     if hasattr(container, "coin_ledger"):
@@ -1377,7 +1377,11 @@ async def analyze_quota(request: Request) -> JSONResponse:
     usage_records = await container.quota_tracker.get_all_usage()
     _pf = {f.name for f in ProviderConfig.__dataclass_fields__.values()}
     for name, raw in container.config.providers.items():
-        cfg = ProviderConfig(**{k: v for k, v in raw.items() if k in _pf}) if isinstance(raw, dict) else raw
+        cfg = (
+            ProviderConfig(**{k: v for k, v in raw.items() if k in _pf})
+            if isinstance(raw, dict)
+            else raw
+        )
         ck = _ck(cfg.billing_cycle)
         used = 0
         for rec in usage_records:
