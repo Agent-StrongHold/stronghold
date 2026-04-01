@@ -249,7 +249,8 @@ class Conduit:
         _prov_fields = {f.name for f in ProviderConfig.__dataclass_fields__.values()}
         providers_cfg: dict[str, ProviderConfig] = {
             k: ProviderConfig(**{fk: fv for fk, fv in v.items() if fk in _prov_fields})
-            if isinstance(v, dict) else v  # type: ignore[arg-type]
+            if isinstance(v, dict)
+            else v  # type: ignore[arg-type]
             for k, v in c.config.providers.items()
         }
 
@@ -305,7 +306,8 @@ class Conduit:
             _model_fields = {f.name for f in ModelConfig.__dataclass_fields__.values()}
             models: dict[str, ModelConfig] = {
                 k: ModelConfig(**{fk: fv for fk, fv in v.items() if fk in _model_fields})
-                if isinstance(v, dict) else v  # type: ignore[arg-type]
+                if isinstance(v, dict)
+                else v  # type: ignore[arg-type]
                 for k, v in c.config.models.items()
             }
             providers = routable_providers
@@ -578,6 +580,37 @@ class Conduit:
             trace.score("dispatch_error", 0.0, "Agent raised an exception")
             trace.end()
             raise
+
+        # ── 10b. Tournament evolution (fire-and-forget) ──
+        if c.tournament and getattr(c.config, "tournament", None):
+            from stronghold.agents.tournament import TournamentIntegration  # noqa: PLC0415
+
+            ti = TournamentIntegration(
+                tournament=c.tournament,
+                agents=c.agents,
+                config=c.config.tournament,
+            )
+            if ti.should_tournament(intent, incumbent_agent=agent.identity.name):
+                challenger = ti.select_challenger(agent.identity.name)
+                if challenger:
+                    logger.info(
+                        "Tournament triggered: %s vs %s on %s",
+                        agent.identity.name,
+                        challenger,
+                        intent.task_type,
+                    )
+                    # Run in background — don't delay the user's response
+                    asyncio.create_task(
+                        ti.run_tournament(
+                            messages=messages,
+                            incumbent_agent=agent.identity.name,
+                            challenger_agent=challenger,
+                            auth=auth,
+                            intent_task_type=intent.task_type,
+                            session_id=session_id,
+                            model_override=model_to_use,
+                        )
+                    )
 
         # ── 11. Finalize trace ──
         _elapsed_ms = round((_time.monotonic() - _start) * 1000)

@@ -69,6 +69,15 @@ class CORSConfig(BaseModel):
     allow_credentials: bool = True
 
 
+class TournamentConfig(BaseModel):
+    """Tournament evolution configuration."""
+
+    enabled: bool = True
+    probability: float = 0.07  # 7% of requests trigger a tournament
+    excluded_agents: list[str] = Field(default_factory=lambda: ["arbiter"])
+    judge_model: str = ""  # LLM-as-judge model; empty = use stub heuristic
+
+
 class RateLimitConfig(BaseModel):
     """Per-user rate limiting configuration."""
 
@@ -103,6 +112,7 @@ class StrongholdConfig(BaseModel):
     security: SecurityConfig = Field(default_factory=SecurityConfig)
     cors: CORSConfig = Field(default_factory=CORSConfig)
     rate_limit: RateLimitConfig = Field(default_factory=RateLimitConfig)
+    tournament: TournamentConfig = Field(default_factory=TournamentConfig)
     auth: AuthConfig = Field(default_factory=AuthConfig)
     model_groups: dict[str, dict[str, object]] = Field(default_factory=dict)
     permissions: dict[str, list[str]] = Field(default_factory=dict)

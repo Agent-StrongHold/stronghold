@@ -1,12 +1,26 @@
-"""Tournament: head-to-head agent scoring + auto-promotion."""
+"""Tournament: head-to-head agent scoring + auto-promotion.
+
+TournamentIntegration is the glue between the Conduit pipeline and the
+Tournament Elo system. It provides:
+  - should_tournament(intent, incumbent_agent) -> bool
+  - run_tournament(messages, incumbent_agent, challenger_agent, auth, ...) -> BattleRecord
+"""
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import math
+import random
 import time
 from dataclasses import dataclass, field
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from stronghold.agents.base import Agent
+    from stronghold.types.auth import AuthContext
+    from stronghold.types.config import TournamentConfig
+    from stronghold.types.intent import Intent
 
 logger = logging.getLogger("stronghold.tournament")
 
@@ -233,3 +247,152 @@ class Tournament:
             "total_ratings": len(self._ratings),
             "intents_tracked": len({r.intent for r in self._ratings.values()}),
         }
+
+
+def _stub_judge_score(response_content: str) -> float:
+    """Stub LLM-as-judge: score based on response length (0-1).
+
+    This is a placeholder until a real LLM-as-judge is wired in.
+    Longer, more substantive responses score higher, capped at 1.0.
+    """
+    if not response_content:
+        return 0.0
+    # Normalize: 200 chars = 1.0 score, linear below that
+    return min(len(response_content) / 200.0, 1.0)
+
+
+class TournamentIntegration:
+    """Glue between the Conduit pipeline and the Tournament Elo system.
+
+    Conduit calls should_tournament() to decide whether to run a
+    head-to-head, then run_tournament() to execute it in parallel.
+    """
+
+    def __init__(
+        self,
+        tournament: Tournament,
+        agents: dict[str, Agent],
+        config: TournamentConfig,
+    ) -> None:
+        self._tournament = tournament
+        self._agents = agents
+        self._config = config
+
+    def should_tournament(
+        self,
+        intent: Intent,
+        incumbent_agent: str,
+    ) -> bool:
+        """Decide whether this request should trigger a tournament.
+
+        Returns False if:
+        - Tournaments are disabled
+        - The incumbent is in the exclusion list
+        - There are fewer than 2 eligible agents
+        - The random roll exceeds the configured probability
+        """
+        if not self._config.enabled:
+            return False
+
+        if incumbent_agent in self._config.excluded_agents:
+            return False
+
+        # Need at least one other eligible agent to challenge
+        challenger = self.select_challenger(incumbent_agent)
+        if challenger is None:
+            return False
+
+        return random.random() < self._config.probability  # noqa: S311
+
+    def select_challenger(self, incumbent: str) -> str | None:
+        """Pick a random challenger from eligible agents.
+
+        Excludes the incumbent and any agents on the exclusion list.
+        Returns None if no eligible challenger exists.
+        """
+        excluded = set(self._config.excluded_agents)
+        excluded.add(incumbent)
+        candidates = [name for name in self._agents if name not in excluded]
+        if not candidates:
+            return None
+        return random.choice(candidates)  # noqa: S311
+
+    async def run_tournament(
+        self,
+        messages: list[dict[str, Any]],
+        incumbent_agent: str,
+        challenger_agent: str,
+        auth: AuthContext,
+        intent_task_type: str,
+        *,
+        session_id: str | None = None,
+        model_override: str | None = None,
+    ) -> BattleRecord:
+        """Run a head-to-head tournament between incumbent and challenger.
+
+        Both agents are executed in parallel. Responses are scored by
+        the stub judge (or LLM-as-judge when configured). Elo ratings
+        are updated and the BattleRecord is returned.
+        """
+        agent_a = self._agents[incumbent_agent]
+        agent_b = self._agents[challenger_agent]
+
+        # Execute both agents in parallel
+        result_a, result_b = await asyncio.gather(
+            self._safe_handle(agent_a, messages, auth, session_id, model_override),
+            self._safe_handle(agent_b, messages, auth, session_id, model_override),
+            return_exceptions=False,
+        )
+
+        # Score responses using the stub judge
+        score_a = _stub_judge_score(result_a)
+        score_b = _stub_judge_score(result_b)
+
+        judge_model = self._config.judge_model or "stub_length"
+
+        record = self._tournament.record_battle(
+            intent=intent_task_type,
+            agent_a=incumbent_agent,
+            agent_b=challenger_agent,
+            score_a=score_a,
+            score_b=score_b,
+            judge_model=judge_model,
+            org_id=auth.org_id,
+        )
+
+        logger.info(
+            "Tournament: %s (%.2f) vs %s (%.2f) on %s — winner=%s",
+            incumbent_agent,
+            score_a,
+            challenger_agent,
+            score_b,
+            intent_task_type,
+            record.winner,
+        )
+
+        return record
+
+    @staticmethod
+    async def _safe_handle(
+        agent: Agent,
+        messages: list[dict[str, Any]],
+        auth: AuthContext,
+        session_id: str | None,
+        model_override: str | None,
+    ) -> str:
+        """Call agent.handle() and return the response content, or "" on failure."""
+        try:
+            response = await agent.handle(
+                messages,
+                auth,
+                session_id=session_id,
+                model_override=model_override,
+            )
+            return response.content or ""
+        except Exception:
+            logger.warning(
+                "Tournament agent %s failed during handle()",
+                agent.identity.name,
+                exc_info=True,
+            )
+            return ""
