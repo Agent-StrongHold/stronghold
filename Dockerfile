@@ -13,6 +13,7 @@ FROM python:3.12-slim
 WORKDIR /app
 COPY --from=builder /install /usr/local
 COPY src/ src/
+COPY agents/ agents/
 COPY migrations/ migrations/
 COPY config/ config/
 

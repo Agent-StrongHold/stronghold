@@ -150,7 +150,9 @@ async def scan_codebase() -> JSONResponse:
         scan_for_good_first_issues,
     )
 
-    project_root = Path(__file__).resolve().parents[4]
+    # Try repo root (dev), fall back to /app (container)
+    candidate = Path(__file__).resolve().parents[4]
+    project_root = candidate if (candidate / "tests").is_dir() else Path("/app")
     suggestions = scan_for_good_first_issues(project_root)
     return JSONResponse(
         {
@@ -191,7 +193,8 @@ async def create_scanned_issues(request: Request) -> JSONResponse:
     if not owner or not repo:
         return JSONResponse({"error": "owner and repo are required"}, status_code=400)
 
-    project_root = Path(__file__).resolve().parents[4]
+    candidate = Path(__file__).resolve().parents[4]
+    project_root = candidate if (candidate / "tests").is_dir() else Path("/app")
     suggestions = scan_for_good_first_issues(project_root)
 
     indices: list[int] = body.get("indices", [])
