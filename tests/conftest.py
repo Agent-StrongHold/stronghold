@@ -137,6 +137,7 @@ _HAPPY_FILES = {
     # Config
     "config/test_loader.py",
     "config/test_env_override.py",
+    "config/test_validator.py",
     # Reactor
     "reactor/test_reactor.py",
     # Tracing
