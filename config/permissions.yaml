@@ -1,0 +1,39 @@
+# Stronghold RBAC Permissions
+# Config-driven role-based access control for agents and tools.
+# No real credentials — all values are examples.
+
+roles:
+  admin:
+    tools: ["*"]
+    agents: ["*"]
+
+  engineer:
+    tools: [web_search, shell, git, test_runner, file_ops]
+    agents: [artificer, ranger, scribe]
+
+  operator:
+    tools: [ha_control, ha_list_devices, ha_notify]
+    agents: [warden-at-arms]
+
+  viewer:
+    tools: [web_search]
+    agents: [ranger]
+
+# Tools that require explicit user confirmation before execution.
+confirmations:
+  engineer: [shell]
+  operator: [ha_control]
+
+# Map external identity provider roles to Stronghold roles.
+# Each provider key contains {provider_role: stronghold_role} pairs.
+role_mapping:
+  keycloak:
+    realm_admin: admin
+    dev: engineer
+    ops: operator
+    readonly: viewer
+  entra_id:
+    "Global Administrator": admin
+    "Developer": engineer
+    "Operator": operator
+    "Reader": viewer
