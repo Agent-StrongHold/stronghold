@@ -118,14 +118,19 @@ class InMemoryMasonQueue:
         }
 
     def list_all(self) -> list[dict[str, Any]]:
-        """List all issues in the queue."""
+        """List all issues in the queue with full detail."""
         return [
             {
                 "issue_number": i.issue_number,
                 "title": i.title,
                 "status": i.status,
                 "pr_number": i.pr_number,
+                "error": i.error,
                 "assigned_at": i.assigned_at.isoformat(),
+                "started_at": i.started_at.isoformat() if i.started_at else None,
+                "completed_at": i.completed_at.isoformat() if i.completed_at else None,
+                "owner": i.owner,
+                "repo": i.repo,
             }
             for i in self._issues.values()
         ]
