@@ -86,6 +86,7 @@ class Container:
     prompt_cache: Any = None  # RedisPromptCache (write-through cache)
     mcp_registry: Any = None  # MCPRegistry
     mcp_deployer: Any = None  # K8sDeployer
+    batch_manager: Any = None  # InMemoryBatchManager
     conduit: Any = None  # Conduit — wired in __post_init__ or create_container
 
     def __post_init__(self) -> None:
@@ -379,6 +380,11 @@ async def create_container(config: StrongholdConfig) -> Container:
         approval_gate=approval_gate,
     )
 
+    # Batch manager
+    from stronghold.batch.manager import InMemoryBatchManager  # noqa: PLC0415
+
+    batch_manager = InMemoryBatchManager()
+
     # MCP server registry + K8s deployer
     from stronghold.mcp.registry import MCPRegistry  # noqa: PLC0415
 
@@ -430,6 +436,7 @@ async def create_container(config: StrongholdConfig) -> Container:
         prompt_cache=prompt_cache,
         mcp_registry=mcp_registry,
         mcp_deployer=mcp_deployer,
+        batch_manager=batch_manager,
     )
 
     # Conduit pipeline is auto-wired via __post_init__
