@@ -163,4 +163,23 @@ def register_core_triggers(container: Container) -> None:
         _canary_check,
     )
 
+    # 8. Session-to-episodic memory bridge (every 5 minutes)
+    async def _session_bridge_sweep(event: Event) -> dict[str, Any]:
+        if hasattr(container, "session_bridge") and container.session_bridge:
+            bridged = await container.session_bridge.sweep()
+            if bridged > 0:
+                logger.info("Session bridge: %d sessions bridged to episodic memory", bridged)
+            return {"bridged": bridged}
+        return {"skipped": True}
+
+    reactor.register(
+        TriggerSpec(
+            name="session_bridge_sweep",
+            mode=TriggerMode.INTERVAL,
+            interval_secs=300.0,
+            jitter=0.1,
+        ),
+        _session_bridge_sweep,
+    )
+
     logger.info("Registered %d core triggers", len(reactor._triggers))

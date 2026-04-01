@@ -86,6 +86,7 @@ class Container:
     prompt_cache: Any = None  # RedisPromptCache (write-through cache)
     mcp_registry: Any = None  # MCPRegistry
     mcp_deployer: Any = None  # K8sDeployer
+    session_bridge: Any = None  # SessionBridge — session→episodic memory bridge
     conduit: Any = None  # Conduit — wired in __post_init__ or create_container
 
     def __post_init__(self) -> None:
@@ -392,6 +393,18 @@ async def create_container(config: StrongholdConfig) -> Container:
     except Exception:
         logger.info("MCP: K8s deployer unavailable (no cluster access)")
 
+    # Session-to-episodic memory bridge
+    from stronghold.memory.episodic.store import InMemoryEpisodicStore  # noqa: PLC0415
+    from stronghold.sessions.bridge import SessionBridge  # noqa: PLC0415
+
+    episodic_store = InMemoryEpisodicStore()
+    session_bridge = SessionBridge(
+        session_store=session_store,
+        episodic_store=episodic_store,  # type: ignore[arg-type]  # retrieve() sig drift
+        llm=llm,
+        session_ttl=float(config.sessions.ttl_seconds),
+    )
+
     container = Container(
         config=config,
         auth_provider=auth_provider,
@@ -430,6 +443,7 @@ async def create_container(config: StrongholdConfig) -> Container:
         prompt_cache=prompt_cache,
         mcp_registry=mcp_registry,
         mcp_deployer=mcp_deployer,
+        session_bridge=session_bridge,
     )
 
     # Conduit pipeline is auto-wired via __post_init__
