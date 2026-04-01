@@ -108,6 +108,7 @@ def create_app() -> FastAPI:
     from stronghold.api.routes.auth import router as auth_router
     from stronghold.api.routes.chat import router as chat_router
     from stronghold.api.routes.dashboard import router as dashboard_router
+    from stronghold.api.routes.export import router as export_router
     from stronghold.api.routes.gate_endpoint import router as gate_router
     from stronghold.api.routes.marketplace import router as marketplace_router
     from stronghold.api.routes.mcp import router as mcp_router
@@ -134,6 +135,7 @@ def create_app() -> FastAPI:
     app.include_router(sessions_router)
     app.include_router(admin_router)
     app.include_router(profile_router)
+    app.include_router(export_router)
     app.include_router(marketplace_router)
     app.include_router(traces_router)
     app.include_router(dashboard_router)
