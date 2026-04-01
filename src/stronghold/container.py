@@ -335,7 +335,13 @@ async def create_container(config: StrongholdConfig) -> Container:
     if config.agents_dir:
         agents_dir = Path(config.agents_dir)
     else:
-        agents_dir = Path(__file__).resolve().parents[2] / "agents"
+        # Try source layout first, then /app/ (Docker), then relative
+        candidates = [
+            Path(__file__).resolve().parents[2] / "agents",
+            Path("/app/agents"),
+            Path("agents"),
+        ]
+        agents_dir = next((p for p in candidates if p.is_dir()), candidates[0])
     dev_tools = HTTPToolExecutor(base_url="http://dev-tools-mcp:8300")
 
     async def _dev_tool_exec(name: str, args: dict) -> str:  # type: ignore[type-arg]
