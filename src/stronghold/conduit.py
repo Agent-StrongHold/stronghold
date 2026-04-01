@@ -200,6 +200,26 @@ class Conduit:
                     },
                 )
 
+        # ── 2b. Multi-intent detection ──
+        if not intent_hint:
+            from stronghold.classifier.multi_intent import detect_multi_intent
+
+            multi_intents = detect_multi_intent(intent.user_text, c.config.task_types)
+            if len(multi_intents) >= 2:  # noqa: PLR2004
+                logger.info(
+                    "Multi-intent detected: %s (user=%s)",
+                    multi_intents,
+                    auth.user_id,
+                )
+                return await self._handle_multi_intent(
+                    messages=messages,
+                    auth=auth,
+                    session_id=session_id,
+                    multi_intents=multi_intents,
+                    trace=trace,
+                    status_callback=status_callback,
+                )
+
         trace.update({"task_type": intent.task_type, "classified_by": intent.classified_by})
 
         # ── 3. Reactor: post-classify event ──
@@ -249,7 +269,8 @@ class Conduit:
         _prov_fields = {f.name for f in ProviderConfig.__dataclass_fields__.values()}
         providers_cfg: dict[str, ProviderConfig] = {
             k: ProviderConfig(**{fk: fv for fk, fv in v.items() if fk in _prov_fields})
-            if isinstance(v, dict) else v  # type: ignore[arg-type]
+            if isinstance(v, dict)
+            else v  # type: ignore[arg-type]
             for k, v in c.config.providers.items()
         }
 
@@ -305,7 +326,8 @@ class Conduit:
             _model_fields = {f.name for f in ModelConfig.__dataclass_fields__.values()}
             models: dict[str, ModelConfig] = {
                 k: ModelConfig(**{fk: fv for fk, fv in v.items() if fk in _model_fields})
-                if isinstance(v, dict) else v  # type: ignore[arg-type]
+                if isinstance(v, dict)
+                else v  # type: ignore[arg-type]
                 for k, v in c.config.models.items()
             }
             providers = routable_providers
@@ -628,6 +650,186 @@ class Conduit:
                 "model": model_to_use,
                 "agent": agent.identity.name,
                 "reason": selection.reason if selection else "default",
+            },
+            include_usage=True,
+        )
+
+    async def _handle_multi_intent(
+        self,
+        *,
+        messages: list[dict[str, Any]],
+        auth: Any,
+        session_id: str | None,
+        multi_intents: list[str],
+        trace: Any,
+        status_callback: Any,
+    ) -> dict[str, Any]:
+        """Dispatch compound requests to multiple agents in parallel.
+
+        Splits the user message into scoped subtasks (one per detected intent),
+        dispatches them concurrently via asyncio.gather, aggregates results,
+        and handles partial failure gracefully.
+        """
+        c = self._c
+
+        async def _status(msg: str) -> None:
+            if status_callback:
+                await status_callback(msg)
+
+        await _status(f"Multi-intent detected: {', '.join(multi_intents)}. Dispatching...")
+
+        # Extract user text from the last user message
+        user_text = ""
+        for m in reversed(messages):
+            if m.get("role") == "user":
+                user_text = str(m.get("content", ""))
+                break
+
+        # Build scoped subtask messages: each subtask gets the original system
+        # messages plus a scoped user message indicating which part to handle.
+        subtasks: list[tuple[str, str, list[dict[str, Any]]]] = []
+        for task_type in multi_intents:
+            agent_name = c.intent_registry.get_agent_for_intent(task_type)
+            if not agent_name or agent_name not in c.agents:
+                agent_name = self._fallback_agent_name("arbiter")
+            # Build scoped messages: keep system context, scope the user message
+            scoped_messages = [m for m in messages if m.get("role") != "user"]
+            scoped_messages.append(
+                {
+                    "role": "user",
+                    "content": (f"[Task: {task_type}] {user_text}"),
+                }
+            )
+            subtasks.append((task_type, agent_name, scoped_messages))
+
+        # ── Model selection (use same model for all subtasks) ──
+        from stronghold.types.model import ModelConfig, ProviderConfig
+
+        _prov_fields = {f.name for f in ProviderConfig.__dataclass_fields__.values()}
+        providers_cfg: dict[str, ProviderConfig] = {
+            k: ProviderConfig(**{fk: fv for fk, fv in v.items() if fk in _prov_fields})
+            if isinstance(v, dict)
+            else v  # type: ignore[arg-type]
+            for k, v in c.config.providers.items()
+        }
+        routable_providers = {k: v for k, v in providers_cfg.items() if v.status == "active"}
+        _model_fields = {f.name for f in ModelConfig.__dataclass_fields__.values()}
+        models: dict[str, ModelConfig] = {
+            k: ModelConfig(**{fk: fv for fk, fv in v.items() if fk in _model_fields})
+            if isinstance(v, dict)
+            else v  # type: ignore[arg-type]
+            for k, v in c.config.models.items()
+        }
+
+        from stronghold.types.intent import Intent
+
+        # Use first intent for model selection
+        first_intent = Intent(task_type=multi_intents[0], user_text=user_text)
+        try:
+            selection = c.router.select(
+                first_intent,
+                models,
+                routable_providers,
+                c.config.routing,
+            )
+            model_to_use = selection.litellm_id
+        except Exception:
+            model_to_use = next(
+                (
+                    str(v.get("litellm_id", k)) if isinstance(v, dict) else v.litellm_id
+                    for k, v in c.config.models.items()
+                ),
+                "auto",
+            )
+
+        # ── Parallel dispatch ──
+        async def _dispatch_subtask(
+            task_type: str,
+            agent_name: str,
+            scoped_msgs: list[dict[str, Any]],
+        ) -> dict[str, Any]:
+            """Dispatch a single subtask to its agent."""
+            agent = c.agents[agent_name]
+            try:
+                response = await agent.handle(
+                    scoped_msgs,
+                    auth,
+                    session_id=session_id,
+                    model_override=model_to_use,
+                )
+                if response.blocked:
+                    return {
+                        "task_type": task_type,
+                        "agent": agent_name,
+                        "content": "",
+                        "error": response.block_reason or "blocked",
+                    }
+                return {
+                    "task_type": task_type,
+                    "agent": agent_name,
+                    "content": response.content,
+                    "error": None,
+                }
+            except Exception as exc:
+                logger.warning(
+                    "Multi-intent subtask failed: task=%s agent=%s error=%s",
+                    task_type,
+                    agent_name,
+                    str(exc),
+                )
+                return {
+                    "task_type": task_type,
+                    "agent": agent_name,
+                    "content": "",
+                    "error": str(exc),
+                }
+
+        await _status("Dispatching subtasks in parallel...")
+        sub_results: list[dict[str, Any]] = await asyncio.gather(
+            *[
+                _dispatch_subtask(task_type, agent_name, scoped_msgs)
+                for task_type, agent_name, scoped_msgs in subtasks
+            ]
+        )
+
+        # ── Aggregate results ──
+        successful = [r for r in sub_results if not r.get("error")]
+        if successful:
+            parts: list[str] = []
+            for r in successful:
+                parts.append(f"**[{r['task_type'].title()}]**\n{r['content']}")
+            aggregated_content = "\n\n---\n\n".join(parts)
+        else:
+            # All failed
+            error_summary = "; ".join(f"{r['task_type']}: {r['error']}" for r in sub_results)
+            aggregated_content = (
+                f"I encountered errors processing your compound request. Errors: {error_summary}"
+            )
+
+        trace.update(
+            {
+                "task_type": ",".join(multi_intents),
+                "classified_by": "multi_intent",
+                "multi_intent_count": str(len(multi_intents)),
+                "multi_intent_success": str(len(successful)),
+            }
+        )
+        trace.end()
+
+        return self._build_response(
+            response_id=f"stronghold-multi-{'+'.join(multi_intents)}",
+            model=model_to_use,
+            content=aggregated_content,
+            routing={
+                "intent": {
+                    "task_type": ",".join(multi_intents),
+                    "classified_by": "multi_intent",
+                    "multi_intents": multi_intents,
+                },
+                "model": model_to_use,
+                "agent": "multi",
+                "reason": f"multi_intent: {multi_intents}",
+                "sub_results": sub_results,
             },
             include_usage=True,
         )
