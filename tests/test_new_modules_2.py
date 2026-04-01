@@ -966,20 +966,57 @@ class TestSkillsTestRoute:
 # ═══════════════════════════════════════════════════════════════════
 
 
+class _WorkerFakeContainer:
+    """Minimal container fake for worker tests."""
+
+    def __init__(
+        self,
+        task_queue: InMemoryTaskQueue,
+        *,
+        error: Exception | None = None,
+        content: str = "Worker response",
+    ) -> None:
+        self.task_queue = task_queue
+        self._error = error
+        self._content = content
+
+    async def route_request(
+        self,
+        messages: list[dict[str, Any]],
+        *,
+        auth: Any = None,
+        session_id: str | None = None,
+        intent_hint: str = "",
+        status_callback: Any = None,
+    ) -> dict[str, Any]:
+        if self._error is not None:
+            raise self._error
+        return {
+            "id": "stronghold-test",
+            "object": "chat.completion",
+            "model": "test/model",
+            "choices": [
+                {
+                    "index": 0,
+                    "message": {"role": "assistant", "content": self._content},
+                    "finish_reason": "stop",
+                }
+            ],
+        }
+
+
 class TestAgentWorkerProcessOne:
     async def test_process_one_no_tasks(self) -> None:
         queue = InMemoryTaskQueue()
-        llm = FakeLLMClient()
-        llm.set_simple_response("Hello from worker")
-        worker = AgentWorker(queue=queue, llm=llm)
+        container = _WorkerFakeContainer(task_queue=queue, content="Hello from worker")
+        worker = AgentWorker(container=container)
         result = await worker.process_one()
         assert result is False
 
     async def test_process_one_with_task(self) -> None:
         queue = InMemoryTaskQueue()
-        llm = FakeLLMClient()
-        llm.set_simple_response("Worker response")
-        worker = AgentWorker(queue=queue, llm=llm)
+        container = _WorkerFakeContainer(task_queue=queue, content="Worker response")
+        worker = AgentWorker(container=container)
 
         task_id = await queue.submit(
             {"messages": [{"role": "user", "content": "hello"}], "model": "test", "agent": "arbiter"}
@@ -994,15 +1031,11 @@ class TestAgentWorkerProcessOne:
 
     async def test_process_one_llm_failure(self) -> None:
         queue = InMemoryTaskQueue()
-
-        class FailingLLM:
-            async def complete(
-                self, messages: list[dict[str, Any]], model: str, **kwargs: Any
-            ) -> dict[str, Any]:
-                msg = "LLM error"
-                raise RuntimeError(msg)
-
-        worker = AgentWorker(queue=queue, llm=FailingLLM())  # type: ignore[arg-type]
+        container = _WorkerFakeContainer(
+            task_queue=queue,
+            error=RuntimeError("LLM error"),
+        )
+        worker = AgentWorker(container=container)
         task_id = await queue.submit({"messages": [{"role": "user", "content": "hi"}]})
         result = await worker.process_one()
         assert result is True
@@ -1015,24 +1048,22 @@ class TestAgentWorkerProcessOne:
 class TestAgentWorkerRunLoop:
     async def test_run_loop_exits_on_idle(self) -> None:
         queue = InMemoryTaskQueue()
-        llm = FakeLLMClient()
-        llm.set_simple_response("ok")
-        worker = AgentWorker(queue=queue, llm=llm)
+        container = _WorkerFakeContainer(task_queue=queue, content="ok")
+        worker = AgentWorker(container=container)
 
         # Should exit after max_idle_seconds with no tasks
-        await worker.run_loop(max_idle_seconds=1.0)
+        await worker.run_loop(max_idle_seconds=0.5)
 
     async def test_run_loop_processes_then_exits(self) -> None:
         queue = InMemoryTaskQueue()
-        llm = FakeLLMClient()
-        llm.set_simple_response("loop response")
-        worker = AgentWorker(queue=queue, llm=llm)
+        container = _WorkerFakeContainer(task_queue=queue, content="loop response")
+        worker = AgentWorker(container=container)
 
         task_id = await queue.submit(
             {"messages": [{"role": "user", "content": "work"}], "model": "auto"}
         )
 
-        await worker.run_loop(max_idle_seconds=1.0)
+        await worker.run_loop(max_idle_seconds=0.5)
 
         task = await queue.get(task_id)
         assert task is not None

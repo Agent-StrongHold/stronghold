@@ -4,36 +4,53 @@ from __future__ import annotations
 
 from typing import Any
 
-import pytest
-
 from stronghold.agents.task_queue import InMemoryTaskQueue
 from stronghold.agents.worker import AgentWorker
-from tests.fakes import FakeLLMClient
 
 
-class FailingLLMClient:
-    """LLM client that always raises an exception on complete()."""
+class _FakeContainer:
+    """Minimal container fake with task_queue and route_request."""
 
-    def __init__(self, error_message: str = "LLM service unavailable") -> None:
-        self._error_message = error_message
-        self.calls: list[dict[str, Any]] = []
+    def __init__(
+        self,
+        task_queue: InMemoryTaskQueue,
+        *,
+        error: Exception | None = None,
+    ) -> None:
+        self.task_queue = task_queue
+        self._error = error
 
-    async def complete(
+    async def route_request(
         self,
         messages: list[dict[str, Any]],
-        model: str,
-        **kwargs: Any,
+        *,
+        auth: Any = None,
+        session_id: str | None = None,
+        intent_hint: str = "",
+        status_callback: Any = None,
     ) -> dict[str, Any]:
-        self.calls.append({"messages": messages, "model": model})
-        raise RuntimeError(self._error_message)
+        if self._error is not None:
+            raise self._error
+        return {
+            "id": "stronghold-test",
+            "object": "chat.completion",
+            "model": "test/model",
+            "choices": [
+                {
+                    "index": 0,
+                    "message": {"role": "assistant", "content": "looped response"},
+                    "finish_reason": "stop",
+                }
+            ],
+        }
 
 
 class TestWorkerProcessOneNoTasks:
     async def test_no_tasks_returns_false(self) -> None:
         """process_one with empty queue returns False."""
         queue = InMemoryTaskQueue()
-        llm = FakeLLMClient()
-        worker = AgentWorker(queue=queue, llm=llm)
+        container = _FakeContainer(task_queue=queue)
+        worker = AgentWorker(container=container)
 
         result = await worker.process_one()
         assert result is False
@@ -41,12 +58,10 @@ class TestWorkerProcessOneNoTasks:
 
 class TestWorkerProcessOneSuccess:
     async def test_task_available_processes_and_completes(self) -> None:
-        """process_one claims a task, runs the LLM, and marks it completed."""
+        """process_one claims a task, routes through container, and marks it completed."""
         queue = InMemoryTaskQueue()
-        llm = FakeLLMClient()
-        llm.set_simple_response("worker output here")
-
-        worker = AgentWorker(queue=queue, llm=llm)
+        container = _FakeContainer(task_queue=queue)
+        worker = AgentWorker(container=container)
 
         task_id = await queue.submit(
             {
@@ -62,17 +77,18 @@ class TestWorkerProcessOneSuccess:
         task = await queue.get(task_id)
         assert task is not None
         assert task["status"] == "completed"
-        assert task["result"]["content"] == "worker output here"
-        assert task["result"]["agent"] == "arbiter"
-        assert task["result"]["model"] == "test/model"
+        assert task["result"]["content"] == "looped response"
 
 
-class TestWorkerProcessOneLLMFailure:
-    async def test_llm_failure_marks_task_as_failed(self) -> None:
-        """When the LLM raises, the task is marked as failed with the error."""
+class TestWorkerProcessOneFailure:
+    async def test_route_failure_marks_task_as_failed(self) -> None:
+        """When route_request raises, the task is marked as failed with the error."""
         queue = InMemoryTaskQueue()
-        failing_llm = FailingLLMClient("connection refused")
-        worker = AgentWorker(queue=queue, llm=failing_llm)
+        container = _FakeContainer(
+            task_queue=queue,
+            error=RuntimeError("connection refused"),
+        )
+        worker = AgentWorker(container=container)
 
         task_id = await queue.submit(
             {
@@ -95,10 +111,8 @@ class TestWorkerRunLoop:
     async def test_run_loop_processes_tasks_then_idles_out(self) -> None:
         """run_loop processes all available tasks then exits after idle timeout."""
         queue = InMemoryTaskQueue()
-        llm = FakeLLMClient()
-        llm.set_simple_response("looped response")
-
-        worker = AgentWorker(queue=queue, llm=llm)
+        container = _FakeContainer(task_queue=queue)
+        worker = AgentWorker(container=container)
 
         # Submit 3 tasks
         ids = []
@@ -113,7 +127,7 @@ class TestWorkerRunLoop:
             ids.append(task_id)
 
         # Run with short idle timeout so it exits quickly after tasks are done
-        await worker.run_loop(max_idle_seconds=1.0)
+        await worker.run_loop(max_idle_seconds=0.5)
 
         # All 3 tasks should be completed
         for task_id in ids:
@@ -124,8 +138,8 @@ class TestWorkerRunLoop:
     async def test_run_loop_exits_on_idle_with_no_tasks(self) -> None:
         """run_loop exits quickly when there are no tasks at all."""
         queue = InMemoryTaskQueue()
-        llm = FakeLLMClient()
-        worker = AgentWorker(queue=queue, llm=llm)
+        container = _FakeContainer(task_queue=queue)
+        worker = AgentWorker(container=container)
 
         # Should return without error after idle timeout
-        await worker.run_loop(max_idle_seconds=1.0)
+        await worker.run_loop(max_idle_seconds=0.3)
