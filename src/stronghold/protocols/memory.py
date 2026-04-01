@@ -1,10 +1,11 @@
-"""Memory protocols: learnings, episodic, extraction, outcomes, sessions, audit."""
+"""Memory protocols: learnings, episodic, extraction, outcomes, sessions, audit, annotations."""
 
 from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
 if TYPE_CHECKING:
+    from stronghold.types.annotation import Annotation
     from stronghold.types.memory import EpisodicMemory, Learning, Outcome, SkillMutation
     from stronghold.types.security import AuditEntry
 
@@ -214,4 +215,33 @@ class AuditLog(Protocol):
         limit: int = 100,
     ) -> list[AuditEntry]:
         """Retrieve audit entries with optional filtering (org-scoped)."""
+        ...
+
+
+@runtime_checkable
+class AnnotationStore(Protocol):
+    """Store for conversation annotations (tags, ratings, notes). Org-scoped."""
+
+    async def annotate(self, annotation: Annotation) -> Annotation:
+        """Create or update an annotation. Returns the annotation with generated ID."""
+        ...
+
+    async def get_annotations(self, session_id: str, *, org_id: str) -> list[Annotation]:
+        """Get all annotations for a session within an org."""
+        ...
+
+    async def list_by_tag(
+        self, tag: str, *, org_id: str, limit: int = 20
+    ) -> list[Annotation]:
+        """List annotations matching a tag within an org."""
+        ...
+
+    async def list_by_rating(
+        self, max_rating: int, *, org_id: str, limit: int = 20
+    ) -> list[Annotation]:
+        """List annotations with rating <= max_rating within an org."""
+        ...
+
+    async def delete_annotation(self, annotation_id: str, *, org_id: str) -> bool:
+        """Delete an annotation by ID within an org. Returns True if found and deleted."""
         ...

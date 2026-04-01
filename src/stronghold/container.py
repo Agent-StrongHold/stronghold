@@ -11,6 +11,7 @@ from stronghold.agents.factory import create_agents
 from stronghold.agents.intents import IntentRegistry
 from stronghold.agents.store import InMemoryAgentStore
 from stronghold.agents.task_queue import InMemoryTaskQueue
+from stronghold.annotations.store import InMemoryAnnotationStore
 from stronghold.api.litellm_client import LiteLLMClient
 from stronghold.classifier.engine import ClassifierEngine
 from stronghold.events import Reactor
@@ -36,7 +37,13 @@ from stronghold.types.errors import ConfigError
 
 if TYPE_CHECKING:
     from stronghold.agents.base import Agent
-    from stronghold.protocols.memory import AuditLog, LearningStore, OutcomeStore, SessionStore
+    from stronghold.protocols.memory import (
+        AnnotationStore,
+        AuditLog,
+        LearningStore,
+        OutcomeStore,
+        SessionStore,
+    )
     from stronghold.protocols.prompts import PromptManager
     from stronghold.protocols.quota import QuotaTracker
     from stronghold.types.config import StrongholdConfig
@@ -70,6 +77,7 @@ class Container:
     tool_registry: InMemoryToolRegistry
     tool_dispatcher: ToolDispatcher
     agent_store: InMemoryAgentStore = field(default_factory=lambda: InMemoryAgentStore({}))
+    annotation_store: AnnotationStore = field(default_factory=InMemoryAnnotationStore)
     rate_limiter: Any = field(default_factory=InMemoryRateLimiter)  # RateLimiter protocol
     reactor: Reactor = field(default_factory=Reactor)
     task_queue: InMemoryTaskQueue = field(default_factory=InMemoryTaskQueue)

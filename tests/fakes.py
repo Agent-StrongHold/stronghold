@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import uuid
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
 from stronghold.types.auth import SYSTEM_AUTH, AuthContext
@@ -9,6 +11,8 @@ from stronghold.types.auth import SYSTEM_AUTH, AuthContext
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator
     from types import TracebackType
+
+    from stronghold.types.annotation import Annotation
 
 
 class FakeLLMClient:
@@ -240,3 +244,48 @@ class FakeAuthProvider:
             msg = "Missing Authorization header"
             raise ValueError(msg)
         return self.auth_context
+
+
+class FakeAnnotationStore:
+    """In-memory fake for AnnotationStore protocol."""
+
+    def __init__(self) -> None:
+        self._annotations: dict[str, Annotation] = {}
+
+    async def annotate(self, annotation: Annotation) -> Annotation:
+        if annotation.rating is not None and not (1 <= annotation.rating <= 5):
+            msg = "Rating must be between 1 and 5, or None"
+            raise ValueError(msg)
+        annotation.id = str(uuid.uuid4())
+        annotation.created_at = datetime.now(UTC)
+        self._annotations[annotation.id] = annotation
+        return annotation
+
+    async def get_annotations(self, session_id: str, *, org_id: str) -> list[Annotation]:
+        return [
+            a for a in self._annotations.values()
+            if a.session_id == session_id and a.org_id == org_id
+        ]
+
+    async def list_by_tag(
+        self, tag: str, *, org_id: str, limit: int = 20
+    ) -> list[Annotation]:
+        return [
+            a for a in self._annotations.values()
+            if a.org_id == org_id and tag in a.tags
+        ][:limit]
+
+    async def list_by_rating(
+        self, max_rating: int, *, org_id: str, limit: int = 20
+    ) -> list[Annotation]:
+        return [
+            a for a in self._annotations.values()
+            if a.org_id == org_id and a.rating is not None and a.rating <= max_rating
+        ][:limit]
+
+    async def delete_annotation(self, annotation_id: str, *, org_id: str) -> bool:
+        ann = self._annotations.get(annotation_id)
+        if ann is None or ann.org_id != org_id:
+            return False
+        del self._annotations[annotation_id]
+        return True
