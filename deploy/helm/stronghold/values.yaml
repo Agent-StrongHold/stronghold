@@ -1,26 +1,186 @@
 # Stronghold Helm values
 # Override these for your environment
 
-replicaCount: 1
+replicaCount: 2
 
 image:
   repository: ghcr.io/agent-stronghold/stronghold
   tag: "0.1.0"
   pullPolicy: IfNotPresent
 
+nameOverride: ""
+fullnameOverride: ""
+
+# -- Service account
+serviceAccount:
+  create: true
+  name: ""
+  annotations: {}
+
+# -- Pod-level security context
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 1000
+  runAsGroup: 1000
+  fsGroup: 1000
+  seccompProfile:
+    type: RuntimeDefault
+
+# -- Container-level security context
+securityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  runAsNonRoot: true
+  runAsUser: 1000
+  capabilities:
+    drop:
+      - ALL
+
+# -- Liveness probe (is the process alive?)
+livenessProbe:
+  httpGet:
+    path: /health
+    port: http
+  initialDelaySeconds: 10
+  periodSeconds: 15
+  timeoutSeconds: 5
+  failureThreshold: 3
+  successThreshold: 1
+
+# -- Readiness probe (can it accept traffic?)
+readinessProbe:
+  httpGet:
+    path: /health
+    port: http
+  initialDelaySeconds: 5
+  periodSeconds: 10
+  timeoutSeconds: 5
+  failureThreshold: 3
+  successThreshold: 1
+
+# -- Startup probe (allow slow starts without killing the pod)
+startupProbe:
+  httpGet:
+    path: /health
+    port: http
+  initialDelaySeconds: 5
+  periodSeconds: 5
+  timeoutSeconds: 5
+  failureThreshold: 30
+
+# -- Resource requests and limits
+resources:
+  limits:
+    cpu: "2"
+    memory: 2Gi
+  requests:
+    cpu: 500m
+    memory: 512Mi
+
+# -- Service configuration
 service:
   type: ClusterIP
   port: 8100
+  targetPort: 8100
+  annotations: {}
 
+# -- Ingress configuration
 ingress:
   enabled: false
   className: ""
+  annotations: {}
   hosts:
     - host: stronghold.example.com
       paths:
         - path: /
           pathType: Prefix
   tls: []
+
+# -- Pod Disruption Budget
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 1
+  # maxUnavailable: 1  # alternative to minAvailable
+
+# -- Network Policy
+networkPolicy:
+  enabled: true
+  # Allow ingress from these pod selectors (AND logic within each rule)
+  ingressRules:
+    # Allow traffic from ingress controller
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: ingress-nginx
+      ports:
+        - protocol: TCP
+          port: 8100
+    # Allow traffic from within the same namespace (e.g. litellm, phoenix)
+    - from:
+        - podSelector: {}
+      ports:
+        - protocol: TCP
+          port: 8100
+  egressRules:
+    # Allow DNS
+    - to:
+        - namespaceSelector: {}
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    # Allow traffic to pods in same namespace (postgres, litellm, phoenix)
+    - to:
+        - podSelector: {}
+    # Allow HTTPS egress (for external LLM APIs if litellm needs it)
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 10.0.0.0/8
+              - 172.16.0.0/12
+              - 192.168.0.0/16
+      ports:
+        - protocol: TCP
+          port: 443
+
+# -- Node selector
+nodeSelector: {}
+
+# -- Tolerations
+tolerations: []
+
+# -- Affinity rules
+affinity: {}
+
+# -- Extra labels applied to all resources
+commonLabels: {}
+
+# -- Extra annotations applied to all pods
+podAnnotations: {}
+
+# -- Environment variables from values (non-secret)
+env:
+  STRONGHOLD_CONFIG: /etc/stronghold/config.yaml
+  LITELLM_URL: http://litellm:4000
+  PHOENIX_COLLECTOR_ENDPOINT: http://phoenix:6006
+
+# -- Extra environment variables (list of {name, value} or {name, valueFrom})
+extraEnv: []
+
+# -- Volumes and volume mounts for writable dirs (readOnlyRootFilesystem)
+extraVolumeMounts: []
+extraVolumes: []
+
+# -- Writable tmp directory (required with readOnlyRootFilesystem)
+tmpDir:
+  enabled: true
+  sizeLimit: 256Mi
+
+# --------------------------------------------------------------------------
+# Dependent services
+# --------------------------------------------------------------------------
 
 # PostgreSQL (bundled or external)
 postgresql:
@@ -81,11 +241,3 @@ auth:
 
 # Secrets (use K8s secrets in production)
 secretName: stronghold-secrets
-
-resources:
-  limits:
-    cpu: "2"
-    memory: 2Gi
-  requests:
-    cpu: 500m
-    memory: 512Mi
