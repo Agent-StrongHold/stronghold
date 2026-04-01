@@ -119,6 +119,7 @@ def create_app() -> FastAPI:
     from stronghold.api.routes.status import router as status_router
     from stronghold.api.routes.tasks import router as tasks_router
     from stronghold.api.routes.traces import router as traces_router
+    from stronghold.api.routes.inbound_webhooks import build_inbound_webhook_router
     from stronghold.api.routes.webhooks import router as webhooks_router
     from stronghold.prompts.routes import router as prompts_router
 
@@ -141,6 +142,7 @@ def create_app() -> FastAPI:
     app.include_router(webhooks_router)
     app.include_router(mcp_router)
     app.include_router(schedules_router)
+    app.include_router(build_inbound_webhook_router())
 
     # Dashboard — try multiple paths (installed package vs source layout)
     _dashboard_candidates = [

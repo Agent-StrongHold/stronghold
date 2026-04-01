@@ -88,6 +88,7 @@ class Container:
     mcp_registry: Any = None  # MCPRegistry
     schedule_store: InMemoryScheduleStore = field(default_factory=InMemoryScheduleStore)
     mcp_deployer: Any = None  # K8sDeployer
+    webhook_store: Any = None  # InMemoryWebhookStore
     conduit: Any = None  # Conduit — wired in __post_init__ or create_container
 
     def __post_init__(self) -> None:
@@ -381,6 +382,11 @@ async def create_container(config: StrongholdConfig) -> Container:
         approval_gate=approval_gate,
     )
 
+    # Inbound webhook store
+    from stronghold.webhooks.inbound import InMemoryWebhookStore  # noqa: PLC0415
+
+    webhook_store = InMemoryWebhookStore()
+
     # MCP server registry + K8s deployer
     from stronghold.mcp.registry import MCPRegistry  # noqa: PLC0415
 
@@ -432,6 +438,7 @@ async def create_container(config: StrongholdConfig) -> Container:
         prompt_cache=prompt_cache,
         mcp_registry=mcp_registry,
         mcp_deployer=mcp_deployer,
+        webhook_store=webhook_store,
     )
 
     # Conduit pipeline is auto-wired via __post_init__
