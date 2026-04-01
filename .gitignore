@@ -34,6 +34,8 @@ htmlcov/
 *.pem
 *.key
 *secrets*
+!src/stronghold/config/secrets.py
+!tests/config/test_secrets.py
 *credentials*
 
 # OS
