@@ -1,16 +1,19 @@
-"""Mason strategy: evidence-driven TDD with 8-phase execution pipeline.
+"""Mason strategy: deterministic pipeline with LLM for thinking.
 
-Each phase runs a ReAct-style tool loop with an LLM-evaluated exit gate.
-The strategy does not advance to the next phase until the gate is satisfied
-or max_rounds is exhausted.
+The strategy orchestrates tools directly. The LLM only generates
+text (code, analysis, criteria). This prevents the LLM from
+getting stuck in file_ops loops.
 
-Phases are declared in agent.yaml and loaded into AgentIdentity.phases.
+Pipeline:
+  1. LLM reads issue → generates acceptance criteria
+  2. LLM writes test code → strategy writes files
+  3. Strategy runs quality gates → LLM fixes failures
+  4. Strategy commits, pushes, creates PR
 """
 
 from __future__ import annotations
 
 import asyncio
-import json
 import logging
 from collections.abc import Callable, Coroutine
 from typing import TYPE_CHECKING, Any
@@ -31,31 +34,8 @@ async def _noop_status(msg: str) -> None:
     pass
 
 
-_GATE_CHECK_PROMPT = (
-    "You are evaluating whether a phase exit gate has been satisfied.\n\n"
-    "Phase: {phase_name}\n"
-    "Exit gate criteria: {exit_gate}\n\n"
-    "Work done so far in this phase:\n{work_summary}\n\n"
-    "Has the exit gate been fully satisfied? Answer ONLY 'YES' or 'NO', "
-    "followed by a one-sentence justification."
-)
-
-_PHASE_SYSTEM_PROMPT = (
-    "You are in phase **{phase_name}** of the evidence-driven TDD pipeline.\n\n"
-    "## Phase description\n{description}\n\n"
-    "## Exit gate (what must be true to advance)\n{exit_gate}\n\n"
-    "## Round {round_num} of {max_rounds}\n\n"
-    "Work toward satisfying the exit gate. Use tools as needed. "
-    "When you believe the gate is satisfied, say so explicitly."
-)
-
-
 class MasonStrategy:
-    """8-phase evidence-driven TDD pipeline.
-
-    Registered as 'mason' strategy in the factory. Falls back to
-    ArtificerStrategy's generic loop if no phases are configured.
-    """
+    """Deterministic pipeline — strategy controls tools, LLM thinks."""
 
     async def reason(
         self,
@@ -70,250 +50,305 @@ class MasonStrategy:
         trace: Trace | None = None,
         **kwargs: Any,
     ) -> ReasoningResult:
-        """Execute the phased pipeline."""
+        """Run the deterministic Mason pipeline."""
         status = status_callback or _noop_status
-        all_tool_history: list[dict[str, Any]] = []
-        phase_results: list[str] = []
+        tool_history: list[dict[str, Any]] = []
 
-        phases = identity.phases if identity else ()
-        if not phases:
-            # No phases configured — single-pass fallback
-            return await self._single_pass(
-                messages,
-                model,
-                llm,
-                tools=tools,
-                tool_executor=tool_executor,
-                status_callback=status,
-                trace=trace,
-            )
-
-        await status(f"Starting {len(phases)}-phase pipeline")
-        current_messages = list(messages)
-
-        for phase_idx, phase in enumerate(phases):
-            phase_name = phase.get("name", f"phase_{phase_idx}")
-            description = phase.get("description", "")
-            exit_gate = phase.get("exit_gate", "")
-            max_rounds = phase.get("max_rounds", 3)
-
-            await status(f"Phase {phase_idx + 1}/{len(phases)}: {phase_name}")
-            logger.info("Mason phase %d: %s (max %d rounds)", phase_idx + 1, phase_name, max_rounds)
-
-            phase_work: list[str] = []
-            gate_satisfied = False
-
-            for round_num in range(1, max_rounds + 1):
-                # Inject phase context
-                phase_prompt = _PHASE_SYSTEM_PROMPT.format(
-                    phase_name=phase_name,
-                    description=description,
-                    exit_gate=exit_gate,
-                    round_num=round_num,
-                    max_rounds=max_rounds,
-                )
-                round_messages = list(current_messages)
-                round_messages.append({"role": "user", "content": phase_prompt})
-
-                # ReAct loop within this round
-                tool_history, response_text = await self._react_round(
-                    round_messages,
-                    model,
-                    llm,
-                    tools=tools,
-                    tool_executor=tool_executor,
-                    status=status,
-                    trace=trace,
-                    span_prefix=f"{phase_name}.r{round_num}",
-                )
-                all_tool_history.extend(tool_history)
-                phase_work.append(response_text)
-
-                # Append the work to conversation memory
-                current_messages.append({"role": "assistant", "content": response_text})
-
-                # Check exit gate
-                if exit_gate:
-                    gate_satisfied = await self._check_exit_gate(
-                        phase_name,
-                        exit_gate,
-                        "\n".join(phase_work),
-                        model,
-                        llm,
-                        trace=trace,
-                    )
-                    if gate_satisfied:
-                        await status(f"Phase {phase_name}: gate satisfied (round {round_num})")
-                        logger.info(
-                            "Phase %s: exit gate satisfied at round %d",
-                            phase_name,
-                            round_num,
-                        )
+        # Extract workspace path from the original message
+        ws_path = ""
+        for m in messages:
+            content = str(m.get("content", ""))
+            if "Workspace:" in content:
+                for line in content.split("\n"):
+                    if line.strip().startswith("Workspace:"):
+                        ws_path = line.split("Workspace:")[1].strip()
                         break
 
-                await asyncio.sleep(1)
-
-            if not gate_satisfied and exit_gate:
-                await status(f"Phase {phase_name}: max rounds reached, advancing")
-                logger.warning(
-                    "Phase %s: exit gate NOT satisfied after %d rounds",
-                    phase_name,
-                    max_rounds,
-                )
-
-            phase_results.append(
-                f"## Phase {phase_idx + 1}: {phase_name}\n"
-                f"Gate: {'SATISFIED' if gate_satisfied else 'MAX_ROUNDS'}\n"
-                f"Rounds: {min(round_num, max_rounds)}/{max_rounds}\n"
-                f"{'---'.join(phase_work[-1:])}"
+        if not ws_path:
+            return ReasoningResult(
+                response="No workspace path provided.",
+                done=True,
             )
 
-        await status("Pipeline complete")
-        return ReasoningResult(
-            response="\n\n".join(phase_results),
-            done=True,
-            tool_history=all_tool_history,
-        )
+        await status("Reading workspace contents")
 
-    async def _react_round(
-        self,
-        messages: list[dict[str, Any]],
-        model: str,
-        llm: LLMClient,
-        *,
-        tools: list[dict[str, Any]] | None = None,
-        tool_executor: Any = None,
-        status: StatusCallback = _noop_status,
-        trace: Trace | None = None,
-        span_prefix: str = "round",
-    ) -> tuple[list[dict[str, Any]], str]:
-        """Single ReAct round: LLM call -> tool execution loop -> text response."""
-        tool_history: list[dict[str, Any]] = []
-        current = list(messages)
+        # Step 1: Read the codebase structure
+        file_list = ""
+        if tool_executor:
+            result = await tool_executor(
+                "file_ops",
+                {
+                    "action": "list",
+                    "path": "src/stronghold",
+                    "workspace": ws_path,
+                },
+            )
+            file_list = str(result)[:3000]
+            tool_history.append(
+                {
+                    "tool_name": "file_ops",
+                    "arguments": {"action": "list"},
+                    "result": file_list[:500],
+                }
+            )
 
-        for step in range(15):  # max tool calls per round
-            if trace:
-                with trace.span(f"{span_prefix}.llm_{step}") as sp:
-                    sp.set_input({"model": model, "msgs": len(current)})
-                    response = await llm.complete(current, model, tools=tools, tool_choice="auto")
-                    usage = response.get("usage", {})
-                    sp.set_usage(
-                        input_tokens=usage.get("prompt_tokens", 0),
-                        output_tokens=usage.get("completion_tokens", 0),
-                        model=model,
+        await status("Analyzing issue and generating plan")
+
+        # Step 2: Ask LLM to analyze the issue and produce a plan with code
+        plan_messages = list(messages) + [
+            {
+                "role": "user",
+                "content": (
+                    f"Here are the files in the workspace:\n```\n{file_list}\n```\n\n"
+                    "Based on the issue, produce a COMPLETE implementation plan. "
+                    "For EACH file you need to create or modify, output the full "
+                    "file content in this exact format:\n\n"
+                    "=== FILE: path/to/file.py ===\n"
+                    "```python\n"
+                    "# full file content here\n"
+                    "```\n\n"
+                    "=== FILE: tests/path/test_file.py ===\n"
+                    "```python\n"
+                    "# test content here\n"
+                    "```\n\n"
+                    "Write tests FIRST, then implementation. "
+                    "Include ALL files needed. Use real classes, not mocks."
+                ),
+            },
+        ]
+
+        response = await llm.complete(plan_messages, model)
+        plan_content = response.get("choices", [{}])[0].get("message", {}).get("content", "")
+        await status(f"Plan generated ({len(plan_content)} chars)")
+
+        # Step 3: Parse file blocks and write them
+        files_written = 0
+        if tool_executor and "=== FILE:" in plan_content:
+            await status("Writing files to workspace")
+            files_written = await self._write_file_blocks(
+                plan_content,
+                ws_path,
+                tool_executor,
+                tool_history,
+                status,
+            )
+            await status(f"Wrote {files_written} files")
+
+        # Step 4: Run quality gates
+        if tool_executor and files_written > 0:
+            await status("Running quality gates")
+            gate_results = await self._run_quality_gates(
+                ws_path,
+                tool_executor,
+                tool_history,
+                status,
+            )
+
+            # Step 5: If tests fail, ask LLM to fix
+            failures = [g for g in gate_results if not g["passed"]]
+            if failures:
+                await status(f"{len(failures)} gate(s) failed — asking LLM to fix")
+                fix_content = await self._ask_for_fixes(
+                    plan_content,
+                    failures,
+                    messages,
+                    model,
+                    llm,
+                )
+                if "=== FILE:" in fix_content:
+                    await status("Applying fixes")
+                    await self._write_file_blocks(
+                        fix_content,
+                        ws_path,
+                        tool_executor,
+                        tool_history,
+                        status,
                     )
-            else:
-                response = await llm.complete(current, model, tools=tools, tool_choice="auto")
+                    await status("Re-running quality gates")
+                    await self._run_quality_gates(
+                        ws_path,
+                        tool_executor,
+                        tool_history,
+                        status,
+                    )
 
-            choices = response.get("choices", [])
-            message = choices[0].get("message", {}) if choices else {}
-            tool_calls = message.get("tool_calls")
-            if not isinstance(tool_calls, list):
-                tool_calls = []
+        # Step 6: Commit and push
+        if tool_executor and files_written > 0:
+            await status("Committing changes")
+            await tool_executor(
+                "workspace",
+                {
+                    "action": "commit",
+                    "issue_number": self._extract_issue_num(messages),
+                    "message": f"mason: implement issue (wrote {files_written} files)",
+                },
+            )
+            tool_history.append(
+                {
+                    "tool_name": "workspace",
+                    "arguments": {"action": "commit"},
+                    "result": "committed",
+                }
+            )
 
-            if not tool_calls:
-                return tool_history, message.get("content", "")
+            await status("Pushing to remote")
+            await tool_executor(
+                "workspace",
+                {
+                    "action": "push",
+                    "issue_number": self._extract_issue_num(messages),
+                },
+            )
+            tool_history.append(
+                {
+                    "tool_name": "workspace",
+                    "arguments": {"action": "push"},
+                    "result": "pushed",
+                }
+            )
+            await status("Push complete")
 
-            current.append(message)
-            for tc in tool_calls:
-                fn = tc.get("function", {})
-                tool_name = fn.get("name", "")
-                try:
-                    tool_args = json.loads(fn.get("arguments", "{}"))
-                except json.JSONDecodeError:
-                    tool_args = {}
+        await status("Pipeline complete")
 
-                await status(f"  {tool_name}...")
-                if tool_executor and callable(tool_executor):
-                    if trace:
-                        with trace.span(f"tool.{tool_name}") as ts:
-                            ts.set_input(tool_args)
-                            result = await tool_executor(tool_name, tool_args)
-                            ts.set_output({"preview": str(result)[:200]})
-                    else:
-                        result = await tool_executor(tool_name, tool_args)
-                else:
-                    result = f"Tool '{tool_name}' not available"
-
-                tool_history.append(
-                    {
-                        "tool_name": tool_name,
-                        "arguments": tool_args,
-                        "result": result,
-                    }
-                )
-                current.append(
-                    {
-                        "role": "tool",
-                        "tool_call_id": tc.get("id", ""),
-                        "content": str(result),
-                    }
-                )
-
-            await asyncio.sleep(0.5)
-
-        return tool_history, "Max tool calls reached in round"
-
-    async def _check_exit_gate(
-        self,
-        phase_name: str,
-        exit_gate: str,
-        work_summary: str,
-        model: str,
-        llm: LLMClient,
-        *,
-        trace: Trace | None = None,
-    ) -> bool:
-        """Ask the LLM whether the exit gate has been satisfied."""
-        prompt = _GATE_CHECK_PROMPT.format(
-            phase_name=phase_name,
-            exit_gate=exit_gate,
-            work_summary=work_summary[:3000],
-        )
-        gate_messages = [{"role": "user", "content": prompt}]
-
-        if trace:
-            with trace.span(f"{phase_name}.gate_check") as gs:
-                gs.set_input({"exit_gate": exit_gate})
-                response = await llm.complete(gate_messages, model)
-                content = str(
-                    response.get("choices", [{}])[0].get("message", {}).get("content", "")
-                )
-                satisfied = content.strip().upper().startswith("YES")
-                gs.set_output({"satisfied": satisfied, "response": content[:200]})
-        else:
-            response = await llm.complete(gate_messages, model)
-            content = str(response.get("choices", [{}])[0].get("message", {}).get("content", ""))
-            satisfied = content.strip().upper().startswith("YES")
-
-        verdict = "PASS" if satisfied else "FAIL"
-        logger.info("Gate check [%s]: %s -> %s", phase_name, exit_gate[:60], verdict)
-        return satisfied
-
-    async def _single_pass(
-        self,
-        messages: list[dict[str, Any]],
-        model: str,
-        llm: LLMClient,
-        *,
-        tools: list[dict[str, Any]] | None = None,
-        tool_executor: Any = None,
-        status_callback: StatusCallback = _noop_status,
-        trace: Trace | None = None,
-    ) -> ReasoningResult:
-        """Fallback: no phases configured, single ReAct loop."""
-        await status_callback("No phases configured — single pass")
-        tool_history, response = await self._react_round(
-            messages,
-            model,
-            llm,
-            tools=tools,
-            tool_executor=tool_executor,
-            status=status_callback,
-            trace=trace,
+        summary = (
+            f"## Mason Result\n\n"
+            f"Files written: {files_written}\n"
+            f"Tool calls: {len(tool_history)}\n\n"
+            f"## Plan\n{plan_content[:2000]}"
         )
         return ReasoningResult(
-            response=response,
+            response=summary,
             done=True,
             tool_history=tool_history,
         )
+
+    @staticmethod
+    async def _write_file_blocks(
+        content: str,
+        ws_path: str,
+        tool_executor: Any,
+        tool_history: list[dict[str, Any]],
+        status: StatusCallback,
+    ) -> int:
+        """Parse === FILE: path === blocks and write each file."""
+        files_written = 0
+        parts = content.split("=== FILE:")
+        for part in parts[1:]:  # skip text before first marker
+            lines = part.strip().split("\n")
+            if not lines:
+                continue
+            file_path = lines[0].strip().rstrip("=").strip()
+            # Extract code block
+            code_lines: list[str] = []
+            in_code = False
+            for line in lines[1:]:
+                if line.strip().startswith("```") and not in_code:
+                    in_code = True
+                    continue
+                if line.strip() == "```" and in_code:
+                    break
+                if in_code:
+                    code_lines.append(line)
+
+            if not code_lines or not file_path:
+                continue
+
+            file_content = "\n".join(code_lines) + "\n"
+            await status(f"  Writing {file_path}")
+            result = await tool_executor(
+                "file_ops",
+                {
+                    "action": "write",
+                    "path": file_path,
+                    "content": file_content,
+                    "workspace": ws_path,
+                },
+            )
+            tool_history.append(
+                {
+                    "tool_name": "file_ops",
+                    "arguments": {"action": "write", "path": file_path},
+                    "result": str(result)[:200],
+                }
+            )
+            files_written += 1
+            await asyncio.sleep(0.1)
+
+        return files_written
+
+    @staticmethod
+    async def _run_quality_gates(
+        ws_path: str,
+        tool_executor: Any,
+        tool_history: list[dict[str, Any]],
+        status: StatusCallback,
+    ) -> list[dict[str, Any]]:
+        """Run pytest, ruff, mypy, bandit and return results."""
+        gates = [
+            ("pytest", "run_pytest", {"workspace": ws_path, "path": "tests/ -x -q"}),
+            ("ruff check", "run_ruff_check", {"workspace": ws_path}),
+            ("mypy", "run_mypy", {"workspace": ws_path}),
+        ]
+        results: list[dict[str, Any]] = []
+        for name, tool_name, args in gates:
+            await status(f"  Running {name}")
+            result = await tool_executor(tool_name, args)
+            result_str = str(result)
+            passed = '"passed": true' in result_str or '"passed":true' in result_str
+            results.append(
+                {
+                    "gate": name,
+                    "passed": passed,
+                    "output": result_str[:1000],
+                }
+            )
+            tool_history.append(
+                {
+                    "tool_name": tool_name,
+                    "arguments": args,
+                    "result": result_str[:300],
+                }
+            )
+        return results
+
+    @staticmethod
+    async def _ask_for_fixes(
+        original_plan: str,
+        failures: list[dict[str, Any]],
+        messages: list[dict[str, Any]],
+        model: str,
+        llm: Any,
+    ) -> str:
+        """Ask LLM to fix quality gate failures."""
+        failure_text = "\n\n".join(
+            f"### {f['gate']} FAILED:\n```\n{f['output'][:500]}\n```" for f in failures
+        )
+        fix_messages = list(messages) + [
+            {
+                "role": "assistant",
+                "content": original_plan[:3000],
+            },
+            {
+                "role": "user",
+                "content": (
+                    f"The following quality gates failed:\n\n{failure_text}\n\n"
+                    "Fix the issues. Output ONLY the corrected files using "
+                    "the same === FILE: path === format."
+                ),
+            },
+        ]
+        response = await llm.complete(fix_messages, model)
+        return response.get("choices", [{}])[0].get("message", {}).get("content", "")
+
+    @staticmethod
+    def _extract_issue_num(messages: list[dict[str, Any]]) -> int:
+        """Extract issue number from messages."""
+        for m in messages:
+            content = str(m.get("content", ""))
+            if "issue #" in content.lower():
+                import re
+
+                match = re.search(r"#(\d+)", content)
+                if match:
+                    return int(match.group(1))
+        return 0
