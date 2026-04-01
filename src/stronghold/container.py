@@ -86,6 +86,7 @@ class Container:
     prompt_cache: Any = None  # RedisPromptCache (write-through cache)
     mcp_registry: Any = None  # MCPRegistry
     mcp_deployer: Any = None  # K8sDeployer
+    cost_tracker: Any = None  # InMemoryCostTracker
     conduit: Any = None  # Conduit — wired in __post_init__ or create_container
 
     def __post_init__(self) -> None:
@@ -379,6 +380,11 @@ async def create_container(config: StrongholdConfig) -> Container:
         approval_gate=approval_gate,
     )
 
+    # Cost analytics tracker
+    from stronghold.analytics.costs import InMemoryCostTracker  # noqa: PLC0415
+
+    cost_tracker = InMemoryCostTracker()
+
     # MCP server registry + K8s deployer
     from stronghold.mcp.registry import MCPRegistry  # noqa: PLC0415
 
@@ -430,6 +436,7 @@ async def create_container(config: StrongholdConfig) -> Container:
         prompt_cache=prompt_cache,
         mcp_registry=mcp_registry,
         mcp_deployer=mcp_deployer,
+        cost_tracker=cost_tracker,
     )
 
     # Conduit pipeline is auto-wired via __post_init__
