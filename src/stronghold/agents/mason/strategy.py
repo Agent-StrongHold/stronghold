@@ -70,49 +70,26 @@ class MasonStrategy:
                 done=True,
             )
 
-        await status("Reading workspace contents")
+        await status("Analyzing issue and generating code")
 
-        # Step 1: Read the codebase structure
-        file_list = ""
-        if tool_executor:
-            result = await tool_executor(
-                "file_ops",
-                {
-                    "action": "list",
-                    "path": "src/stronghold",
-                    "workspace": ws_path,
-                },
-            )
-            file_list = str(result)[:3000]
-            tool_history.append(
-                {
-                    "tool_name": "file_ops",
-                    "arguments": {"action": "list"},
-                    "result": file_list[:500],
-                }
-            )
-
-        await status("Analyzing issue and generating plan")
-
-        # Step 2: Ask LLM to analyze the issue and produce a plan with code
+        # Step 1: Ask LLM to generate code directly — no file listing needed
         plan_messages = list(messages) + [
             {
                 "role": "user",
                 "content": (
-                    f"Here are the files in the workspace:\n```\n{file_list}\n```\n\n"
-                    "Based on the issue, produce a COMPLETE implementation plan. "
-                    "For EACH file you need to create or modify, output the full "
-                    "file content in this exact format:\n\n"
+                    "Implement this issue. For EACH file you need to create "
+                    "or modify, output the COMPLETE file content using this "
+                    "exact format:\n\n"
                     "=== FILE: path/to/file.py ===\n"
                     "```python\n"
-                    "# full file content here\n"
+                    "# full file content\n"
                     "```\n\n"
-                    "=== FILE: tests/path/test_file.py ===\n"
-                    "```python\n"
-                    "# test content here\n"
-                    "```\n\n"
-                    "Write tests FIRST, then implementation. "
-                    "Include ALL files needed. Use real classes, not mocks."
+                    "Rules:\n"
+                    "- Write tests first, then implementation\n"
+                    "- Use real classes, not unittest.mock\n"
+                    "- All paths relative to repo root\n"
+                    "- Include every file needed\n"
+                    "- Be concise — output code, not explanations"
                 ),
             },
         ]

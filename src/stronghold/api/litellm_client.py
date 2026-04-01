@@ -104,7 +104,7 @@ class LiteLLMClient:
         """Try a single model. Returns response dict on success, Exception on failure."""
         body["model"] = model
         try:
-            async with httpx.AsyncClient(timeout=180.0) as client:
+            async with httpx.AsyncClient(timeout=600.0) as client:
                 resp = await client.post(
                     f"{self._base_url}/v1/chat/completions",
                     json=body,
