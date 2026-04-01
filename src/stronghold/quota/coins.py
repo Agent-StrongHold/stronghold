@@ -206,7 +206,8 @@ class PgCoinLedger:
         # User wallets are denomination-locked — must have tier >= model's tier
         user_wallets = [w for w in wallets if w["owner_type"] == "user"]
         eligible = [
-            w for w in user_wallets
+            w
+            for w in user_wallets
             if DENOMINATION_FACTORS.get(str(w["denomination"]), 1) >= model_tier
         ]
 
@@ -218,8 +219,7 @@ class PgCoinLedger:
             )
 
         affordable = [
-            w for w in eligible
-            if int(str(w["remaining_microchips"])) >= quote.charged_microchips
+            w for w in eligible if int(str(w["remaining_microchips"])) >= quote.charged_microchips
         ]
         if eligible and not affordable:
             best = max(eligible, key=lambda w: int(str(w["remaining_microchips"])))
@@ -274,8 +274,11 @@ class PgCoinLedger:
         # This spends cheaper coins first, preserving higher-tier coins for expensive models.
         user_wallets = [w for w in wallets if w["owner_type"] == "user"]
         eligible = sorted(
-            (w for w in user_wallets
-             if DENOMINATION_FACTORS.get(str(w["denomination"]), 1) >= model_tier),
+            (
+                w
+                for w in user_wallets
+                if DENOMINATION_FACTORS.get(str(w["denomination"]), 1) >= model_tier
+            ),
             key=lambda w: DENOMINATION_FACTORS.get(str(w["denomination"]), 1),
         )
         target = None
@@ -484,7 +487,9 @@ class PgCoinLedger:
         hard_limit = int(row["hard_limit_microchips"] or row["budget_microchips"] or 0)
         effective_budget = hard_limit + credited_microchips
         remaining = max(effective_budget - used_microchips, 0)
-        soft_limit = int(Decimal(str(effective_budget)) * Decimal(str(row["soft_limit_ratio"] or 0)))
+        soft_limit = int(
+            Decimal(str(effective_budget)) * Decimal(str(row["soft_limit_ratio"] or 0))
+        )
         return {
             "id": row["id"],
             "owner_type": row["owner_type"],
@@ -517,9 +522,7 @@ class PgCoinLedger:
         }
 
 
-def _resolve_denomination(
-    model_raw: dict[str, Any], base: int, in_rate: int, out_rate: int
-) -> str:
+def _resolve_denomination(model_raw: dict[str, Any], base: int, in_rate: int, out_rate: int) -> str:
     """Determine the minimum denomination required to use a model.
 
     Explicit ``coin_denomination`` in model config takes precedence.

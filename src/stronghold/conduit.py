@@ -19,6 +19,7 @@ import asyncio
 import logging
 from typing import TYPE_CHECKING, Any
 
+from stronghold.router.explainer import explain_selection
 from stronghold.types.model import ModelConfig, ProviderConfig
 from stronghold.types.reactor import Event
 
@@ -249,7 +250,8 @@ class Conduit:
         _prov_fields = {f.name for f in ProviderConfig.__dataclass_fields__.values()}
         providers_cfg: dict[str, ProviderConfig] = {
             k: ProviderConfig(**{fk: fv for fk, fv in v.items() if fk in _prov_fields})
-            if isinstance(v, dict) else v  # type: ignore[arg-type]
+            if isinstance(v, dict)
+            else v  # type: ignore[arg-type]
             for k, v in c.config.providers.items()
         }
 
@@ -305,7 +307,8 @@ class Conduit:
             _model_fields = {f.name for f in ModelConfig.__dataclass_fields__.values()}
             models: dict[str, ModelConfig] = {
                 k: ModelConfig(**{fk: fv for fk, fv in v.items() if fk in _model_fields})
-                if isinstance(v, dict) else v  # type: ignore[arg-type]
+                if isinstance(v, dict)
+                else v  # type: ignore[arg-type]
                 for k, v in c.config.models.items()
             }
             providers = routable_providers
@@ -614,6 +617,11 @@ class Conduit:
             )
         )
 
+        # Build routing explanation
+        explanation = (
+            explain_selection(selection, intent) if selection else "Fallback routing used."
+        )
+
         return self._build_response(
             response_id=f"stronghold-{intent.task_type}",
             model=model_to_use,
@@ -628,6 +636,7 @@ class Conduit:
                 "model": model_to_use,
                 "agent": agent.identity.name,
                 "reason": selection.reason if selection else "default",
+                "explanation": explanation,
             },
             include_usage=True,
         )
