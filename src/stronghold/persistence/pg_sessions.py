@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import time
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     import asyncpg
@@ -80,3 +80,25 @@ class PgSessionStore:
                 "DELETE FROM sessions WHERE session_id = $1",
                 session_id,
             )
+
+    async def list_sessions(
+        self,
+        *,
+        user_id: str,
+        org_id: str,
+        limit: int = 20,
+        offset: int = 0,
+    ) -> list[dict[str, Any]]:
+        """List sessions for a user. Stub -- requires DB migration for titles table."""
+        raise NotImplementedError("PgSessionStore.list_sessions requires DB migration")
+
+    async def search_sessions(
+        self,
+        *,
+        user_id: str,
+        org_id: str,
+        query: str,
+        limit: int = 20,
+    ) -> list[dict[str, Any]]:
+        """Search sessions for a user. Stub -- requires DB migration for full-text index."""
+        raise NotImplementedError("PgSessionStore.search_sessions requires DB migration")

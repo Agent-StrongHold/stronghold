@@ -10,6 +10,7 @@ from __future__ import annotations
 import logging
 import time
 from collections import defaultdict
+from typing import Any
 
 from stronghold.types.session import SessionConfig
 
@@ -85,6 +86,7 @@ class InMemorySessionStore:
         # {session_id: [(seq, role, content, timestamp)]}
         self._sessions: dict[str, list[tuple[int, str, str, float]]] = defaultdict(list)
         self._next_seq: dict[str, int] = defaultdict(int)
+        self._titles: dict[str, str] = {}
 
     async def get_history(
         self,
@@ -124,6 +126,13 @@ class InMemorySessionStore:
             self._next_seq[session_id] = seq + 1
             self._sessions[session_id].append((seq, role, content, now))
 
+            # Auto-generate title from first user message
+            if role == "user" and session_id not in self._titles and content:
+                title = content[:60]
+                if len(content) > 60:
+                    title += "..."
+                self._titles[session_id] = title
+
         # Prune on write
         ttl = self._config.ttl_seconds
         cutoff = now - ttl
@@ -134,3 +143,106 @@ class InMemorySessionStore:
         """Delete a session."""
         self._sessions.pop(session_id, None)
         self._next_seq.pop(session_id, None)
+        self._titles.pop(session_id, None)
+
+    def _extract_user_id(self, session_id: str) -> str:
+        """Extract user_id from session ID format: org/team/user:name."""
+        parts = session_id.split("/", 2)
+        if len(parts) < 3:
+            return ""
+        return parts[2].split(":")[0]
+
+    async def list_sessions(
+        self,
+        *,
+        user_id: str,
+        org_id: str,
+        limit: int = 20,
+        offset: int = 0,
+    ) -> list[dict[str, Any]]:
+        """List sessions for a user within an org, sorted by last message desc.
+
+        Returns list of dicts with: session_id, title, started_at,
+        last_message_at, message_count.
+        """
+        results: list[dict[str, Any]] = []
+
+        for sid, entries in self._sessions.items():
+            if not validate_session_ownership(sid, org_id):
+                continue
+            if self._extract_user_id(sid) != user_id:
+                continue
+            if not entries:
+                continue
+
+            started_at = entries[0][3]
+            last_message_at = entries[-1][3]
+            title = self._titles.get(sid, "Untitled")
+
+            results.append(
+                {
+                    "session_id": sid,
+                    "title": title,
+                    "started_at": started_at,
+                    "last_message_at": last_message_at,
+                    "message_count": len(entries),
+                }
+            )
+
+        # Sort by last_message_at descending (most recent first)
+        results.sort(key=lambda x: x["last_message_at"], reverse=True)
+
+        # Apply offset and limit
+        return results[offset : offset + limit]
+
+    async def search_sessions(
+        self,
+        *,
+        user_id: str,
+        org_id: str,
+        query: str,
+        limit: int = 20,
+    ) -> list[dict[str, Any]]:
+        """Search session content for query substring (case-insensitive).
+
+        Returns matching sessions with snippet context.
+        """
+        query_lower = query.lower()
+        results: list[dict[str, Any]] = []
+
+        for sid, entries in self._sessions.items():
+            if not validate_session_ownership(sid, org_id):
+                continue
+            if self._extract_user_id(sid) != user_id:
+                continue
+            if not entries:
+                continue
+
+            # Search all message content for the query
+            snippet = ""
+            for _seq, _role, content, _ts in entries:
+                idx = content.lower().find(query_lower)
+                if idx >= 0:
+                    # Build snippet: up to 40 chars before and after match
+                    start = max(0, idx - 40)
+                    end = min(len(content), idx + len(query) + 40)
+                    snippet = content[start:end]
+                    break
+
+            if not snippet:
+                continue
+
+            title = self._titles.get(sid, "Untitled")
+            results.append(
+                {
+                    "session_id": sid,
+                    "title": title,
+                    "snippet": snippet,
+                    "last_message_at": entries[-1][3],
+                    "message_count": len(entries),
+                }
+            )
+
+        # Sort by recency
+        results.sort(key=lambda x: x["last_message_at"], reverse=True)
+        return results[:limit]

@@ -196,6 +196,35 @@ class SessionStore(Protocol):
         """Delete a session."""
         ...
 
+    async def list_sessions(
+        self,
+        *,
+        user_id: str,
+        org_id: str,
+        limit: int = 20,
+        offset: int = 0,
+    ) -> list[dict[str, Any]]:
+        """List sessions for a user within an org, sorted by recency.
+
+        Returns list of dicts with: session_id, title, agent, started_at,
+        last_message_at, message_count.
+        """
+        ...
+
+    async def search_sessions(
+        self,
+        *,
+        user_id: str,
+        org_id: str,
+        query: str,
+        limit: int = 20,
+    ) -> list[dict[str, Any]]:
+        """Search session content for a user within an org.
+
+        Returns matching sessions with snippet context.
+        """
+        ...
+
 
 @runtime_checkable
 class AuditLog(Protocol):

@@ -115,3 +115,25 @@ class RedisSessionStore:
         if "/" not in session_id:
             return
         await self._redis.delete(self._key(session_id))
+
+    async def list_sessions(
+        self,
+        *,
+        user_id: str,
+        org_id: str,
+        limit: int = 20,
+        offset: int = 0,
+    ) -> list[dict[str, Any]]:
+        """List sessions for a user. Stub -- requires Redis SCAN + metadata keys."""
+        raise NotImplementedError("RedisSessionStore.list_sessions not yet implemented")
+
+    async def search_sessions(
+        self,
+        *,
+        user_id: str,
+        org_id: str,
+        query: str,
+        limit: int = 20,
+    ) -> list[dict[str, Any]]:
+        """Search sessions for a user. Stub -- requires Redis Search module."""
+        raise NotImplementedError("RedisSessionStore.search_sessions not yet implemented")

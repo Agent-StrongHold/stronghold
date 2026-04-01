@@ -225,6 +225,48 @@ class FakeRateLimiter:
         pass
 
 
+class FakeSessionStore:
+    """Fake session store that satisfies the SessionStore protocol."""
+
+    async def get_history(
+        self,
+        session_id: str,
+        max_messages: int | None = None,
+        ttl_seconds: int | None = None,
+    ) -> list[dict[str, str]]:
+        return []
+
+    async def append_messages(
+        self,
+        session_id: str,
+        messages: list[dict[str, str]],
+    ) -> None:
+        pass
+
+    async def delete_session(self, session_id: str) -> None:
+        pass
+
+    async def list_sessions(
+        self,
+        *,
+        user_id: str,
+        org_id: str,
+        limit: int = 20,
+        offset: int = 0,
+    ) -> list[dict[str, Any]]:
+        return []
+
+    async def search_sessions(
+        self,
+        *,
+        user_id: str,
+        org_id: str,
+        query: str,
+        limit: int = 20,
+    ) -> list[dict[str, Any]]:
+        return []
+
+
 class FakeAuthProvider:
     """Fake auth provider that always returns system auth."""
 

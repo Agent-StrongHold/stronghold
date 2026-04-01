@@ -5,7 +5,7 @@ from __future__ import annotations
 import re
 from typing import Any
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import JSONResponse
 
 from stronghold.sessions.store import validate_session_ownership
@@ -57,34 +57,35 @@ def _validate_session_id(session_id: str) -> None:
 
 
 @router.get("/v1/stronghold/sessions")
-async def list_sessions(request: Request) -> JSONResponse:
-    """List active sessions, scoped to caller's org."""
+async def list_sessions(
+    request: Request,
+    limit: int = Query(default=20, ge=1, le=100),
+    offset: int = Query(default=0, ge=0),
+) -> JSONResponse:
+    """List conversations for the authenticated user, sorted by recency."""
     auth, container = await _authenticate(request)
     store = container.session_store
 
-    # Use protocol method if available, fall back to InMemory internals
-    if hasattr(store, "list_sessions"):
-        sessions = await store.list_sessions(org_id=auth.org_id)
-        return JSONResponse(content=sessions)
-
-    # InMemory fallback — access internal dict (only works for InMemorySessionStore)
-    internal = getattr(store, "_sessions", None)
-    if internal is None:
-        return JSONResponse(content=[])
-
-    sessions = []
-    for sid, entries in internal.items():
-        # Org isolation: only show sessions belonging to caller's org
-        if not validate_session_ownership(sid, auth.org_id):
-            continue
-        sessions.append(
-            {
-                "session_id": sid,
-                "message_count": len(entries),
-                "last_activity": entries[-1][3] if entries else 0,
-            }
-        )
+    sessions = await store.list_sessions(
+        user_id=auth.user_id, org_id=auth.org_id, limit=limit, offset=offset
+    )
     return JSONResponse(content=sessions)
+
+
+@router.get("/v1/stronghold/sessions/search")
+async def search_sessions(
+    request: Request,
+    q: str = Query(..., min_length=1, description="Search query"),
+    limit: int = Query(default=20, ge=1, le=100),
+) -> JSONResponse:
+    """Search conversation content for the authenticated user."""
+    auth, container = await _authenticate(request)
+    store = container.session_store
+
+    results = await store.search_sessions(
+        user_id=auth.user_id, org_id=auth.org_id, query=q, limit=limit
+    )
+    return JSONResponse(content=results)
 
 
 @router.get("/v1/stronghold/sessions/{session_id:path}")
