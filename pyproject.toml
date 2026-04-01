@@ -41,6 +41,8 @@ dev = [
     "pre-commit>=4.0.0",
     "coverage>=7.0.0",
     "types-regex>=2024.0.0",
+    "types-PyYAML>=6.0.0",
+    "respx>=0.22.0",
 ]
 
 [tool.setuptools.packages.find]
