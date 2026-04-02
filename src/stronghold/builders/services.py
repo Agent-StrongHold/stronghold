@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 from uuid import uuid4
 
-from stronghold.builders.contracts import ArtifactRef, StageEvent
+if TYPE_CHECKING:
+    from stronghold.builders.contracts import ArtifactRef, StageEvent
 
 
 @dataclass(frozen=True)
@@ -58,30 +60,32 @@ class InMemoryArtifactStore:
     """Durable artifact ref store for Builders."""
 
     def __init__(self) -> None:
-        self._artifacts: dict[str, ArtifactRef] = {}
+        self._artifacts: dict[str, "ArtifactRef"] = {}
 
-    def store(self, artifact: ArtifactRef) -> ArtifactRef:
+    def store(self, artifact: "ArtifactRef") -> "ArtifactRef":
         self._artifacts[artifact.artifact_id] = artifact
         return artifact
 
-    def get(self, artifact_id: str) -> ArtifactRef:
+    def get(self, artifact_id: str) -> "ArtifactRef":
         return self._artifacts[artifact_id]
 
-    def list_for_run(self, run_id: str) -> list[ArtifactRef]:
+    def list_for_run(self, run_id: str) -> list["ArtifactRef"]:
         prefix = f"runs/{run_id}/"
-        return [artifact for artifact in self._artifacts.values() if artifact.path.startswith(prefix)]
+        return [
+            artifact for artifact in self._artifacts.values() if artifact.path.startswith(prefix)
+        ]
 
 
 class InMemoryEventBus:
     """Simple event collector for Builders lifecycle events."""
 
     def __init__(self) -> None:
-        self._events: list[StageEvent] = []
+        self._events: list["StageEvent"] = []
 
-    def emit(self, event: StageEvent) -> None:
+    def emit(self, event: "StageEvent") -> None:
         self._events.append(event)
 
-    def list_events(self, *, run_id: str | None = None) -> list[StageEvent]:
+    def list_events(self, *, run_id: str | None = None) -> list["StageEvent"]:
         if run_id is None:
             return list(self._events)
         return [event for event in self._events if event.run_id == run_id]
@@ -135,10 +139,16 @@ class InMemoryGitHubService:
         return update
 
     def list_issue_updates(self, *, run_id: str) -> list[IssueUpdate]:
-        updates = [update for (stored_run_id, _), update in self._issue_updates.items() if stored_run_id == run_id]
+        updates = [
+            update
+            for (stored_run_id, _), update in self._issue_updates.items()
+            if stored_run_id == run_id
+        ]
         return sorted(updates, key=lambda item: item.stage)
 
-    def open_pr(self, *, run_id: str, repo: str, branch: str, title: str, body: str) -> PullRequestRef:
+    def open_pr(
+        self, *, run_id: str, repo: str, branch: str, title: str, body: str
+    ) -> PullRequestRef:
         pr = PullRequestRef(
             pr_number=self._next_pr_number,
             run_id=run_id,
@@ -151,7 +161,9 @@ class InMemoryGitHubService:
         self._next_pr_number += 1
         return pr
 
-    def update_pr(self, pr_number: int, *, title: str | None = None, body: str | None = None) -> PullRequestRef:
+    def update_pr(
+        self, pr_number: int, *, title: str | None = None, body: str | None = None
+    ) -> PullRequestRef:
         current = self._prs[pr_number]
         updated = PullRequestRef(
             pr_number=current.pr_number,

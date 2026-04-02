@@ -7,8 +7,16 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
+from typing import TYPE_CHECKING, cast
 
-from stronghold.builders.contracts import ArtifactRef, RunRequest, RunResult, RunStatus, StageEvent, WorkerName
+if TYPE_CHECKING:
+    from stronghold.builders.contracts import (
+        ArtifactRef,
+        RunRequest,
+        RunResult,
+    )
+
+from stronghold.builders.contracts import RunRequest, RunStatus, StageEvent, WorkerName
 
 _ALLOWED_STAGE_TRANSITIONS: dict[str, tuple[str, ...]] = {
     "queued": ("issue_analyzed",),
@@ -69,7 +77,9 @@ class BuildersOrchestrator:
             "v1": RuntimeVersionState(version="v1", state="ready")
         }
 
-    def register_runtime_version(self, version: str, *, state: str = "ready") -> RuntimeVersionState:
+    def register_runtime_version(
+        self, version: str, *, state: str = "ready"
+    ) -> RuntimeVersionState:
         runtime = RuntimeVersionState(version=version, state=state)
         self._runtime_versions[version] = runtime
         return runtime
@@ -81,7 +91,11 @@ class BuildersOrchestrator:
 
     def select_runtime_version(self) -> str:
         ready_versions = sorted(
-            [runtime.version for runtime in self._runtime_versions.values() if runtime.state == "ready"]
+            [
+                runtime.version
+                for runtime in self._runtime_versions.values()
+                if runtime.state == "ready"
+            ]
         )
         if not ready_versions:
             raise ValueError("no ready runtime version available")
@@ -91,7 +105,8 @@ class BuildersOrchestrator:
         return sum(
             1
             for run in self._runs.values()
-            if run.runtime_version == version and run.status not in {RunStatus.PASSED, RunStatus.FAILED, RunStatus.BLOCKED}
+            if run.runtime_version == version
+            and run.status not in {RunStatus.PASSED, RunStatus.FAILED, RunStatus.BLOCKED}
         )
 
     def create_run(
@@ -123,7 +138,7 @@ class BuildersOrchestrator:
                 stage=initial_stage,
                 event="run_created",
                 actor="system",
-                message=f"Run created for issue #{issue_number} on runtime {assigned_runtime_version}",
+                message=f"Created run #{issue_number} on runtime {assigned_runtime_version}",
             )
         )
         self._runs[run_id] = run
@@ -288,19 +303,30 @@ class BuildersOrchestrator:
         """Restore run state from persisted payload."""
         self._runs = {}
         for item in payload:
+            from stronghold.builders.contracts import ArtifactRef, StageEvent
+
             run = RunState(
                 run_id=str(item["run_id"]),
                 repo=str(item["repo"]),
-                issue_number=int(item["issue_number"]),
+                issue_number=int(str(cast("str", item.get("issue_number", "0")))),
                 branch=str(item["branch"]),
                 workspace_ref=str(item["workspace_ref"]),
                 current_stage=str(item["current_stage"]),
                 current_worker=WorkerName(str(item["current_worker"])),
                 runtime_version=str(item.get("runtime_version", "v1")),
                 status=RunStatus(str(item["status"])),
-                artifacts=[ArtifactRef.model_validate(artifact) for artifact in item["artifacts"]],  # type: ignore[arg-type]
-                events=[StageEvent.model_validate(event) for event in item["events"]],  # type: ignore[arg-type]
-                retries={str(k): int(v) for k, v in dict(item.get("retries", {})).items()},
+                artifacts=[
+                    ArtifactRef.model_validate(artifact)
+                    for artifact in list(cast("list[object]", item.get("artifacts", [])))
+                ],
+                events=[
+                    StageEvent.model_validate(event)
+                    for event in list(cast("list[object]", item.get("events", [])))
+                ],
+                retries={
+                    str(k): int(str(v))
+                    for k, v in dict(cast("dict[str, object]", item.get("retries", {}))).items()
+                },
             )
             run.updated_at = _utc_now()
             self._runs[run.run_id] = run
