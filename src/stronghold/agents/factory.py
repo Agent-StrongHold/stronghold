@@ -149,6 +149,7 @@ def _build_identity_from_manifest(manifest: dict[str, Any]) -> AgentIdentity:
         max_tool_rounds=reasoning.get("max_subtasks", reasoning.get("max_rounds", 3)),
         reasoning_strategy=reasoning.get("strategy", "direct"),
         memory_config=manifest.get("memory", {}),
+        phases=tuple(reasoning.get("phases", ())),
     )
 
 
@@ -202,6 +203,16 @@ def _register_custom_strategies() -> None:
         from stronghold.agents.strategies.delegate import DelegateStrategy  # noqa: PLC0415
 
         register_strategy("delegate", DelegateStrategy)
+    except ImportError:
+        pass
+
+    # Builders learning strategy (Frank, Mason, Auditor)
+    try:
+        from stronghold.agents.strategies.builders_learning import (
+            BuildersLearningStrategy,
+        )  # noqa: PLC0415
+
+        register_strategy("builders_learning", BuildersLearningStrategy)
     except ImportError:
         pass
 

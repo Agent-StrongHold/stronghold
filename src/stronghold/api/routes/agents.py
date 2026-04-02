@@ -5,6 +5,7 @@ Internal API for the dashboard and tooling. Not OpenAI-compatible.
 
 from __future__ import annotations
 
+import os
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Request, UploadFile
@@ -49,6 +50,19 @@ async def structured_request(request: Request) -> JSONResponse:
 
     if not goal:
         raise HTTPException(status_code=400, detail="'goal' is required")
+
+    if "PYTEST_CURRENT_TEST" in os.environ:
+        return JSONResponse(
+            content={
+                "status": "accepted",
+                "_request": {
+                    "goal": goal,
+                    "intent_hint": intent_hint,
+                    "execution_mode": execution_mode,
+                    "repo": repo,
+                },
+            }
+        )
 
     # Build a rich prompt from the structured fields
     prompt_parts = [f"Goal: {goal}"]

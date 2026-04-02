@@ -394,12 +394,12 @@ class TestTriggersRateLimitEviction:
 
 
 class TestTriggerRegistrationCount:
-    """Confirm all 7 core triggers are registered."""
+    """Confirm all 10 core triggers are registered."""
 
-    def test_registers_seven_triggers(self) -> None:
+    def test_registers_ten_triggers(self) -> None:
         container = _build_container()
         register_core_triggers(container)
-        assert len(container.reactor._triggers) == 7
+        assert len(container.reactor._triggers) == 10
 
 
 # ═══════════════════════════════════════════════════════════════════
