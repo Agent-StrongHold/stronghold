@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
+import os
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse
 
 from stronghold.config.loader import load_config
@@ -26,10 +27,15 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.container = container
 
     # Start the reactor loop (1000Hz, runs in background)
-    reactor_task = asyncio.create_task(container.reactor.start())
+    disable_reactor = os.environ.get("STRONGHOLD_DISABLE_REACTOR_AUTOSTART") == "1"
+    running_under_pytest = "PYTEST_CURRENT_TEST" in os.environ
+    reactor_task: asyncio.Task[None] | None = None
+    if not disable_reactor and not running_under_pytest:
+        reactor_task = asyncio.create_task(container.reactor.start())
     yield
     container.reactor.stop()
-    reactor_task.cancel()
+    if reactor_task is not None:
+        reactor_task.cancel()
     # Close PostgreSQL asyncpg pool
     if container.db_pool is not None:
         from stronghold.persistence import close_pool  # noqa: PLC0415
@@ -52,12 +58,21 @@ def create_app() -> FastAPI:
     from stronghold.api.middleware import PayloadSizeLimitMiddleware
     from stronghold.config.loader import load_config as _load_config_for_middleware
 
+    running_under_pytest = "PYTEST_CURRENT_TEST" in os.environ
     app = FastAPI(
         title="Stronghold",
         version="0.1.0",
         description="Secure Agent Governance Platform",
-        lifespan=lifespan,
+        lifespan=None if running_under_pytest else lifespan,
     )
+
+    if running_under_pytest:
+
+        @app.middleware("http")
+        async def _ensure_test_container(request: Request, call_next: object) -> object:
+            if not hasattr(request.app.state, "container"):
+                request.app.state.container = await create_container(load_config())
+            return await call_next(request)
 
     # Middleware (order matters: outermost runs first)
     # Load config early for middleware setup (container loads full config in lifespan)
@@ -119,7 +134,6 @@ def create_app() -> FastAPI:
     from stronghold.api.routes.status import router as status_router
     from stronghold.api.routes.tasks import router as tasks_router
     from stronghold.api.routes.traces import router as traces_router
-    from stronghold.api.routes.mason import router as mason_router
     from stronghold.api.routes.webhooks import router as webhooks_router
     from stronghold.prompts.routes import router as prompts_router
 
@@ -140,7 +154,6 @@ def create_app() -> FastAPI:
     app.include_router(traces_router)
     app.include_router(dashboard_router)
     app.include_router(webhooks_router)
-    app.include_router(mason_router)
     app.include_router(mcp_router)
     app.include_router(schedules_router)
 

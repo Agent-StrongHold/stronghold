@@ -215,22 +215,6 @@ def _register_custom_strategies() -> None:
     except ImportError:
         pass
 
-    # Frank strategy (architect — planning + tests)
-    try:
-        from stronghold.agents.frank.strategy import FrankStrategy  # noqa: PLC0415
-
-        register_strategy("frank", FrankStrategy)
-    except ImportError:
-        pass
-
-    # Mason strategy (builder — implementation)
-    try:
-        from stronghold.agents.mason.strategy import MasonStrategy  # noqa: PLC0415
-
-        register_strategy("mason", MasonStrategy)
-    except ImportError:
-        pass
-
 
 def _instantiate(identity: AgentIdentity, **deps: Any) -> Agent:
     """Create an Agent runtime object from identity + shared deps."""

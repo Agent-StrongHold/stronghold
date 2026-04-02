@@ -57,6 +57,7 @@ class WardenVerdict:
     blocked: bool = False
     flags: tuple[str, ...] = ()
     confidence: float = 1.0
+    reasoning_trace: str | None = None
 
 
 @dataclass(frozen=True)

@@ -131,15 +131,17 @@ class GitHubToolExecutor:
                     break
                 for i in batch:
                     is_pr = "pull_request" in i
-                    all_issues.append({
-                        "number": i["number"],
-                        "title": i["title"],
-                        "state": i["state"],
-                        "labels": [lb["name"] for lb in i.get("labels", [])],
-                        "assignee": (i.get("assignee") or {}).get("login"),
-                        "is_pr": is_pr,
-                        "created_at": i.get("created_at", ""),
-                    })
+                    all_issues.append(
+                        {
+                            "number": i["number"],
+                            "title": i["title"],
+                            "state": i["state"],
+                            "labels": [lb["name"] for lb in i.get("labels", [])],
+                            "assignee": (i.get("assignee") or {}).get("login"),
+                            "is_pr": is_pr,
+                            "created_at": i.get("created_at", ""),
+                        }
+                    )
                 if len(batch) < int(params["per_page"]):
                     break
                 page += 1

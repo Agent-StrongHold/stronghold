@@ -490,12 +490,4 @@ async def create_container(config: StrongholdConfig) -> Container:
 
     register_core_triggers(container)
 
-    # Mason queue + API wiring
-    from stronghold.agents.mason.queue import InMemoryMasonQueue  # noqa: PLC0415
-    from stronghold.api.routes.mason import configure_mason_router  # noqa: PLC0415
-
-    mason_queue = InMemoryMasonQueue()
-    configure_mason_router(mason_queue, reactor, container)
-    container.mason_queue = mason_queue  # type: ignore[attr-defined]
-
     return container

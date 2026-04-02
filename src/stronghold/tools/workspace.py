@@ -18,6 +18,7 @@ import logging
 import os
 import shutil
 import subprocess
+import tempfile
 from pathlib import Path
 from typing import Any
 
@@ -25,7 +26,7 @@ from stronghold.types.tool import ToolDefinition, ToolResult
 
 logger = logging.getLogger("stronghold.tools.workspace")
 
-WORKSPACE_ROOT = Path(os.environ.get("STRONGHOLD_WORKSPACE", "/workspace"))
+DEFAULT_WORKSPACE_ROOT = Path(os.environ.get("STRONGHOLD_WORKSPACE", "/workspace"))
 
 WORKSPACE_TOOL_DEF = ToolDefinition(
     name="workspace",
@@ -56,13 +57,28 @@ class WorkspaceManager:
     """Manages git repos and worktrees for Mason."""
 
     def __init__(self) -> None:
-        self._base = WORKSPACE_ROOT
-        self._base.mkdir(parents=True, exist_ok=True)
+        self._base = self._resolve_base_dir()
         self._repos: dict[str, Path] = {}
 
     @property
     def name(self) -> str:
         return "workspace"
+
+    @staticmethod
+    def _resolve_base_dir() -> Path:
+        """Prefer configured root, but fall back to a writable temp location."""
+        candidates = [
+            DEFAULT_WORKSPACE_ROOT,
+            Path(tempfile.gettempdir()) / "stronghold-workspace",
+        ]
+        for candidate in candidates:
+            try:
+                candidate.mkdir(parents=True, exist_ok=True)
+                return candidate
+            except OSError:
+                logger.warning("Workspace root unavailable: %s", candidate)
+        msg = "No writable workspace root available"
+        raise RuntimeError(msg)
 
     async def execute(self, arguments: dict[str, Any]) -> ToolResult:
         action = arguments.get("action", "")
