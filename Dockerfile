@@ -6,7 +6,9 @@ FROM python:3.12-slim AS builder
 WORKDIR /build
 COPY pyproject.toml .
 COPY src/ src/
-RUN pip install --no-cache-dir --prefix=/install .
+# Mason's workspace validation depends on the dev quality tools existing
+# in the runtime image: pytest, ruff, mypy, and bandit.
+RUN pip install --no-cache-dir --prefix=/install ".[dev]"
 
 FROM python:3.12-slim
 
