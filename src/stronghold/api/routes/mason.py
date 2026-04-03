@@ -15,23 +15,135 @@ import hmac
 import json
 import logging
 import os
+from dataclasses import dataclass, field
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 
 if TYPE_CHECKING:
-    from stronghold.agents.mason.queue import InMemoryMasonQueue
-    from stronghold.events import Reactor
+    pass
 
 logger = logging.getLogger("stronghold.api.mason")
 
 router = APIRouter(tags=["mason"])
 
 
+from enum import Enum
+
+
+class IssueStatus(str, Enum):
+    QUEUED = "queued"
+    IN_PROGRESS = "in_progress"
+    COMPLETED = "completed"
+    FAILED = "failed"
+
+
+@dataclass
+class MasonQueueItem:
+    issue_number: int
+    title: str = ""
+    owner: str = ""
+    repo: str = ""
+    status: IssueStatus = IssueStatus.QUEUED
+    pr_number: int | None = None
+    error: str | None = None
+    started_at: Any = None
+    completed_at: Any = None
+    logs: list[str] = field(default_factory=list)
+
+
+class InMemoryMasonQueue:
+    def __init__(self) -> None:
+        self._issues: dict[int, MasonQueueItem] = {}
+
+    def assign(
+        self, issue_number: int, title: str = "", owner: str = "", repo: str = ""
+    ) -> MasonQueueItem:
+        if issue_number in self._issues:
+            existing = self._issues[issue_number]
+            if existing.status == IssueStatus.FAILED:
+                existing.status = IssueStatus.QUEUED
+                existing.error = None
+            return existing
+        item = MasonQueueItem(
+            issue_number=issue_number,
+            title=title,
+            owner=owner,
+            repo=repo,
+        )
+        self._issues[issue_number] = item
+        return item
+
+    def start(self, issue_number: int) -> None:
+        import datetime
+
+        if issue_number in self._issues:
+            self._issues[issue_number].status = IssueStatus.IN_PROGRESS
+            self._issues[issue_number].started_at = datetime.datetime.now(datetime.timezone.utc)
+
+    def complete(self, issue_number: int, pr_number: int | None = None) -> None:
+        import datetime
+
+        if issue_number in self._issues:
+            self._issues[issue_number].status = IssueStatus.COMPLETED
+            self._issues[issue_number].pr_number = pr_number
+            self._issues[issue_number].completed_at = datetime.datetime.now(datetime.timezone.utc)
+
+    def fail(self, issue_number: int, error: str = "") -> None:
+        if issue_number in self._issues:
+            self._issues[issue_number].status = IssueStatus.FAILED
+            self._issues[issue_number].error = error
+
+    def add_log(self, issue_number: int, message: str) -> None:
+        if issue_number in self._issues:
+            self._issues[issue_number].logs.append(message)
+
+    def next_pending(self) -> MasonQueueItem | None:
+        for item in self._issues.values():
+            if item.status == IssueStatus.QUEUED:
+                return item
+        return None
+
+    def has_pending(self) -> bool:
+        return any(item.status == IssueStatus.QUEUED for item in self._issues.values())
+
+    def list_all(self) -> list[dict[str, Any]]:
+        return [
+            {
+                "issue_number": item.issue_number,
+                "title": item.title,
+                "owner": item.owner,
+                "repo": item.repo,
+                "status": item.status.value,
+            }
+            for item in self._issues.values()
+        ]
+
+    def status(self) -> dict[str, Any]:
+        current = None
+        for item in self._issues.values():
+            if item.status == IssueStatus.IN_PROGRESS:
+                current = {
+                    "issue_number": item.issue_number,
+                    "title": item.title,
+                }
+                break
+        counts = {"queued": 0, "in_progress": 0, "completed": 0, "failed": 0}
+        for item in self._issues.values():
+            key = item.status.value
+            if key in counts:
+                counts[key] += 1
+        return {"total": len(self._issues), "current": current, "counts": counts}
+
+    def __len__(self) -> int:
+        return len(self._issues)
+
+
 def configure_mason_router(
-    queue: InMemoryMasonQueue,
-    reactor: Reactor,
+    queue: Any,
+    reactor: Any,
     container: Any = None,
 ) -> None:
     """Bind the Mason queue, reactor, and container to the router."""
@@ -44,12 +156,12 @@ def configure_mason_router(
 _state: dict[str, Any] = {}
 
 
-def _queue() -> InMemoryMasonQueue:
-    return _state["queue"]  # type: ignore[return-value]
+def _queue() -> Any:
+    return _state["queue"]
 
 
-def _reactor() -> Reactor:
-    return _state["reactor"]  # type: ignore[return-value]
+def _reactor() -> Any:
+    return _state["reactor"]
 
 
 @router.post("/v1/stronghold/mason/assign")
@@ -275,12 +387,11 @@ async def scan_codebase() -> JSONResponse:
     """
     from pathlib import Path
 
-    from stronghold.agents.mason.scanner import (
+    from stronghold.tools.scanner import (
         format_as_github_issue,
         scan_for_good_first_issues,
     )
 
-    # Try repo root (dev), fall back to /app (container)
     candidate = Path(__file__).resolve().parents[4]
     project_root = candidate if (candidate / "tests").is_dir() else Path("/app")
     suggestions = scan_for_good_first_issues(project_root)
@@ -311,7 +422,7 @@ async def create_scanned_issues(request: Request) -> JSONResponse:
     """
     from pathlib import Path
 
-    from stronghold.agents.mason.scanner import (
+    from stronghold.tools.scanner import (
         format_as_github_issue,
         scan_for_good_first_issues,
     )

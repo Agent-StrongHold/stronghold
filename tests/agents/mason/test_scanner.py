@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from stronghold.agents.mason.scanner import (
+from stronghold.tools.scanner import (
     IssueSuggestion,
     detect_missing_docstrings,
     detect_missing_fakes,

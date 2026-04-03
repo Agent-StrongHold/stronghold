@@ -19,7 +19,8 @@ GITHUB_TOOL_DEF = ToolDefinition(
     name="github",
     description=(
         "GitHub operations: list issues, get issue details, create branches, "
-        "create PRs, get PR diffs, post/read PR comments."
+        "create PRs, get PR diffs, post/read PR comments, list issue comment, "
+        "search issues, get linked issues."
     ),
     parameters={
         "type": "object",
@@ -34,6 +35,9 @@ GITHUB_TOOL_DEF = ToolDefinition(
                     "get_pr_diff",
                     "post_pr_comment",
                     "list_pr_comments",
+                    "list_issue_comments",
+                    "search_issues",
+                    "get_linked_issues",
                 ],
                 "description": "The GitHub operation to perform.",
             },
@@ -54,6 +58,7 @@ GITHUB_TOOL_DEF = ToolDefinition(
                 "enum": ["open", "closed", "all"],
                 "description": "Issue state filter.",
             },
+            "query": {"type": "string", "description": "Search query for search_issues action."},
         },
         "required": ["action", "owner", "repo"],
     },
@@ -77,7 +82,6 @@ class GitHubToolExecutor:
         return "github"
 
     async def execute(self, arguments: dict[str, Any]) -> ToolResult:
-        """Dispatch to the appropriate GitHub API method."""
         action = arguments.get("action", "")
         try:
             handler = self._handlers.get(action)
@@ -102,7 +106,7 @@ class GitHubToolExecutor:
         return headers
 
     async def _list_issues(self, args: dict[str, Any]) -> list[dict[str, Any]]:
-        import httpx  # noqa: PLC0415
+        import httpx
 
         owner, repo = args["owner"], args["repo"]
         params: dict[str, str] = {
@@ -149,7 +153,7 @@ class GitHubToolExecutor:
         return all_issues
 
     async def _get_issue(self, args: dict[str, Any]) -> dict[str, Any]:
-        import httpx  # noqa: PLC0415
+        import httpx
 
         owner, repo = args["owner"], args["repo"]
         number = args["issue_number"]
@@ -162,22 +166,21 @@ class GitHubToolExecutor:
             issue = resp.json()
             return {
                 "number": issue["number"],
-                "title": issue["title"],
+                "title": issue.get("title", ""),
                 "body": issue.get("body", ""),
-                "state": issue["state"],
+                "state": issue.get("state", ""),
                 "labels": [lb["name"] for lb in issue.get("labels", [])],
                 "assignee": (issue.get("assignee") or {}).get("login"),
             }
 
     async def _create_branch(self, args: dict[str, Any]) -> dict[str, str]:
-        import httpx  # noqa: PLC0415
+        import httpx
 
         owner, repo = args["owner"], args["repo"]
         branch = args["branch"]
         base = args.get("base", "main")
 
         async with httpx.AsyncClient(timeout=30.0) as client:
-            # Get base branch SHA
             resp = await client.get(
                 f"{self._base_url}/repos/{owner}/{repo}/git/ref/heads/{base}",
                 headers=self._headers(),
@@ -185,7 +188,6 @@ class GitHubToolExecutor:
             resp.raise_for_status()
             sha = resp.json()["object"]["sha"]
 
-            # Create new branch
             resp = await client.post(
                 f"{self._base_url}/repos/{owner}/{repo}/git/refs",
                 headers=self._headers(),
@@ -195,7 +197,7 @@ class GitHubToolExecutor:
             return {"branch": branch, "sha": sha, "status": "created"}
 
     async def _create_pr(self, args: dict[str, Any]) -> dict[str, Any]:
-        import httpx  # noqa: PLC0415
+        import httpx
 
         owner, repo = args["owner"], args["repo"]
         async with httpx.AsyncClient(timeout=30.0) as client:
@@ -218,7 +220,7 @@ class GitHubToolExecutor:
             }
 
     async def _get_pr_diff(self, args: dict[str, Any]) -> dict[str, str]:
-        import httpx  # noqa: PLC0415
+        import httpx
 
         owner, repo = args["owner"], args["repo"]
         number = args["issue_number"]
@@ -231,7 +233,7 @@ class GitHubToolExecutor:
             return {"diff": resp.text}
 
     async def _post_pr_comment(self, args: dict[str, Any]) -> dict[str, Any]:
-        import httpx  # noqa: PLC0415
+        import httpx
 
         owner, repo = args["owner"], args["repo"]
         number = args["issue_number"]
@@ -246,7 +248,7 @@ class GitHubToolExecutor:
             return {"id": comment["id"], "url": comment["html_url"]}
 
     async def _list_pr_comments(self, args: dict[str, Any]) -> list[dict[str, Any]]:
-        import httpx  # noqa: PLC0415
+        import httpx
 
         owner, repo = args["owner"], args["repo"]
         number = args["issue_number"]
@@ -267,7 +269,7 @@ class GitHubToolExecutor:
             ]
 
     async def _create_issue(self, args: dict[str, Any]) -> dict[str, Any]:
-        import httpx  # noqa: PLC0415
+        import httpx
 
         owner, repo = args["owner"], args["repo"]
         body: dict[str, Any] = {
@@ -292,6 +294,94 @@ class GitHubToolExecutor:
                 "state": issue["state"],
             }
 
+    async def _list_issue_comments(self, args: dict[str, Any]) -> list[dict[str, Any]]:
+        import httpx
+
+        owner, repo = args["owner"], args["repo"]
+        number = args["issue_number"]
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            resp = await client.get(
+                f"{self._base_url}/repos/{owner}/{repo}/issues/{number}/comments",
+                headers=self._headers(),
+            )
+            resp.raise_for_status()
+            return [
+                {
+                    "id": c["id"],
+                    "user": c["user"]["login"],
+                    "body": c["body"],
+                    "created_at": c["created_at"],
+                }
+                for c in resp.json()
+            ]
+
+    async def _search_issues(self, args: dict[str, Any]) -> dict[str, Any]:
+        import httpx
+
+        owner, repo = args["owner"], args["repo"]
+        query = args.get("query", "")
+        scoped_query = f"repo:{owner}/{repo} {query}"
+        params: dict[str, str] = {"q": scoped_query, "per_page": str(args.get("per_page", 30))}
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            resp = await client.get(
+                f"{self._base_url}/search/issues",
+                headers=self._headers(),
+                params=params,
+            )
+            resp.raise_for_status()
+            data = resp.json()
+            return {
+                "total_count": data.get("total_count", 0),
+                "items": [
+                    {
+                        "number": item["number"],
+                        "title": item["title"],
+                        "state": item["state"],
+                        "html_url": item["html_url"],
+                        "is_pr": "pull_request" in item,
+                    }
+                    for item in data.get("items", [])
+                ],
+            }
+
+    async def _get_linked_issues(self, args: dict[str, Any]) -> list[dict[str, Any]]:
+        import httpx
+
+        owner, repo = args["owner"], args["repo"]
+        number = args["issue_number"]
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            resp = await client.get(
+                f"{self._base_url}/repos/{owner}/{repo}/issues/{number}/timeline",
+                headers={
+                    **self._headers(),
+                    "Accept": "application/vnd.github.mockingbird+json",
+                },
+            )
+            resp.raise_for_status()
+            events = resp.json()
+            linked = []
+            link_events = {"connected", "cross-referenced"}
+            for event in events:
+                event_type = event.get("event", "")
+                if event_type not in link_events:
+                    continue
+                source = event.get("source", {})
+                if not source:
+                    continue
+                issue = source.get("issue", {})
+                if not issue:
+                    continue
+                linked.append(
+                    {
+                        "number": issue["number"],
+                        "title": issue.get("title", ""),
+                        "state": issue.get("state", ""),
+                        "html_url": issue.get("html_url", ""),
+                        "is_pr": "pull_request" in issue,
+                    }
+                )
+            return linked
+
     _handlers: dict[str, Any] = {
         "list_issues": _list_issues,
         "get_issue": _get_issue,
@@ -301,4 +391,7 @@ class GitHubToolExecutor:
         "get_pr_diff": _get_pr_diff,
         "post_pr_comment": _post_pr_comment,
         "list_pr_comments": _list_pr_comments,
+        "list_issue_comments": _list_issue_comments,
+        "search_issues": _search_issues,
+        "get_linked_issues": _get_linked_issues,
     }

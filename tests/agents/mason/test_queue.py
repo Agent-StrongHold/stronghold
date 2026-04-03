@@ -5,7 +5,7 @@ Uses real classes, no mocks.
 
 from __future__ import annotations
 
-from stronghold.agents.mason.queue import (
+from stronghold.api.routes.mason import (
     InMemoryMasonQueue,
     IssueStatus,
 )

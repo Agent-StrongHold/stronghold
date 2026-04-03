@@ -11,8 +11,12 @@ import hmac
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from stronghold.agents.mason.queue import InMemoryMasonQueue
-from stronghold.api.routes.mason import _verify_signature, configure_mason_router, router
+from stronghold.api.routes.mason import (
+    InMemoryMasonQueue,
+    _verify_signature,
+    configure_mason_router,
+    router,
+)
 from stronghold.events import Reactor
 
 
@@ -38,7 +42,7 @@ class TestAssignEndpoint:
         )
         assert resp.status_code == 200
         assert resp.json()["status"] == "assigned"
-        assert queue.has_pending()
+        assert len(queue) > 0
 
     def test_missing_issue_number(self) -> None:
         client, _, _ = _build_app()

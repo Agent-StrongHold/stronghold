@@ -105,6 +105,106 @@ _TOOL_SCHEMAS: dict[str, dict[str, object]] = {
             "required": ["message"],
         },
     },
+    "file_ops": {
+        "description": "File operations: read, write, list, mkdir, exists in workspace sandbox.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "action": {"type": "string", "enum": ["read", "write", "list", "mkdir", "exists"]},
+                "path": {"type": "string"},
+                "content": {"type": "string"},
+                "workspace": {"type": "string"},
+            },
+            "required": ["action", "path", "workspace"],
+        },
+    },
+    "shell": {
+        "description": "Execute shell command in workspace.",
+        "parameters": {
+            "type": "object",
+            "properties": {"command": {"type": "string"}, "workspace": {"type": "string"}},
+            "required": ["command", "workspace"],
+        },
+    },
+    "workspace": {
+        "description": "Manage git worktrees: create, status, commit, push, cleanup.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "action": {
+                    "type": "string",
+                    "enum": ["create", "status", "commit", "push", "cleanup"],
+                },
+                "repo": {"type": "string"},
+                "issue_number": {"type": "integer"},
+                "message": {"type": "string"},
+                "branch": {"type": "string"},
+            },
+            "required": ["action"],
+        },
+    },
+    "github": {
+        "description": "GitHub API: list_issues, get_issue, create_issue, create_branch, create_pr, etc.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "action": {"type": "string"},
+                "owner": {"type": "string"},
+                "repo": {"type": "string"},
+                "issue_number": {"type": "integer"},
+                "title": {"type": "string"},
+                "body": {"type": "string"},
+                "head": {"type": "string"},
+                "base": {"type": "string"},
+                "labels": {"type": "array", "items": {"type": "string"}},
+                "comment": {"type": "string"},
+            },
+            "required": ["action"],
+        },
+    },
+    "run_pytest": {
+        "description": "Run pytest test suite.",
+        "parameters": {
+            "type": "object",
+            "properties": {"path": {"type": "string"}, "workspace": {"type": "string"}},
+        },
+    },
+    "run_ruff_check": {
+        "description": "Run ruff linter.",
+        "parameters": {
+            "type": "object",
+            "properties": {"path": {"type": "string"}, "workspace": {"type": "string"}},
+        },
+    },
+    "run_ruff_format": {
+        "description": "Check ruff formatting.",
+        "parameters": {
+            "type": "object",
+            "properties": {"path": {"type": "string"}, "workspace": {"type": "string"}},
+        },
+    },
+    "run_mypy": {
+        "description": "Run mypy type checker.",
+        "parameters": {
+            "type": "object",
+            "properties": {"path": {"type": "string"}, "workspace": {"type": "string"}},
+        },
+    },
+    "run_bandit": {
+        "description": "Run bandit security scanner.",
+        "parameters": {
+            "type": "object",
+            "properties": {"path": {"type": "string"}, "workspace": {"type": "string"}},
+        },
+    },
+    "git": {
+        "description": "Run git command in workspace.",
+        "parameters": {
+            "type": "object",
+            "properties": {"command": {"type": "string"}, "workspace": {"type": "string"}},
+            "required": ["command"],
+        },
+    },
 }
 
 
