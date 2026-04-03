@@ -1,7 +1,7 @@
 # Stronghold Backlog
 
 **Last Updated:** 2026-03-31
-**Status:** Pre-v1.0 — Phases 1-4 complete + 3 security audits + 1 live red team done
+**Status:** Pre-v1.0 — Phases 1-4 complete + 3 security audits + 1 live siege done
 
 ---
 
@@ -72,9 +72,9 @@
 
 ## What's Left for v1.0
 
-### Infrastructure Security (2026-03-31 red team — live attack on running stack)
+### Infrastructure Security (2026-03-31 siege — live attack on running stack)
 
-These findings are from a live red team exercise against the running Stronghold stack.
+These findings are from a live siege exercise against the running Stronghold stack.
 They target the **deployment/infrastructure layer**, not application code — prior code
 audits did not cover these. Many of these are the highest-severity findings because they
 bypass all application-level security controls.
@@ -89,7 +89,7 @@ bypass all application-level security controls.
 
 - [ ] **R4: Real API keys in `.env` on disk** — 6 production API keys (Cerebras, Mistral, Google, Perplexity, LiteLLM master, Router) in cleartext. `.gitignore` correctly excludes `.env`, and `.env` was never committed to git history, but the file is readable by any process on the host. **Fix:** use Docker secrets or a secrets manager (Vault, SOPS). For immediate mitigation: `chmod 600 .env`, rotate all keys. (`.env`)
 
-- [ ] **R5: PostgreSQL weak password on `0.0.0.0:5432`** — user `stronghold`, password `stronghold`, port exposed on all interfaces. Any host on the network can connect and dump all 17 tables (users, sessions, agents, audit_log, learnings, permissions, etc.). During red team, successfully dumped all 6 user records including emails, roles, org IDs. **Fix:** generate strong random password (32+ chars), bind port to `127.0.0.1:5432:5432` or remove port binding entirely (stronghold service connects via Docker DNS `postgres:5432`). (`docker-compose.yml:42-44,49`)
+- [ ] **R5: PostgreSQL weak password on `0.0.0.0:5432`** — user `stronghold`, password `stronghold`, port exposed on all interfaces. Any host on the network can connect and dump all 17 tables (users, sessions, agents, audit_log, learnings, permissions, etc.). During siege, successfully dumped all 6 user records including emails, roles, org IDs. **Fix:** generate strong random password (32+ chars), bind port to `127.0.0.1:5432:5432` or remove port binding entirely (stronghold service connects via Docker DNS `postgres:5432`). (`docker-compose.yml:42-44,49`)
 
 - [ ] **R6: All API keys visible in container environment** — `docker exec stronghold env` reveals all 6 API keys. Any code execution inside the container (via tool dispatch, skill forge, agent creation) can read them. **Fix:** use Docker secrets (mounted as files), not env vars. Stronghold only needs `ROUTER_API_KEY` and `LITELLM_MASTER_KEY` — don't pass provider keys (Cerebras, Mistral, Google, Perplexity) to the app container; LiteLLM handles those. (`docker-compose.yml:15`, `.env`)
 
@@ -97,7 +97,7 @@ bypass all application-level security controls.
 
 - [ ] **R7: OpenAPI schema exposed without auth** — `/docs`, `/redoc`, `/openapi.json` all return 200 with full API schema (100+ endpoints, request/response schemas, auth requirements). Gave the attacker a complete attack surface map. Rate limiter explicitly exempts these paths. **Fix:** in production, set `docs_url=None, redoc_url=None, openapi_url=None` in FastAPI constructor, or gate behind auth. Use env var toggle: `STRONGHOLD_DOCS_ENABLED=false`. (`api/app.py:55-60`, `middleware/rate_limit.py:29`)
 
-- [ ] **R8: Static API key grants SYSTEM_AUTH (all admin roles)** — `ROUTER_API_KEY` maps to `SYSTEM_AUTH` with roles `{admin, org_admin, team_admin, user}`. During red team, this single key was used to: list all users with PII, create malicious agents, access audit logs, forge skills, invoke chat completions consuming provider credits. **Fix:** implement API key scoping — create read-only keys, user-level keys, and admin keys. SYSTEM_AUTH should only be used for internal service-to-service calls (pipelines → stronghold), not external API access. (`security/auth_static.py:50`, `types/auth.py:103-110`)
+- [ ] **R8: Static API key grants SYSTEM_AUTH (all admin roles)** — `ROUTER_API_KEY` maps to `SYSTEM_AUTH` with roles `{admin, org_admin, team_admin, user}`. During siege, this single key was used to: list all users with PII, create malicious agents, access audit logs, forge skills, invoke chat completions consuming provider credits. **Fix:** implement API key scoping — create read-only keys, user-level keys, and admin keys. SYSTEM_AUTH should only be used for internal service-to-service calls (pipelines → stronghold), not external API access. (`security/auth_static.py:50`, `types/auth.py:103-110`)
 
 - [ ] **R9: Missing global security headers** — no HSTS, X-Frame-Options, X-Content-Type-Options, Referrer-Policy on any endpoint. CSP exists but only on dashboard routes. **Fix:** add `SecurityHeadersMiddleware` in `app.py` that sets these on ALL responses. (`api/app.py`)
     ```
@@ -110,7 +110,7 @@ bypass all application-level security controls.
 
 - [ ] **R10: CORS `Access-Control-Allow-Credentials: true` without origin restriction at runtime** — config defaults are safe (`localhost:3200`), but the running instance returned `allow-credentials: true` for any `Origin` header. Enables CSRF-via-CORS for any website to make authenticated requests using a user's browser session. **Fix:** verify CORS origins match the runtime config; ensure Starlette's `CORSMiddleware` isn't reflecting arbitrary origins when `allow_credentials=True`. Check if `cors_origins` in config is empty (which may cause the middleware to reflect any origin). (`api/app.py:66-80`, `types/config.py:52-69`)
 
-- [ ] **R11: Agent creation accepts arbitrary tool names without validation** — during red team, created an agent with tools `[shell_exec, file_read, env_dump]` (none exist). No check against `tool_registry`. While non-existent tools would fail at execution time, the agent persists in DB and is visible to all users, polluting the agent namespace. **Fix:** validate tool names against `container.tool_registry` in the create endpoint. Reject unknown tools with 400. (`api/routes/agents.py:225`)
+- [ ] **R11: Agent creation accepts arbitrary tool names without validation** — during siege, created an agent with tools `[shell_exec, file_read, env_dump]` (none exist). No check against `tool_registry`. While non-existent tools would fail at execution time, the agent persists in DB and is visible to all users, polluting the agent namespace. **Fix:** validate tool names against `container.tool_registry` in the create endpoint. Reject unknown tools with 400. (`api/routes/agents.py:225`)
 
 - [ ] **R12: LiteLLM AppArmor disabled** — `security_opt: apparmor:unconfined`. Required for async workers, but should be reviewed. **Fix:** create a custom AppArmor profile that allows async operations but restricts filesystem/network access. (`docker-compose.yml:88-89`)
 
@@ -124,7 +124,7 @@ bypass all application-level security controls.
 
 - [ ] **R16: Health endpoint leaks internal state** — `/health` returns `{"db": "connected", "llm": "reachable"}` without auth. Useful for attackers to confirm service topology. **Fix:** return only `{"status": "ok"}` for unauthenticated requests; full details behind auth. (`api/routes/status.py`)
 
-- [ ] **R17: Demo JWT signed with router API key (HS256)** — already tracked as H5 in code audit. Confirmed exploitable during red team: anyone with the API key can forge session cookies for any user. The key is only 24 chars (see R14). **Cross-ref:** H5 in code audit section below.
+- [ ] **R17: Demo JWT signed with router API key (HS256)** — already tracked as H5 in code audit. Confirmed exploitable during siege: anyone with the API key can forge session cookies for any user. The key is only 24 chars (see R14). **Cross-ref:** H5 in code audit section below.
 
 #### RED-CRITICAL (Wave 2-3 — deeper exploitation)
 
@@ -381,7 +381,7 @@ bypass all application-level security controls.
 ## Session Log
 
 ### 2026-03-28: Initial Build Sprint
-- Built Phases 1-3.5, 4 deep reviews, 1 red team, 1 OWASP audit
+- Built Phases 1-3.5, 4 deep reviews, 1 siege, 1 OWASP audit
 - 819 → 1043 tests, ~25 bugs fixed
 
 ### 2026-03-28: Security Hardening + Tooling

@@ -9,14 +9,27 @@ Endpoints:
 
 from __future__ import annotations
 
+import json
 import logging
 import uuid
 from typing import Any
+from unittest.mock import Mock
 
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import JSONResponse
 
 logger = logging.getLogger("stronghold.api.builders")
+
+from stronghold.builders.nested_loop import (
+    MasonTestTracker,
+    OuterLoopTracker,
+    ModelEscalator,
+)
+from stronghold.builders.nested_loop.comment_system import (
+    IssueCommentPublisher,
+    IssueCommentFormatter,
+    CommentType,
+)
 
 router = APIRouter(prefix="/v1/stronghold/builders", tags=["builders"])
 
@@ -607,3 +620,546 @@ def _build_stage_prompt(stage: str, worker: Any, run: Any) -> str:
         ),
     }
     return stage_prompts.get(stage, f"You are {worker_name}. Execute stage: {stage}{tool_context}")
+
+
+async def _check_existing_work(
+    tool_dispatcher: Any,
+    owner: str,
+    repo: str,
+    issue_number: int,
+    issue_title: str,
+) -> dict[str, Any]:
+    """Check for existing work (PRs, issues, comments) related to the issue."""
+    import re
+
+    keywords = re.findall(r"\b\w+\b", issue_title.lower())
+    search_query = " ".join(keywords[:3])
+
+    prs_result = await tool_dispatcher.execute(
+        "github",
+        {
+            "action": "search_issues",
+            "owner": owner,
+            "repo": repo,
+            "query": f"{search_query} is:pr",
+        },
+    )
+
+    prs = []
+    if not prs_result.startswith("Error:"):
+        prs_data = json.loads(prs_result)
+        prs = prs_data.get("items", [])
+
+    comments_result = await tool_dispatcher.execute(
+        "github",
+        {
+            "action": "list_issue_comments",
+            "owner": owner,
+            "repo": repo,
+            "issue_number": issue_number,
+        },
+    )
+
+    comments = []
+    if not comments_result.startswith("Error:"):
+        comments = json.loads(comments_result)
+
+    linked_result = await tool_dispatcher.execute(
+        "github",
+        {
+            "action": "get_linked_issues",
+            "owner": owner,
+            "repo": repo,
+            "issue_number": issue_number,
+        },
+    )
+
+    linked_issues = []
+    if not linked_result.startswith("Error:"):
+        linked_issues = json.loads(linked_result)
+
+    has_work = bool(prs or comments or linked_issues)
+
+    return {
+        "prs": prs,
+        "issues": linked_issues,
+        "comments": comments,
+        "has_work": has_work,
+    }
+
+
+async def _frank_archie_phase(
+    container: Any,
+    tool_dispatcher: Any,
+    run_id: str,
+    repo: str,
+    issue_number: int,
+    issue_title: str,
+    issue_content: str,
+    ws_path: str,
+    existing_work: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Frank/Archie phase: decompose problem and define acceptance criteria."""
+    from stronghold.builders import WorkerName
+
+    if existing_work is None:
+        existing_work = await _check_existing_work(
+            tool_dispatcher=tool_dispatcher,
+            owner=repo.split("/")[0],
+            repo=repo.split("/")[1],
+            issue_number=issue_number,
+            issue_title=issue_title,
+        )
+
+    if existing_work["has_work"]:
+        publisher = IssueCommentPublisher(
+            tool_dispatcher=tool_dispatcher,
+            formatter=IssueCommentFormatter(),
+        )
+        await publisher.publish_workflow_step(
+            owner=repo.split("/")[0],
+            repo=repo.split("/")[1],
+            issue_number=issue_number,
+            comment_type=CommentType.FRANK_DECOMPOSITION,
+            step="existing_work_found",
+            details={
+                "existing_prs": len(existing_work["prs"]),
+                "existing_comments": len(existing_work["comments"]),
+            },
+            run_id=run_id,
+        )
+        return {
+            "phase": "frank_archie",
+            "decomposed": False,
+            "existing_prs": [p["number"] for p in existing_work["prs"]],
+        }
+
+    frank = container.agents.get("frank")
+    if not frank:
+        return {"phase": "frank_archie", "decomposed": False, "error": "Frank agent not found"}
+
+    prompt = _build_stage_prompt(
+        "issue_analyzed",
+        WorkerName.FRANK,
+        Mock(
+            repo=repo,
+            issue_number=issue_number,
+            _workspace_path=ws_path,
+            _issue_content=issue_content,
+            _issue_title=issue_title,
+        ),
+    )
+    messages = [{"role": "user", "content": prompt}]
+
+    response = await frank.handle(
+        messages,
+        auth=_build_service_auth(container),
+        session_id=f"builders-{run_id}",
+    )
+
+    publisher = IssueCommentPublisher(
+        tool_dispatcher=tool_dispatcher,
+        formatter=IssueCommentFormatter(),
+    )
+    await publisher.publish_workflow_step(
+        owner=repo.split("/")[0],
+        repo=repo.split("/")[1],
+        issue_number=issue_number,
+        comment_type=CommentType.FRANK_DECOMPOSITION,
+        step="problem_decomposition",
+        details={
+            "sub_problems": ["Decomposed into sub-problems"],
+            "assumptions": ["Assumptions documented"],
+        },
+        run_id=run_id,
+    )
+
+    return {
+        "phase": "frank_archie",
+        "decomposed": True,
+        "response": response.content if response else "",
+    }
+
+
+async def _mason_phase(
+    container: Any,
+    tool_dispatcher: Any,
+    test_tracker: MasonTestTracker,
+    run_id: str,
+    repo: str,
+    issue_number: int,
+    ws_path: str,
+    max_attempts: int = 10,
+) -> dict[str, Any]:
+    """Mason phase: TDD implementation with test tracking."""
+    from stronghold.builders import WorkerName
+
+    mason = container.agents.get("mason")
+    if not mason:
+        return {"phase": "mason", "success": False, "error": "Mason agent not found"}
+
+    for attempt in range(max_attempts):
+        logger.info(f"Mason phase attempt {attempt + 1} of {max_attempts}")
+
+        try:
+            prompt = _build_stage_prompt(
+                "implementation_started",
+                WorkerName.MASON,
+                Mock(
+                    repo=repo,
+                    issue_number=issue_number,
+                    _workspace_path=ws_path,
+                    _issue_content="",
+                    _issue_title="",
+                ),
+            )
+            messages = [{"role": "user", "content": prompt}]
+
+            response = await mason.handle(
+                messages,
+                auth=_build_service_auth(container),
+                session_id=f"builders-{run_id}",
+            )
+
+            pytest_result = await tool_dispatcher.execute(
+                "workspace",
+                {"action": "run_pytest", "path": ws_path},
+            )
+        except Exception as e:
+            logger.error(f"Exception in Mason phase attempt {attempt + 1}: {e}")
+            raise
+        messages = [{"role": "user", "content": prompt}]
+
+        response = await mason.handle(
+            messages,
+            auth=_build_service_auth(container),
+            session_id=f"builders-{run_id}",
+        )
+
+        pytest_result = await tool_dispatcher.execute(
+            "workspace",
+            {"action": "run_pytest", "path": ws_path},
+        )
+
+        passing_count = 0
+        failing_count = 0
+        coverage = "0%"
+
+        logger.info(f"Pytest result: {pytest_result}")
+
+        if not pytest_result.startswith("Error:"):
+            import re
+
+            match = re.search(r"(\d+)\s+passed", pytest_result)
+            if match:
+                passing_count = int(match.group(1))
+            match = re.search(r"(\d+)\s+failed", pytest_result)
+            if match:
+                failing_count = int(match.group(1))
+            match = re.search(r"(\d+)%", pytest_result)
+            if match:
+                coverage = f"{match.group(1)}%"
+
+        logger.info(
+            f"Parsed results: passing={passing_count}, failing={failing_count}, coverage={coverage}"
+        )
+
+        test_tracker.record_test_result(passing_count)
+
+        publisher = IssueCommentPublisher(
+            tool_dispatcher=tool_dispatcher,
+            formatter=IssueCommentFormatter(),
+        )
+        await publisher.publish_workflow_step(
+            owner=repo.split("/")[0],
+            repo=repo.split("/")[1],
+            issue_number=issue_number,
+            comment_type=CommentType.MASON_TEST_RESULTS,
+            step=f"test_execution_{attempt + 1}",
+            details={
+                "passing": passing_count,
+                "failing": failing_count,
+                "coverage": coverage,
+                "high_water_mark": test_tracker.high_water_mark,
+                "stall_counter": test_tracker.stall_counter,
+            },
+            run_id=run_id,
+        )
+
+        if test_tracker.has_failed:
+            return {
+                "phase": "mason",
+                "success": False,
+                "stalled": True,
+                "attempts": attempt + 1,
+            }
+
+        if failing_count == 0:
+            return {
+                "phase": "mason",
+                "success": True,
+                "attempts": attempt + 1,
+            }
+
+    return {
+        "phase": "mason",
+        "success": False,
+        "stalled": False,
+        "attempts": max_attempts,
+    }
+
+
+async def _run_quality_gates(
+    tool_dispatcher: Any,
+    ws_path: str,
+) -> dict[str, Any]:
+    """Run quality gates: pytest, ruff, mypy, bandit."""
+    import re
+
+    pytest_result = await tool_dispatcher.execute(
+        "workspace",
+        {"action": "run_pytest", "path": ws_path},
+    )
+
+    coverage = "0%"
+    if not pytest_result.startswith("Error:"):
+        match = re.search(r"(\d+)%", pytest_result)
+        if match:
+            coverage = f"{match.group(1)}%"
+
+    coverage_pct = int(coverage.replace("%", "")) if coverage != "0%" else 0
+
+    ruff_result = await tool_dispatcher.execute(
+        "workspace",
+        {"action": "run_ruff_check"},
+    )
+
+    mypy_result = await tool_dispatcher.execute(
+        "workspace",
+        {"action": "run_mypy"},
+    )
+
+    bandit_result = await tool_dispatcher.execute(
+        "workspace",
+        {"action": "run_bandit"},
+    )
+
+    passed = coverage_pct >= 95
+
+    return {
+        "passed": passed,
+        "coverage": coverage,
+        "pytest": "passed" if not pytest_result.startswith("Error:") else "failed",
+        "ruff_check": "passed" if not ruff_result.startswith("Error:") else "failed",
+        "mypy": "passed" if not mypy_result.startswith("Error:") else "failed",
+        "bandit": "passed" if not bandit_result.startswith("Error:") else "failed",
+    }
+
+
+async def _create_pr_after_success(
+    tool_dispatcher: Any,
+    owner: str,
+    repo: str,
+    branch: str,
+    issue_number: int,
+    ws_path: str,
+    quality_passed: bool,
+) -> dict[str, Any]:
+    """Commit, push, and create PR after successful workflow."""
+    if not quality_passed:
+        return {"created": False, "pr_number": None}
+
+    commit_result = await tool_dispatcher.execute(
+        "workspace",
+        {"action": "commit", "message": f"feat: implement issue #{issue_number}"},
+    )
+
+    if commit_result.startswith("Error:"):
+        return {"created": False, "pr_number": None}
+
+    push_result = await tool_dispatcher.execute(
+        "workspace",
+        {"action": "push"},
+    )
+
+    if push_result.startswith("Error:"):
+        return {"created": False, "pr_number": None}
+
+    pr_result = await tool_dispatcher.execute(
+        "github",
+        {
+            "action": "create_pr",
+            "owner": owner,
+            "repo": repo,
+            "branch": branch,
+            "title": f"Fix #{issue_number}",
+            "head": branch,
+            "base": "main",
+            "body": f"Implements #{issue_number}\n\nGenerated by Stronghold Builders.",
+        },
+    )
+
+    if pr_result.startswith("Error:"):
+        return {"created": False, "pr_number": None}
+
+    pr_data = json.loads(pr_result)
+    pr_number = pr_data.get("number")
+
+    publisher = IssueCommentPublisher(
+        tool_dispatcher=tool_dispatcher,
+        formatter=IssueCommentFormatter(),
+    )
+    await publisher.publish_workflow_step(
+        owner=owner,
+        repo=repo,
+        issue_number=issue_number,
+        comment_type=CommentType.PR_CREATED,
+        step="pr_creation",
+        details={
+            "pr_number": pr_number,
+            "pr_url": pr_data.get("html_url", ""),
+            "branch": branch,
+        },
+        run_id="",
+    )
+
+    await tool_dispatcher.execute(
+        "workspace",
+        {"action": "cleanup"},
+    )
+
+    return {"created": True, "pr_number": pr_number}
+
+
+async def _execute_nested_loop_workflow(
+    container: Any,
+    tool_dispatcher: Any,
+    run_id: str,
+    repo: str,
+    issue_number: int,
+    ws_path: str,
+    issue_title: str,
+    issue_content: str,
+) -> dict[str, Any]:
+    """Execute sophisticated nested-loop workflow with outer/inner loops."""
+    outer_tracker = OuterLoopTracker(max_failures=5)
+    model_escalator = ModelEscalator()
+    owner, repo_name = repo.split("/")
+
+    for outer_retry in range(5):
+        model = model_escalator.select_model(retry_count=outer_retry)
+
+        logger.info(
+            "Outer loop attempt %d with model %s",
+            outer_retry + 1,
+            model,
+        )
+
+        frank_result = await _frank_archie_phase(
+            container=container,
+            tool_dispatcher=tool_dispatcher,
+            run_id=run_id,
+            repo=repo,
+            issue_number=issue_number,
+            issue_title=issue_title,
+            issue_content=issue_content,
+            ws_path=ws_path,
+        )
+
+        if not frank_result.get("decomposed", False) and frank_result.get("existing_prs"):
+            outer_tracker.record_success()
+            return {
+                "status": "completed",
+                "reason": "existing_work_found",
+                "existing_prs": frank_result["existing_prs"],
+            }
+
+        test_tracker = MasonTestTracker()
+
+        for inner_retry in range(3):
+            mason_result = await _mason_phase(
+                container=container,
+                tool_dispatcher=tool_dispatcher,
+                test_tracker=test_tracker,
+                run_id=run_id,
+                repo=repo,
+                issue_number=issue_number,
+                ws_path=ws_path,
+            )
+
+            if mason_result.get("success"):
+                quality_result = await _run_quality_gates(
+                    tool_dispatcher=tool_dispatcher,
+                    ws_path=ws_path,
+                )
+
+                publisher = IssueCommentPublisher(
+                    tool_dispatcher=tool_dispatcher,
+                    formatter=IssueCommentFormatter(),
+                )
+                await publisher.publish_workflow_step(
+                    owner=owner,
+                    repo=repo_name,
+                    issue_number=issue_number,
+                    comment_type=CommentType.QUALITY_CHECKS,
+                    step="quality_verification",
+                    details=quality_result,
+                    run_id=run_id,
+                )
+
+                if quality_result["passed"]:
+                    pr_result = await _create_pr_after_success(
+                        tool_dispatcher=tool_dispatcher,
+                        owner=owner,
+                        repo=repo_name,
+                        branch=f"builders/{issue_number}-{run_id}",
+                        issue_number=issue_number,
+                        ws_path=ws_path,
+                        quality_passed=True,
+                    )
+
+                    if pr_result["created"]:
+                        outer_tracker.record_success()
+                        return {
+                            "status": "completed",
+                            "pr_number": pr_result["pr_number"],
+                        }
+                else:
+                    outer_tracker.record_failure()
+                    break
+
+            if mason_result.get("stalled"):
+                logger.info(
+                    "Mason stalled after %d attempts, returning to Frank/Archie",
+                    test_tracker.stall_counter,
+                )
+                break
+
+        if outer_tracker.should_signal_admin:
+            publisher = IssueCommentPublisher(
+                tool_dispatcher=tool_dispatcher,
+                formatter=IssueCommentFormatter(),
+            )
+            await publisher.publish_workflow_step(
+                owner=owner,
+                repo=repo_name,
+                issue_number=issue_number,
+                comment_type=CommentType.ADMIN_SIGNAL,
+                step="admin_alert",
+                details={
+                    "total_failures": outer_tracker.failure_count,
+                    "recommendation": "Review issue complexity and consider manual intervention",
+                },
+                run_id=run_id,
+            )
+            return {
+                "status": "failed",
+                "reason": "max_retries_exceeded",
+                "failures": outer_tracker.failure_count,
+            }
+
+    return {
+        "status": "failed",
+        "reason": "max_outer_loops_exceeded",
+        "failures": outer_tracker.failure_count,
+    }

@@ -1,4 +1,4 @@
-# Blue Team Fine-Tuning Dataset Specification
+# Ramparts Fine-Tuning Dataset Specification
 
 **Version:** 0.1.0
 **Purpose:** Training data schema for Stronghold's Warden Layer 3 — a fine-tuned model that redirects injection attempts to correct behavior instead of refusing.
@@ -404,8 +404,8 @@ NOT a redirect — admin has legitimate access.
 3. Operator-reported false positives → correction examples
 4. Target: 1000 real-world examples per quarter
 
-### Phase 3: Adversarial Red Team (v1.1 prep)
-1. Hire red team to attack Stronghold with novel techniques
+### Phase 3: Adversarial Siege (v1.1 prep)
+1. Hire siege team to attack Stronghold with novel techniques
 2. Successful attacks → new positive examples with correct redirects
 3. Target: 500 adversarial examples
 

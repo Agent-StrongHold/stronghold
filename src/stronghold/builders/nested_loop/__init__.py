@@ -32,7 +32,7 @@ class MasonTestTracker:
         if passing_count > self.high_water_mark:
             self.high_water_mark = passing_count
             self.stall_counter = 0
-        elif passing_count < self.high_water_mark:
+        else:
             self.stall_counter += 1
 
         if self.stall_counter >= 10 and not self.has_failed:

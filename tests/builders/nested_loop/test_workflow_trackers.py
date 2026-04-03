@@ -46,7 +46,7 @@ class TestMasonTestTracker:
         tracker.record_test_result(passing_count=5)
         tracker.record_test_result(passing_count=8)
         tracker.record_test_result(passing_count=10)
-        assert tracker.stall_counter == 2
+        assert tracker.stall_counter == 3
 
     def test_triggers_failure_after_10_consecutive_stalls(self) -> None:
         tracker = MasonTestTracker()
