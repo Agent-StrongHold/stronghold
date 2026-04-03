@@ -1,4 +1,4 @@
-"""PostgreSQL persistence layer."""
+"""PostgreSQL and Redis persistence layer."""
 
 from __future__ import annotations
 
@@ -84,3 +84,20 @@ async def run_migrations(pool: asyncpg.Pool, migrations_dir: str = "") -> None:
                 await conn.execute(sql)
                 await conn.execute("INSERT INTO _migrations (name) VALUES ($1)", sql_file.name)
                 logger.info("Migration applied: %s", sql_file.name)
+
+
+# Redis exports
+from stronghold.persistence.redis_pool import RedisPool
+from stronghold.persistence.redis_session import RedisSessionStore
+from stronghold.persistence.redis_rate_limit import RedisRateLimiter
+from stronghold.persistence.redis_cache import RedisCache
+
+__all__ = [
+    "RedisPool",
+    "RedisSessionStore",
+    "RedisRateLimiter",
+    "RedisCache",
+    "get_pool",
+    "close_pool",
+    "run_migrations",
+]

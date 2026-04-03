@@ -66,10 +66,8 @@ class Warden:
 
         # Layer 1: Regex patterns
         # Normalize Unicode to defeat homoglyph bypass (Cyrillic lookalikes etc.)
-        # Scan first 10KB + last 2KB to catch both head and tail injection padding.
-        # Attacker technique: pad 10KB of safe text then append injection.
-        scan_window = content[:10240] + content[-2048:] if len(content) > 10240 else content
-        scan_content = unicodedata.normalize("NFKD", scan_window)
+        # Scan entire content to catch injection at any position.
+        scan_content = unicodedata.normalize("NFKD", content)
         for pattern, description in REJECT_PATTERNS:
             try:
                 if pattern.search(scan_content, timeout=_PATTERN_TIMEOUT_S):
