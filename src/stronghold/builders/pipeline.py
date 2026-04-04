@@ -132,6 +132,31 @@ class StageResult:
 class RuntimePipeline:
     """Deterministic stage executor. LLM generates content, runtime executes."""
 
+    # Model rotation for outer loop — each pass tries the next model
+    MODEL_ROTATION = [
+        "openrouter-anthropic/claude-opus-4.6",   # SWE-bench 81.4%
+        "google-gemini-3.1-pro",                   # SWE-bench 78.8%
+        "openrouter-openai/gpt-5.2-pro",          # SWE-bench 78.2%
+        "mistral-large",                            # Fast, solid fallback
+        "sambanova-deepseek-v3.2",                 # Cheap, fast, decent code
+        "cohere-command-a-reasoning-08-2025",      # Reasoning specialist
+    ]
+
+    # Per-model success tracking: {model: {"attempts": N, "criteria_passed": N}}
+    _model_stats: dict[str, dict[str, int]] = {}
+
+    @classmethod
+    def record_model_result(cls, model: str, criteria_passed: int) -> None:
+        """Track how well a model performs for prompt iteration insights."""
+        if model not in cls._model_stats:
+            cls._model_stats[model] = {"attempts": 0, "criteria_passed": 0}
+        cls._model_stats[model]["attempts"] += 1
+        cls._model_stats[model]["criteria_passed"] += criteria_passed
+
+    @classmethod
+    def get_model_stats(cls) -> dict[str, dict[str, int]]:
+        return dict(cls._model_stats)
+
     def __init__(
         self,
         llm: Any,
@@ -674,13 +699,32 @@ class RuntimePipeline:
         # Persist locked criteria on run for next outer loop pass
         run._locked_criteria = locked_criteria
 
+        # Record model performance stats
+        RuntimePipeline.record_model_result(self._mason_model, len(locked_criteria))
+        print(f"[MODEL STATS] {self._mason_model}: {len(locked_criteria)} criteria locked. All stats: {RuntimePipeline.get_model_stats()}", flush=True)
+
         # Final summary
         final_output = await self._run_pytest(ws, test_file)
         final_passing = self._count_passing(final_output)
         final_failing = self._count_failing(final_output)
 
+        # Self-improve: if we failed, record WHY in ONBOARDING.md for next run
+        if final_passing == 0 and final_failing > 0:
+            error_snippet = final_output[:500]
+            learning = ""
+            if "ImportError" in error_snippet or "ModuleNotFoundError" in error_snippet:
+                learning = f"\n\n## Learned from issue #{run.issue_number}\n\nImport error encountered: {error_snippet[:200]}\nDo NOT import from these paths.\n"
+            elif "AttributeError" in error_snippet:
+                learning = f"\n\n## Learned from issue #{run.issue_number}\n\nAttributeError: {error_snippet[:200]}\nCheck the actual API of the class before using methods.\n"
+            if learning:
+                current_onboarding = await self._read_file("ONBOARDING.md", ws)
+                if current_onboarding:
+                    await self._write_file("ONBOARDING.md", current_onboarding + learning, ws)
+                    print(f"[ONBOARDING] Updated with learning from issue #{run.issue_number}", flush=True)
+
         summary = (
             f"## TDD Complete\n\n"
+            f"**Model:** `{self._mason_model}`\n"
             f"**Criteria completed:** {criteria_completed}/{len(criteria)}\n"
             f"**Files modified:** {', '.join(f'`{f}`' for f in files_written)}\n"
             f"**Tests:** {final_passing} passed, {final_failing} failed "

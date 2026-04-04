@@ -426,6 +426,10 @@ async def _execute_one_stage(run_id: str, orch: Any, container: Any, service_aut
         return
 
     pipeline = _build_pipeline(container)
+    # Apply model override from outer loop rotation
+    model_override = getattr(run, "_mason_model_override", None)
+    if model_override:
+        pipeline._mason_model = model_override
     auditor_feedback = ""
 
     for attempt in range(1, MAX_STAGE_RETRIES + 1):
@@ -621,7 +625,15 @@ async def _execute_full_workflow(run_id: str, orch: Any, container: Any, service
     MAX_OUTER_LOOPS = 3
 
     for outer in range(MAX_OUTER_LOOPS):
-        print(f"[OUTER] Loop {outer + 1}/{MAX_OUTER_LOOPS} for run {run_id}", flush=True)
+        # Rotate mason model each outer loop
+        from stronghold.builders.pipeline import RuntimePipeline as _RP
+        rotation = _RP.MODEL_ROTATION
+        mason_model = rotation[outer % len(rotation)]
+        # Store on run so pipeline reads it
+        run = orch._runs.get(run_id)
+        if run:
+            run._mason_model_override = mason_model
+        print(f"[OUTER] Loop {outer + 1}/{MAX_OUTER_LOOPS} for run {run_id}, mason_model={mason_model}", flush=True)
 
         # Reset run to acceptance_defined if this is a retry (not the first pass)
         if outer > 0:
