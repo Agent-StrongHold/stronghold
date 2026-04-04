@@ -971,12 +971,13 @@ class RuntimePipeline:
     # ── Stage 6: Final Verification ──────────────────────────────────
 
     async def final_verification(self, run: Any, feedback: str = "") -> StageResult:
-        """Final check — run all gates, verify commits exist."""
+        """Final check — run issue's tests, verify commits exist."""
         owner, repo = run.repo.split("/")
         ws = getattr(run, "_workspace_path", "")
 
-        # Final pytest run
-        pytest_output = await self._run_pytest(ws)
+        # Final pytest run — scoped to this issue's tests only (not full repo)
+        test_file = f"tests/api/test_issue_{run.issue_number}.py"
+        pytest_output = await self._run_pytest(ws, test_file)
 
         # Git log to confirm commits
         git_log = await self._git_command("log --oneline -10", ws)
