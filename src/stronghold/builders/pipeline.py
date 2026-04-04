@@ -547,7 +547,17 @@ class RuntimePipeline:
     # ── Stage 4: Implementation ──────────────────────────────────────
 
     async def implement(self, run: Any, feedback: str = "") -> StageResult:
-        """Mason implements — run failing tests, write code to make them pass."""
+        """Mason implements with MasonTestTracker — iterate until tests pass.
+
+        Loop up to 10 times. Each iteration:
+        1. Read current test + source files
+        2. Ask LLM to write/fix implementation
+        3. Run tests, count passing
+        4. If high water mark increases → reset stall counter
+        5. If stall counter hits 10 → give up (signal back to Frank)
+        """
+        from stronghold.builders.nested_loop import MasonTestTracker
+
         owner, repo = run.repo.split("/")
         ws = getattr(run, "_workspace_path", "")
         analysis = getattr(run, "_analysis", {})
@@ -569,51 +579,89 @@ class RuntimePipeline:
             if path.startswith("src/"):
                 affected_files = [path]
             else:
-                affected_files = ["src/stronghold/api/routes/status.py"]  # sensible default
+                affected_files = ["src/stronghold/api/routes/status.py"]
 
         test_file = f"tests/api/test_issue_{run.issue_number}.py"
-
-        # Run tests to see what fails
-        pytest_output = await self._run_pytest(ws, test_file)
-
-        # Read test file
-        test_code = await self._read_file(test_file, ws)
-
-        # For each affected source file, read it and ask LLM to implement
+        tracker = MasonTestTracker()
+        last_pytest_output = ""
         files_written: list[str] = []
-        for fpath in affected_files:
-            source = await self._read_file(fpath, ws)
 
-            feedback_block = ""
-            if feedback:
-                feedback_block = f"Previous implementation rejected. Fix:\n{feedback}"
+        for attempt in range(10):
+            # Run tests to see current state
+            pytest_output = await self._run_pytest(ws, test_file)
+            last_pytest_output = pytest_output
+            passing = self._count_passing(pytest_output)
+            failing = self._count_failing(pytest_output)
 
-            template = await self._get_prompt("builders.mason.implement")
-            raw_prompt = self._render(
-                template,
-                test_code=test_code,
-                pytest_output=pytest_output[:3000],
-                file_path=fpath,
-                source_code=source,
-                issue_content=issue_content,
-                feedback_block=feedback_block,
+            print(
+                f"[MASON] Attempt {attempt + 1}/10: {passing} passed, {failing} failed, "
+                f"hwm={tracker.high_water_mark}, stalls={tracker.stall_counter}",
+                flush=True,
             )
-            prompt = self._prepend_onboarding(raw_prompt, run)
 
-            try:
-                new_source = await self._llm_extract(
-                    prompt, self._mason_model, extract_python_code, f"implementation for {fpath}",
+            # All tests pass → done
+            if failing == 0 and passing > 0:
+                logger.info("All %d tests pass — implementation complete", passing)
+                break
+
+            tracker.record_test_result(passing)
+
+            if tracker.has_failed:
+                logger.warning("Stalled after 10 non-improving attempts")
+                break
+
+            # Read test file + source, ask LLM to implement/fix
+            test_code = await self._read_file(test_file, ws)
+
+            for fpath in affected_files:
+                source = await self._read_file(fpath, ws)
+
+                template = await self._get_prompt("builders.mason.implement")
+                raw_prompt = self._render(
+                    template,
+                    test_code=test_code,
+                    pytest_output=pytest_output[:3000],
+                    file_path=fpath,
+                    source_code=source,
+                    issue_content=issue_content,
+                    feedback_block=feedback if attempt == 0 else "",
                 )
-                await self._write_file(fpath, new_source, ws)
-                files_written.append(fpath)
-            except ExtractionError as e:
-                logger.error("Failed to generate implementation for %s: %s", fpath, e)
+                prompt = self._prepend_onboarding(raw_prompt, run)
+
+                try:
+                    new_source = await self._llm_extract(
+                        prompt, self._mason_model, extract_python_code, f"impl attempt {attempt + 1}",
+                    )
+                    await self._write_file(fpath, new_source, ws)
+                    if fpath not in files_written:
+                        files_written.append(fpath)
+                except ExtractionError as e:
+                    logger.error("Failed to generate implementation for %s: %s", fpath, e)
+
+            # Also fix broken tests if they have AttributeError/TypeError (test bugs)
+            test_code_current = await self._read_file(test_file, ws)
+            test_output = await self._run_pytest(ws, test_file)
+            if "AttributeError" in test_output or "TypeError" in test_output:
+                fix_prompt = (
+                    f"This test file has runtime errors (AttributeError/TypeError):\n\n"
+                    f"```python\n{test_code_current}\n```\n\n"
+                    f"Error:\n```\n{test_output[:2000]}\n```\n\n"
+                    f"Fix the test code. Output ONLY the corrected complete file.\n"
+                )
+                try:
+                    fixed = await self._llm_extract(
+                        fix_prompt, self._mason_model, extract_python_code, "fix test bugs",
+                    )
+                    await self._write_file(test_file, fixed, ws)
+                except ExtractionError:
+                    pass
 
         if not files_written:
             return StageResult(success=False, summary="Failed to generate any implementation code")
 
-        # Re-run tests
+        # Final test run
         pytest_output_after = await self._run_pytest(ws, test_file)
+        final_passing = self._count_passing(pytest_output_after)
 
         # Commit
         await self._git_command("add -A", ws)
@@ -621,19 +669,27 @@ class RuntimePipeline:
             f'commit -m "feat: implement issue #{run.issue_number}"', ws,
         )
 
+        final_failing = self._count_failing(pytest_output_after)
+        success = final_passing > 0 and not tracker.has_failed
+
         summary = (
             f"## Implementation\n\n"
-            f"**Files modified:** {', '.join(f'`{f}`' for f in files_written)}\n\n"
-            f"**Test results after implementation:**\n```\n{pytest_output_after[:2000]}\n```\n"
+            f"**Files modified:** {', '.join(f'`{f}`' for f in files_written)}\n"
+            f"**Tests:** {final_passing} passed, {final_failing} failed "
+            f"(high water mark: {tracker.high_water_mark}, stalls: {tracker.stall_counter})\n\n"
+            f"**Pytest output:**\n```\n{pytest_output_after[:2000]}\n```\n"
         )
         await self._post_to_issue(owner, repo, run.issue_number, summary)
 
         return StageResult(
-            success=True,
+            success=success,
             summary=summary,
             evidence={
                 "files_written": files_written,
-                "pytest_before": pytest_output[:2000],
+                "tests_passing": final_passing,
+                "tests_failing": final_failing,
+                "high_water_mark": tracker.high_water_mark,
+                "stall_count": tracker.stall_counter,
                 "pytest_after": pytest_output_after[:2000],
             },
             artifacts={"files_written": files_written},
@@ -823,6 +879,21 @@ class RuntimePipeline:
         return approved, text
 
     # ── Utilities ────────────────────────────────────────────────────
+
+    @staticmethod
+    def _count_passing(pytest_output: str) -> int:
+        """Count passing tests from pytest output."""
+        import re
+        match = re.search(r"(\d+)\s+passed", pytest_output)
+        return int(match.group(1)) if match else 0
+
+    @staticmethod
+    def _count_failing(pytest_output: str) -> int:
+        """Count failing tests from pytest output."""
+        import re
+        failed = re.search(r"(\d+)\s+failed", pytest_output)
+        errors = re.search(r"(\d+)\s+error", pytest_output)
+        return (int(failed.group(1)) if failed else 0) + (int(errors.group(1)) if errors else 0)
 
     @staticmethod
     def _parse_violation_files(output: str) -> list[str]:
