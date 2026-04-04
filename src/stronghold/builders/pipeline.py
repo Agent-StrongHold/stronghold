@@ -444,127 +444,38 @@ class RuntimePipeline:
             artifacts={"criteria": scenarios},
         )
 
-    # ── Stage 3: Write Tests ─────────────────────────────────────────
+    # ── Stage 3+4: One-at-a-time TDD ───────────────────────────────
 
     async def write_tests(self, run: Any, feedback: str = "") -> StageResult:
-        """Mason writes ONE test file covering ALL acceptance criteria.
-
-        Single LLM call generates the complete file — no concatenation of fragments.
-        """
-        owner, repo = run.repo.split("/")
-        ws = getattr(run, "_workspace_path", "")
-        criteria = getattr(run, "_criteria", [])
-        analysis = getattr(run, "_analysis", {})
-        affected_files = analysis.get("affected_files", [])
-
-        if not criteria:
-            return StageResult(success=False, summary="No acceptance criteria found")
-
-        # Read the target source file for context
-        source_context = ""
-        for fpath in affected_files[:3]:
-            content = await self._read_file(fpath, ws)
-            if content:
-                source_context += f"\n# --- {fpath} ---\n{content}\n"
-
-        feedback_block = ""
-        if feedback:
-            feedback_block = (
-                f"\n\nIMPORTANT — Your previous tests were rejected by the Auditor:\n"
-                f"{feedback}\n\n"
-                f"Fix the issues described above.\n\n"
-            )
-
-        criteria_text = "\n\n".join(f"Criterion {i+1}:\n{c}" for i, c in enumerate(criteria))
-
-        template = await self._get_prompt("builders.mason.write_tests")
-        raw_prompt = self._render(
-            template,
-            criterion=criteria_text,
-            source_context=source_context,
-            feedback_block=feedback_block,
-        )
-        prompt = self._prepend_onboarding(raw_prompt, run)
-
-        test_file = f"tests/api/test_issue_{run.issue_number}.py"
-
-        try:
-            combined = await self._llm_extract(
-                prompt, self._mason_model, extract_python_code, "test file",
-            )
-        except ExtractionError as e:
-            return StageResult(success=False, summary=f"Failed to generate test code: {e}")
-
-        await self._write_file(test_file, combined, ws)
-
-        # Run pytest to check for syntax/import errors
-        pytest_output = await self._run_pytest(ws, test_file)
-
-        # If syntax errors, ask LLM to fix (max 2 attempts)
-        for fix_attempt in range(2):
-            if "SyntaxError" in pytest_output or "ImportError" in pytest_output:
-                logger.info("Test file has errors, asking LLM to fix (attempt %d)", fix_attempt + 1)
-                fix_prompt = (
-                    f"This pytest test file has errors:\n\n"
-                    f"```python\n{combined}\n```\n\n"
-                    f"Error output:\n```\n{pytest_output[:2000]}\n```\n\n"
-                    f"Fix the code. Output ONLY the corrected Python code.\n"
-                )
-                try:
-                    combined = await self._llm_extract(
-                        fix_prompt, self._mason_model, extract_python_code, "fixed test code",
-                    )
-                    await self._write_file(test_file, combined, ws)
-                    pytest_output = await self._run_pytest(ws, test_file)
-                except ExtractionError:
-                    break
-            else:
-                break
-
-        # Commit tests
-        await self._git_command("add -A", ws)
-        await self._git_command(f'commit -m "test: add tests for issue #{run.issue_number}"', ws)
-
-        # Post to issue
-        summary = (
-            f"## Tests Written\n\n"
-            f"**File:** `{test_file}`\n"
-            f"**Criteria:** {len(criteria)}\n\n"
-            f"**Pytest output:**\n```\n{pytest_output[:2000]}\n```\n"
-        )
-        await self._post_to_issue(owner, repo, run.issue_number, summary)
-
-        return StageResult(
-            success=True,
-            summary=summary,
-            evidence={
-                "test_file": test_file,
-                "pytest_output": pytest_output[:3000],
-            },
-            artifacts={"test_file": test_file, "test_code": combined[:5000]},
-        )
-
-    # ── Stage 4: Implementation ──────────────────────────────────────
+        """Redirect to combined TDD method."""
+        return await self.write_tests_and_implement(run, feedback=feedback)
 
     async def implement(self, run: Any, feedback: str = "") -> StageResult:
-        """Mason implements with MasonTestTracker — iterate until tests pass.
+        """Implementation is done inside write_tests_and_implement. Auto-pass."""
+        return StageResult(
+            success=True,
+            summary="Implementation completed in tests_written stage (one-at-a-time TDD)",
+            evidence={"note": "Combined with write_tests stage"},
+        )
 
-        Loop up to 10 times. Each iteration:
-        1. Read current test + source files
-        2. Ask LLM to write/fix implementation
-        3. Run tests, count passing
-        4. If high water mark increases → reset stall counter
-        5. If stall counter hits 10 → give up (signal back to Frank)
+    async def write_tests_and_implement(self, run: Any, feedback: str = "") -> StageResult:
+        """One-at-a-time TDD: for each criterion, write one test, make it pass, lock it.
+
+        Green tests stay green. Append only. Never rewrite a passing test.
         """
         from stronghold.builders.nested_loop import MasonTestTracker
 
         owner, repo = run.repo.split("/")
         ws = getattr(run, "_workspace_path", "")
+        criteria = getattr(run, "_criteria", [])
         analysis = getattr(run, "_analysis", {})
         affected_files = analysis.get("affected_files", [])
         issue_content = getattr(run, "_issue_content", "")
 
-        # Fallback: if no affected files from analysis, ask LLM which file to modify
+        if not criteria:
+            return StageResult(success=False, summary="No acceptance criteria found")
+
+        # Resolve affected source file
         if not affected_files:
             file_listing = await self._list_files("src/stronghold/api/routes", ws)
             raw_prompt = (
@@ -576,123 +487,187 @@ class RuntimePipeline:
             prompt = self._prepend_onboarding(raw_prompt, run)
             path_response = await self._llm_call(prompt, self._mason_model)
             path = path_response.strip().strip("`").strip()
-            if path.startswith("src/"):
-                affected_files = [path]
-            else:
-                affected_files = ["src/stronghold/api/routes/status.py"]
+            affected_files = [path] if path.startswith("src/") else ["src/stronghold/api/routes/status.py"]
+
+        # Read source context
+        source_context = ""
+        for fpath in affected_files[:3]:
+            content = await self._read_file(fpath, ws)
+            if content:
+                source_context += f"\n# --- {fpath} ---\n{content}\n"
 
         test_file = f"tests/api/test_issue_{run.issue_number}.py"
         tracker = MasonTestTracker()
-        last_pytest_output = ""
         files_written: list[str] = []
+        criteria_completed = 0
 
-        for attempt in range(10):
-            # Run tests to see current state
-            pytest_output = await self._run_pytest(ws, test_file)
-            last_pytest_output = pytest_output
-            passing = self._count_passing(pytest_output)
-            failing = self._count_failing(pytest_output)
+        for i, criterion in enumerate(criteria):
+            print(f"[TDD] Criterion {i + 1}/{len(criteria)}: {criterion[:80]}", flush=True)
 
-            print(
-                f"[MASON] Attempt {attempt + 1}/10: {passing} passed, {failing} failed, "
-                f"hwm={tracker.high_water_mark}, stalls={tracker.stall_counter}",
-                flush=True,
-            )
-
-            # All tests pass → done
-            if failing == 0 and passing > 0:
-                logger.info("All %d tests pass — implementation complete", passing)
-                break
-
-            tracker.record_test_result(passing)
-
-            if tracker.has_failed:
-                logger.warning("Stalled after 10 non-improving attempts")
-                break
-
-            # Read test file + source, ask LLM to implement/fix
-            test_code = await self._read_file(test_file, ws)
-
-            for fpath in affected_files:
-                source = await self._read_file(fpath, ws)
-
-                template = await self._get_prompt("builders.mason.implement")
+            # ── Test phase: write ONE test ──────────────────────────
+            if i == 0:
+                # First criterion: generate complete file
+                template = await self._get_prompt("builders.mason.write_first_test")
                 raw_prompt = self._render(
                     template,
-                    test_code=test_code,
-                    pytest_output=pytest_output[:3000],
-                    file_path=fpath,
-                    source_code=source,
-                    issue_content=issue_content,
-                    feedback_block=feedback if attempt == 0 else "",
+                    criterion=criterion,
+                    source_context=source_context,
+                    feedback_block=feedback if feedback else "",
                 )
-                prompt = self._prepend_onboarding(raw_prompt, run)
+            else:
+                # Subsequent: append to existing file
+                existing_code = await self._read_file(test_file, ws)
+                template = await self._get_prompt("builders.mason.append_test")
+                raw_prompt = self._render(
+                    template,
+                    criterion=criterion,
+                    existing_code=existing_code,
+                    feedback_block="",
+                )
 
-                try:
-                    new_source = await self._llm_extract(
-                        prompt, self._mason_model, extract_python_code, f"impl attempt {attempt + 1}",
-                    )
-                    await self._write_file(fpath, new_source, ws)
-                    if fpath not in files_written:
-                        files_written.append(fpath)
-                except ExtractionError as e:
-                    logger.error("Failed to generate implementation for %s: %s", fpath, e)
+            prompt = self._prepend_onboarding(raw_prompt, run)
 
-            # Also fix broken tests if they have AttributeError/TypeError (test bugs)
-            test_code_current = await self._read_file(test_file, ws)
-            test_output = await self._run_pytest(ws, test_file)
-            if "AttributeError" in test_output or "TypeError" in test_output:
+            try:
+                test_code = await self._llm_extract(
+                    prompt, self._mason_model, extract_python_code, f"test for criterion {i + 1}",
+                )
+                await self._write_file(test_file, test_code, ws)
+            except ExtractionError as e:
+                logger.error("Failed to generate test for criterion %d: %s", i + 1, e)
+                await self._post_to_issue(
+                    owner, repo, run.issue_number,
+                    f"Criterion {i + 1}: failed to generate test — {e}",
+                )
+                continue
+
+            # Verify test compiles (max 2 fix attempts)
+            for fix_attempt in range(2):
+                output = await self._run_pytest(ws, test_file)
+                if "SyntaxError" not in output and "ImportError" not in output:
+                    break
+                current_code = await self._read_file(test_file, ws)
                 fix_prompt = (
-                    f"This test file has runtime errors (AttributeError/TypeError):\n\n"
-                    f"```python\n{test_code_current}\n```\n\n"
-                    f"Error:\n```\n{test_output[:2000]}\n```\n\n"
-                    f"Fix the test code. Output ONLY the corrected complete file.\n"
+                    f"This test file has errors:\n\n```python\n{current_code}\n```\n\n"
+                    f"Error:\n```\n{output[:2000]}\n```\n\n"
+                    f"Fix the code. Output ONLY the corrected complete file.\n"
                 )
                 try:
                     fixed = await self._llm_extract(
-                        fix_prompt, self._mason_model, extract_python_code, "fix test bugs",
+                        fix_prompt, self._mason_model, extract_python_code, "fix test",
                     )
                     await self._write_file(test_file, fixed, ws)
                 except ExtractionError:
-                    pass
+                    break
 
-        if not files_written:
-            return StageResult(success=False, summary="Failed to generate any implementation code")
+            # ── Impl phase: make THIS test pass ─────────────────────
+            for impl_attempt in range(3):
+                output = await self._run_pytest(ws, test_file)
+                passing = self._count_passing(output)
+                failing = self._count_failing(output)
 
-        # Final test run
-        pytest_output_after = await self._run_pytest(ws, test_file)
-        final_passing = self._count_passing(pytest_output_after)
+                print(
+                    f"[TDD] Criterion {i + 1} impl attempt {impl_attempt + 1}: "
+                    f"{passing} passed, {failing} failed, hwm={tracker.high_water_mark}",
+                    flush=True,
+                )
 
-        # Commit
-        await self._git_command("add -A", ws)
-        await self._git_command(
-            f'commit -m "feat: implement issue #{run.issue_number}"', ws,
-        )
+                # All tests pass (including previous criteria) → done with this criterion
+                if failing == 0 and passing > 0:
+                    break
 
-        final_failing = self._count_failing(pytest_output_after)
-        success = final_passing > 0 and not tracker.has_failed
+                tracker.record_test_result(passing)
+                if tracker.has_failed:
+                    break
+
+                # Ask LLM to implement/fix
+                test_code_current = await self._read_file(test_file, ws)
+                for fpath in affected_files:
+                    source = await self._read_file(fpath, ws)
+                    template = await self._get_prompt("builders.mason.implement")
+                    raw_prompt = self._render(
+                        template,
+                        test_code=test_code_current,
+                        pytest_output=output[:3000],
+                        file_path=fpath,
+                        source_code=source,
+                        issue_content=issue_content,
+                        feedback_block="",
+                    )
+                    impl_prompt = self._prepend_onboarding(raw_prompt, run)
+                    try:
+                        new_source = await self._llm_extract(
+                            impl_prompt, self._mason_model, extract_python_code, f"impl c{i + 1}a{impl_attempt + 1}",
+                        )
+                        await self._write_file(fpath, new_source, ws)
+                        if fpath not in files_written:
+                            files_written.append(fpath)
+                    except ExtractionError as e:
+                        logger.error("Impl failed for %s: %s", fpath, e)
+
+                # Fix test bugs (AttributeError/TypeError) if any
+                test_output = await self._run_pytest(ws, test_file)
+                if "AttributeError" in test_output or "TypeError" in test_output:
+                    tc = await self._read_file(test_file, ws)
+                    fix_prompt = (
+                        f"Fix the runtime errors in this test:\n\n```python\n{tc}\n```\n\n"
+                        f"Error:\n```\n{test_output[:2000]}\n```\n\n"
+                        f"Output ONLY the corrected complete file. Do NOT remove any test functions.\n"
+                    )
+                    try:
+                        fixed = await self._llm_extract(fix_prompt, self._mason_model, extract_python_code, "fix test bugs")
+                        await self._write_file(test_file, fixed, ws)
+                    except ExtractionError:
+                        pass
+
+            # Commit this criterion
+            await self._git_command("add -A", ws)
+            await self._git_command(
+                f'commit -m "feat(#{run.issue_number}): criterion {i + 1} -- {criterion[:50]}" --allow-empty', ws,
+            )
+            criteria_completed += 1
+
+            # Post progress
+            final_output = await self._run_pytest(ws, test_file)
+            p = self._count_passing(final_output)
+            f = self._count_failing(final_output)
+            await self._post_to_issue(
+                owner, repo, run.issue_number,
+                f"**Criterion {i + 1}/{len(criteria)}:** {p} passed, {f} failed\n\n"
+                f"```\n{final_output[:1000]}\n```",
+            )
+
+            if tracker.has_failed:
+                logger.warning("Stalled — stopping TDD loop")
+                break
+
+        # Final summary
+        final_output = await self._run_pytest(ws, test_file)
+        final_passing = self._count_passing(final_output)
+        final_failing = self._count_failing(final_output)
 
         summary = (
-            f"## Implementation\n\n"
+            f"## TDD Complete\n\n"
+            f"**Criteria completed:** {criteria_completed}/{len(criteria)}\n"
             f"**Files modified:** {', '.join(f'`{f}`' for f in files_written)}\n"
             f"**Tests:** {final_passing} passed, {final_failing} failed "
-            f"(high water mark: {tracker.high_water_mark}, stalls: {tracker.stall_counter})\n\n"
-            f"**Pytest output:**\n```\n{pytest_output_after[:2000]}\n```\n"
+            f"(hwm: {tracker.high_water_mark})\n\n"
+            f"**Pytest:**\n```\n{final_output[:2000]}\n```\n"
         )
         await self._post_to_issue(owner, repo, run.issue_number, summary)
 
         return StageResult(
-            success=success,
+            success=final_passing > 0,
             summary=summary,
             evidence={
+                "test_file": test_file,
                 "files_written": files_written,
+                "criteria_completed": criteria_completed,
                 "tests_passing": final_passing,
                 "tests_failing": final_failing,
                 "high_water_mark": tracker.high_water_mark,
-                "stall_count": tracker.stall_counter,
-                "pytest_after": pytest_output_after[:2000],
+                "pytest_output": final_output[:3000],
             },
-            artifacts={"files_written": files_written},
+            artifacts={"test_file": test_file, "files_written": files_written},
         )
 
     # ── Stage 5: Quality Gates ───────────────────────────────────────

@@ -62,6 +62,49 @@ Start directly with 'Scenario:'
 
 # ── Mason prompts ────────────────────────────────────────────────────
 
+WRITE_FIRST_TEST = """\
+Write a complete pytest test file with ONE test function for this criterion:
+
+{{criterion}}
+
+Target source code:
+{{source_context}}
+
+{{feedback_block}}
+
+CRITICAL RULES:
+- Include imports, fixture, and ONE test class with ONE test function
+- Follow the test pattern from the Codebase Context above EXACTLY
+- Tests mount the router directly WITHOUT prefix via app.include_router(router)
+- Use the BARE route path (e.g., "/version" not "/v1/stronghold/version")
+- The test SHOULD FAIL initially (TDD — implementation not written yet)
+
+Output ONLY Python pytest code. No explanation.
+"""
+
+APPEND_TEST = """\
+Add ONE new test function to this existing test file for a new criterion.
+
+New criterion to test:
+{{criterion}}
+
+Existing test file:
+```python
+{{existing_code}}
+```
+
+{{feedback_block}}
+
+CRITICAL RULES:
+- Return the COMPLETE file with the new test function APPENDED at the end
+- Do NOT modify or remove any existing test functions
+- Do NOT duplicate imports or the fixture — they already exist
+- Add only the new test function (def test_... or class Test...)
+- Use the BARE route path (e.g., "/version" not "/v1/stronghold/version")
+
+Output ONLY the complete Python file with the new test appended. No explanation.
+"""
+
 WRITE_TESTS = """\
 Write a SINGLE pytest test file that validates ALL of these acceptance criteria:
 
@@ -273,6 +316,8 @@ BUILDER_PROMPT_DEFAULTS: dict[str, str] = {
     "builders.frank.analyze_issue": ANALYZE_ISSUE,
     "builders.frank.acceptance_criteria": ACCEPTANCE_CRITERIA,
     # Mason
+    "builders.mason.write_first_test": WRITE_FIRST_TEST,
+    "builders.mason.append_test": APPEND_TEST,
     "builders.mason.write_tests": WRITE_TESTS,
     "builders.mason.fix_syntax": FIX_SYNTAX,
     "builders.mason.implement": IMPLEMENT,
