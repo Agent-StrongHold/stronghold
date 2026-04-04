@@ -48,7 +48,72 @@ itself defines that full path.
 
 ---
 
-## Test Pattern
+## Two Test Patterns
+
+This repo has TWO test patterns. Pick the right one:
+
+1. **Route tests** — for API endpoints (FastAPI routes). Uses TestClient + make_test_container.
+2. **Utility tests** — for classes, functions, modules. Direct import, no FastAPI.
+
+**How to decide:** If the issue mentions a route/endpoint/API, use pattern 1.
+If it mentions a class, module, function, or utility, use pattern 2.
+
+---
+
+### Pattern 2: Utility Class Tests (NO FastAPI, NO TestClient)
+
+Use this for testing modules like `cache/redis_pool.py`, `security/rate_limiter.py`,
+`memory/learnings/store.py`, etc. — anything that is NOT a route.
+
+```python
+"""Tests for redis_pool."""
+
+from __future__ import annotations
+
+import pytest
+
+# Import the class/function you're testing DIRECTLY
+from stronghold.cache.redis_pool import get_redis, close_redis, _mask_url
+
+# Import fakes if needed for dependencies
+from tests.fakes import FakeLLMClient
+
+
+class TestMaskUrl:
+    def test_masks_password(self) -> None:
+        result = _mask_url("redis://:secret@localhost:6379/0")
+        assert "secret" not in result
+        assert "***" in result
+
+    def test_no_credentials_unchanged(self) -> None:
+        result = _mask_url("redis://localhost:6379/0")
+        assert result == "redis://localhost:6379/0"
+
+
+class TestGetRedis:
+    async def test_returns_redis_client(self) -> None:
+        # For modules that need real Redis, mock at the connection level
+        # or test the interface without connecting
+        pass
+
+    async def test_reuses_pool(self) -> None:
+        # Test that calling get_redis twice returns same pool
+        pass
+```
+
+**Key rules for utility tests:**
+- NO FastAPI, NO TestClient, NO make_test_container
+- Import the module directly: `from stronghold.cache.redis_pool import ...`
+- Test the public API (functions, methods, classes)
+- Use `async def test_...` for async functions (asyncio_mode="auto" handles it)
+- For modules that connect to external services (Redis, DB), test the
+  logic without connecting — test URL parsing, config, error handling
+
+---
+
+### Pattern 1: Route Tests (FastAPI + TestClient)
+
+Use this for API endpoint tests. Routes live in `src/stronghold/api/routes/`.
 
 Every test file in this repo follows this pattern. Copy it exactly.
 
@@ -110,6 +175,17 @@ The factory handles all of them.
 
 ---
 
+## Test-Only Issues vs Feature Issues
+
+**Test-only issues** (title starts with `test:`) — the source code already exists.
+You are ONLY writing tests. Do NOT modify source files. The tests should pass
+against the existing code. If they don't, the test is wrong, not the code.
+
+**Feature issues** (title starts with `feat:` or `fix:`) — you write tests first
+(TDD, they will fail), then implement the code to make them pass.
+
+---
+
 ## Available Fakes (use these, NOT unittest.mock)
 
 All fakes are in `tests/fakes.py`:
@@ -132,7 +208,9 @@ These modules exist. Import from these paths only:
 
 ```
 stronghold.api.app                    # create_app()
-stronghold.api.routes.status          # health, reactor status endpoints
+stronghold.api.routes.status          # health, reactor status, version endpoints
+stronghold.cache.redis_pool           # get_redis(), close_redis(), _mask_url()
+stronghold.cache                      # close_redis (re-exported)
 stronghold.api.routes.agents          # /v1/stronghold/request, /agents
 stronghold.api.routes.chat            # /v1/chat/completions
 stronghold.api.routes.gate_endpoint   # /v1/stronghold/gate
