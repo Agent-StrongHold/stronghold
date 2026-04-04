@@ -38,6 +38,16 @@ class IssueType:
 
 ISSUE_TYPE_REGISTRY: list[IssueType] = [
     IssueType(
+        name="ui_dashboard",
+        signals=["dashboard/", ".html", "sidebar", "button", "scroll", "css", "tailwind", "overlap", "animate", "active state", "tooltip", "diff view"],
+        sections=[
+            "Pattern 3: HTML/CSS Structural Tests (UI issues)",
+            "Valid Import Paths",
+            "Pytest Config",
+        ],
+        priority=8,
+    ),
+    IssueType(
         name="test_redis",
         signals=["cache/redis", "redis_pool"],
         sections=[

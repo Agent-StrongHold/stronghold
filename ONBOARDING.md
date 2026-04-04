@@ -188,6 +188,78 @@ never for internal Stronghold classes.
 
 ---
 
+### Pattern 3: HTML/CSS Structural Tests (UI issues)
+
+Use this for dashboard/UI issues — button overlaps, missing classes, progress bars,
+sidebar active states. No server needed. Just read the HTML file and check for expected patterns.
+
+```python
+"""Tests for sidebar active state indicator."""
+
+from __future__ import annotations
+
+from pathlib import Path
+
+import pytest
+
+
+DASHBOARD_DIR = Path("src/stronghold/dashboard")
+
+
+class TestSidebarActiveState:
+    def test_index_has_active_state_script(self) -> None:
+        html = (DASHBOARD_DIR / "index.html").read_text()
+        assert "window.location.pathname" in html, "Missing pathname detection script"
+
+    def test_active_classes_defined(self) -> None:
+        html = (DASHBOARD_DIR / "index.html").read_text()
+        assert "border-emerald-500" in html, "Missing active border color"
+        assert "bg-gray-800" in html, "Missing active background"
+
+    def test_nav_items_have_hover_state(self) -> None:
+        html = (DASHBOARD_DIR / "index.html").read_text()
+        assert "hover:bg-gray-800" in html or "hover:bg-gray" in html
+
+
+class TestProgressBarAnimation:
+    def test_quota_has_transition(self) -> None:
+        html = (DASHBOARD_DIR / "quota.html").read_text()
+        assert "transition" in html, "Missing CSS transition for animation"
+
+    def test_quota_has_aria_attributes(self) -> None:
+        html = (DASHBOARD_DIR / "quota.html").read_text()
+        assert "aria-valuenow" in html or "role=\"progressbar\"" in html
+
+    def test_quota_has_color_coding(self) -> None:
+        html = (DASHBOARD_DIR / "quota.html").read_text()
+        assert "emerald" in html  # green for healthy
+        assert "red" in html or "amber" in html  # warning/danger colors
+
+
+class TestButtonOverlap:
+    def test_error_message_has_margin(self) -> None:
+        html = (DASHBOARD_DIR / "login.html").read_text()
+        # Error should have margin-top or be in a flex column
+        assert "mt-" in html or "flex-col" in html or "space-y" in html
+
+    def test_no_conflicting_z_index(self) -> None:
+        html = (DASHBOARD_DIR / "login.html").read_text()
+        # Count z-index usages — should be minimal
+        import re
+        z_indices = re.findall(r'z-(\d+)', html)
+        assert len(z_indices) < 5, f"Too many z-index values: {z_indices}"
+```
+
+**Key rules for HTML/CSS tests:**
+- NO FastAPI, NO TestClient, NO Container
+- Read HTML files directly with `Path.read_text()`
+- Check for Tailwind class names, ARIA attributes, script patterns
+- Use string `in` checks and regex for structure
+- Files live in `src/stronghold/dashboard/`
+- These are structural tests — they verify the HTML has the right patterns, not runtime behavior
+
+---
+
 ### Pattern 1: Route Tests (FastAPI + TestClient)
 
 Use this for API endpoint tests. Routes live in `src/stronghold/api/routes/`.
