@@ -19,7 +19,7 @@
   .card { background: var(--stone-light); border: 1px solid var(--iron); border-radius: 8px; }
   .stat-value { font-size: 2rem; font-weight: 700; font-family: 'Playfair Display', serif; }
   .stat-label { font-size: 0.6rem; color: var(--iron-light); text-transform: uppercase; letter-spacing: 1px; }
-  .bar { height: 18px; border-radius: 4px; transition: width 0.6s ease; }
+  .bar { height: 18px; border-radius: 4px; transition: width 0.6s ease; width: 0%; }
   .bar-ok { background: linear-gradient(90deg, var(--emerald), #4ade80); }
   .bar-warn { background: linear-gradient(90deg, #b8860b, #e2a529); }
   .bar-danger { background: linear-gradient(90deg, var(--blood), #ff6b6b); }
@@ -80,18 +80,17 @@
 </style>
 <script src="/dashboard/auth.js"></script>
 <script>
-document.addEventListener('DOMContentLoaded', () => {
-  // Initialize quota bars with animation
-  const quotaBars = document.querySelectorAll('.quota-bar');
+document.addEventListener('DOMContentLoaded', function() {
+  // Initialize quota bars with 0 width and trigger animation
+  const quotaBars = document.querySelectorAll('.bar');
   quotaBars.forEach(bar => {
-    // Get the actual percentage from data attribute
-    const percentage = parseInt(bar.dataset.percentage || '0');
     // Set initial width to 0 for animation
     bar.style.width = '0%';
-    // Force reflow to ensure transition starts
+    // Force reflow to ensure transition starts from 0
     void bar.offsetWidth;
-    // Set final width with transition
-    bar.style.width = `${percentage}%`;
+    // Set the actual width after transition is ready
+    const width = bar.getAttribute('data-percentage') || '0';
+    bar.style.width = width + '%';
   });
 });
 </script>
