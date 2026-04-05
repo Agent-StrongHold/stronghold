@@ -173,11 +173,8 @@ Issue description:
 {{feedback_block}}
 
 Write the MINIMUM code change to make the tests pass.
-
-CRITICAL: The route path in the decorator MUST match what the test calls.
-If the test calls `client.get("/v1/stronghold/version")`, the route MUST be
-`@router.get("/v1/stronghold/version")` — NOT `@router.get("/version")`.
-Look at the test's client.get/post path and use that EXACT path.
+Read the test code carefully — if a test calls client.get("/v1/stronghold/X"),
+your route decorator MUST use that exact path.
 
 Output ONLY the complete updated source file. No explanation.
 Do NOT remove existing functionality — only ADD the new code.
