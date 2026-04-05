@@ -139,7 +139,7 @@ function showDiff(oldContent, newContent) {
   container.appendChild(header);
 
   const diffContainer = document.createElement('div');
-  diffContainer.className = "diff-container mx-8 my-6 flex flex-col lg:flex-row gap-4";
+  diffContainer.className = "diff-container mx-8 my-6 max-lg:flex-col flex gap-4";
   diffContainer.innerHTML = `
     <div class="w-full lg:w-1/2">
       <div class="diff-header text-sm font-mono mb-2">
@@ -252,3 +252,4 @@ function showDiff(oldContent, newContent) {
   </script>
 </body>
 </html>
+```

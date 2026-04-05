@@ -95,3 +95,14 @@ class TestPromptDiffLayoutAndTypography:
         css = (DASHBOARD_DIR / "styles.css").read_text()
         assert "whitespace-normal" in css, "Missing whitespace-normal to allow line wrapping"
         assert "overflow-x-hidden" in css or "overflow-hidden" in css, "Missing overflow handling to prevent horizontal scroll"
+
+class TestPromptDiffMobileLayout:
+    def test_diff_view_switches_to_stacked_layout_on_mobile(self) -> None:
+        html = (DASHBOARD_DIR / "prompts.html").read_text()
+        assert "max-md:flex-col" in html or "max-md:block" in html, "Missing stacked layout class for mobile"
+        assert "flex-col" in html, "Missing flex-col utility for stacked layout"
+
+    def test_diff_panes_have_unified_view_class_on_mobile(self) -> None:
+        html = (DASHBOARD_DIR / "prompts.html").read_text()
+        assert "unified-view" in html or "stacked-view" in html, "Missing unified/stacked view class"
+        assert "max-md:unified-view" in html or "max-md:stacked-view" in html, "Missing mobile-specific unified view class"
