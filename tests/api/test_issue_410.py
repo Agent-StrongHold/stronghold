@@ -74,3 +74,10 @@ class TestUptimeEndpoint:
                 assert parsed < datetime.utcnow()
             except ValueError:
                 pytest.fail("started_at is not a valid ISO 8601 timestamp")
+
+    def test_response_is_valid_json_object(self, app: FastAPI) -> None:
+        with TestClient(app) as client:
+            resp = client.get("/v1/stronghold/status/uptime")
+            assert resp.status_code == 200
+            data = resp.json()
+            assert isinstance(data, dict)
