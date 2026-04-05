@@ -243,8 +243,9 @@ class BuildersOrchestrator:
         min_coverage_pct: float = 85.0,
     ) -> bool:
         run = self._runs[run_id]
+        terminal_stages = ("quality_checks_passed", "ui_verified")
         return (
-            run.current_stage == "quality_checks_passed"
+            run.current_stage in terminal_stages
             and ci_passed
             and quality_passed
             and coverage_pct >= min_coverage_pct

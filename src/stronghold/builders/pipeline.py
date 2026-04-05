@@ -1027,6 +1027,16 @@ class RuntimePipeline:
         results["pytest"] = await self._run_pytest(ws, test_file)
 
         # ruff/mypy/bandit — only changed source files
+        # Auto-fix: run ruff fix + format BEFORE checking gates
+        await self._td.execute(
+            "shell",
+            {"command": f"ruff check --fix {changed_src_str}", "workspace": ws},
+        )
+        await self._td.execute(
+            "shell",
+            {"command": f"ruff format {changed_src_str}", "workspace": ws},
+        )
+
         for gate_name, cmd in [
             ("ruff_check", f"ruff check {changed_src_str}"),
             ("ruff_format", f"ruff format --check {changed_src_str}"),
@@ -1036,36 +1046,6 @@ class RuntimePipeline:
             result = await self._td.execute("shell", {"command": cmd, "workspace": ws})
             results[gate_name] = result
             logger.info("Quality gate %s: %s", gate_name, result[:100])
-
-        # Try to fix ruff/mypy issues with LLM (one pass)
-        for fixable_gate in ("ruff_check", "mypy"):
-            output = results.get(fixable_gate, "")
-            if output and not output.startswith("Error:") and ("error" in output.lower() or "warning" in output.lower()):
-                # Read the files with violations, ask LLM to fix
-                affected = self._parse_violation_files(output)
-                for fpath in affected[:3]:
-                    source = await self._read_file(fpath, ws)
-                    if not source:
-                        continue
-                    fix_prompt = (
-                        f"Fix the {fixable_gate} violations in this file:\n\n"
-                        f"Violations:\n```\n{output[:1500]}\n```\n\n"
-                        f"Source file `{fpath}`:\n```python\n{source}\n```\n\n"
-                        f"Output ONLY the corrected complete file.\n"
-                    )
-                    try:
-                        fixed = await self._llm_extract(
-                            fix_prompt, self._mason_model, extract_python_code, f"fix {fixable_gate}",
-                        )
-                        await self._write_file(fpath, fixed, ws)
-                    except ExtractionError:
-                        pass
-
-                # Re-run the gate
-                rerun_cmd = f"ruff check {changed_src_str}" if fixable_gate == "ruff_check" else f"mypy {changed_src_str} --strict"
-                results[fixable_gate] = await self._td.execute(
-                    "shell", {"command": rerun_cmd, "workspace": ws},
-                )
 
         # Commit fixes
         await self._git_command("add -A", ws)
