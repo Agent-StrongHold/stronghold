@@ -15,7 +15,7 @@
   .sidebar { background: linear-gradient(180deg, #0d1321, #1a1a2e); border-right: 2px solid var(--iron); width: 240px; min-height: 100vh; }
   .sidebar-item { padding: 12px 20px; cursor: pointer; transition: all 0.2s; border-left: 3px solid transparent; display: flex; align-items: center; gap: 10px; color: #8b8b9b; font-size: 0.85rem; text-decoration: none; }
   .sidebar-item:hover { background: rgba(226,165,41,0.08); color: var(--gold-dim); border-left-color: var(--gold-dim); }
-  .sidebar-item.active { background: var(--stone-dark); color: var(--gold); border-left-color: var(--emerald-500); border-right-color: var(--emerald-500); }
+  .sidebar-item.active { background: var(--stone-dark); color: var(--gold); border-left-color: var(--emerald); }
   .card { background: var(--stone-light); border: 1px solid var(--iron); border-radius: 8px; }
   .stat-value { font-size: 2rem; font-weight: 700; font-family: 'Playfair Display', serif; }
   .stat-label { font-size: 0.6rem; color: var(--iron-light); text-transform: uppercase; letter-spacing: 1px; }
@@ -85,109 +85,151 @@
 <nav class="sidebar flex-shrink-0 flex flex-col" id="sidebar">
   <div class="p-5 border-b border-[var(--iron)]"><div class="flex items-center gap-3"><span class="tower-crest" style="font-size:2rem;text-shadow:0 0 20px rgba(226,165,41,0.4)">&#x1F3F0;</span><div><h1 class="text-lg leading-tight">Stronghold</h1><p class="text-xs text-[var(--iron-light)]">Agent Governance Platform</p></div></div></div>
   <div class="flex-1 py-4">
-    <a href="/greathall" class="sidebar-item"><span style="width:2rem;display:inline-block;text-align:center">&#x1F399;</span><span>Dashboard</span></a>
-    <a href="/quota" class="sidebar-item active"><span style="width:2rem;display:inline-block;text-align:center">&#x1F4C8;</span><span>Quota</span></a>
-    <a href="/wallets" class="sidebar-item"><span style="width:2rem;display:inline-block;text-align:center">&#x1F4B0;</span><span>Wallets</span></a>
-    <a href="/chat" class="sidebar-item"><span style="width:2rem;display:inline-block;text-align:center">&#x1F4AC;</span><span>Chat</span></a>
+    <a href="/greathall" class="sidebar-item border-emerald-500 bg-gray-800"><span style="width:24px;text-align:center">&#x1F3DB;</span> Greathall</a>
+    <a href="/quota" class="sidebar-item active"><span style="width:24px;text-align:center">&#x1F4B0;</span> Quota</a>
+    <a href="/wallets" class="sidebar-item"><span style="width:24px;text-align:center">&#x1F4B5;</span> Wallets</a>
+    <a href="/chat" class="sidebar-item"><span style="width:24px;text-align:center">&#x1F4AC;</span> Chat</a>
   </div>
 </nav>
 
-<main class="flex-1 p-8 overflow-y-auto">
+<main class="flex-1 overflow-y-auto p-6">
   <div class="max-w-4xl mx-auto">
-    <h1 class="text-3xl font-bold mb-8 text-gold">Quota Overview</h1>
+    <h1 class="text-3xl font-bold mb-6 text-gold flex items-center gap-2">
+      <span>&#x1F4B0;</span> Quota
+    </h1>
 
-    <div class="card p-6 mb-8">
-      <div class="flex items-center gap-3 mb-6">
-        <span class="text-xl">&#x1F4C8;</span>
-        <h2 class="text-xl font-semibold">Provider Usage</h2>
+    <div class="card p-6 mb-6">
+      <div class="flex justify-between items-center mb-4">
+        <h2 class="text-lg font-semibold">Provider Quotas</h2>
+        <div class="flex gap-2">
+          <button class="tab-btn active" data-tab="current">Current</button>
+          <button class="tab-btn" data-tab="history">History</button>
+        </div>
       </div>
 
-      <div class="space-y-6">
-        <!-- Provider 1 -->
-        <div class="bg-gray-800 rounded-lg p-4 border border-emerald-500">
-          <div class="flex justify-between items-start mb-2">
-            <h3 class="text-lg font-semibold">Provider Alpha</h3>
-            <span class="text-sm text-emerald-400">Active</span>
+      <div class="tab-panel active" id="current-panel">
+        <div class="space-y-6">
+          <!-- Provider 1 -->
+          <div class="bg-stone-dark p-4 rounded-lg border border-iron">
+            <div class="flex justify-between items-start mb-3">
+              <div>
+                <h3 class="text-lg font-semibold text-gold">Provider Alpha</h3>
+                <p class="text-sm text-iron-light">Monthly billing cycle</p>
+              </div>
+              <span class="badge badge-active">Active</span>
+            </div>
+            <div class="space-y-2">
+              <div class="flex justify-between items-center">
+                <span class="text-sm">Usage</span>
+                <span class="text-sm font-mono">1.2 / 5.0 TB</span>
+              </div>
+              <div class="w-full bg-stone-light rounded-full h-4">
+                <div class="bar bar-ok h-4 rounded-full" role="progressbar" aria-valuenow="24" aria-valuemin="0" aria-valuemax="100" style="width: 24%"></div>
+              </div>
+            </div>
           </div>
-          <div class="flex justify-between text-sm text-iron-light mb-1">
-            <span>Usage</span>
-            <span>50/100</span>
-          </div>
-          <div class="w-full bg-gray-700 rounded-full h-3 mb-2">
-            <div class="bg-emerald-500 h-3 rounded-full" role="progressbar" aria-valuenow="50" aria-valuemin="0" aria-valuemax="100" style="width: 50%"></div>
-          </div>
-          <div class="flex justify-between text-xs text-iron-light">
-            <span>Billing Cycle</span>
-            <span>Monthly</span>
-          </div>
-        </div>
 
-        <!-- Provider 2 -->
-        <div class="bg-gray-800 rounded-lg p-4 border border-amber-500">
-          <div class="flex justify-between items-start mb-2">
-            <h3 class="text-lg font-semibold">Provider Beta</h3>
-            <span class="text-sm text-amber-400">Warning</span>
+          <!-- Provider 2 -->
+          <div class="bg-stone-dark p-4 rounded-lg border border-iron">
+            <div class="flex justify-between items-start mb-3">
+              <div>
+                <h3 class="text-lg font-semibold text-gold">Provider Beta</h3>
+                <p class="text-sm text-iron-light">Monthly billing cycle</p>
+              </div>
+              <span class="badge badge-warn">Warning</span>
+            </div>
+            <div class="space-y-2">
+              <div class="flex justify-between items-center">
+                <span class="text-sm">Usage</span>
+                <span class="text-sm font-mono">4.8 / 5.0 TB</span>
+              </div>
+              <div class="w-full bg-stone-light rounded-full h-4">
+                <div class="bar bar-warn h-4 rounded-full" role="progressbar" aria-valuenow="96" aria-valuemin="0" aria-valuemax="100" style="width: 96%"></div>
+              </div>
+            </div>
           </div>
-          <div class="flex justify-between text-sm text-iron-light mb-1">
-            <span>Usage</span>
-            <span>85/100</span>
-          </div>
-          <div class="w-full bg-gray-700 rounded-full h-3 mb-2">
-            <div class="bg-amber-500 h-3 rounded-full" role="progressbar" aria-valuenow="85" aria-valuemin="0" aria-valuemax="100" style="width: 85%"></div>
-          </div>
-          <div class="flex justify-between text-xs text-iron-light">
-            <span>Billing Cycle</span>
-            <span>Monthly</span>
-          </div>
-        </div>
 
-        <!-- Provider 3 -->
-        <div class="bg-gray-800 rounded-lg p-4 border border-red-500">
-          <div class="flex justify-between items-start mb-2">
-            <h3 class="text-lg font-semibold">Provider Gamma</h3>
-            <span class="text-sm text-red-400">Critical</span>
+          <!-- Provider 3 -->
+          <div class="bg-stone-dark p-4 rounded-lg border border-iron">
+            <div class="flex justify-between items-start mb-3">
+              <div>
+                <h3 class="text-lg font-semibold text-gold">Provider Gamma</h3>
+                <p class="text-sm text-iron-light">Monthly billing cycle</p>
+              </div>
+              <span class="badge badge-danger">Critical</span>
+            </div>
+            <div class="space-y-2">
+              <div class="flex justify-between items-center">
+                <span class="text-sm">Usage</span>
+                <span class="text-sm font-mono">5.0 / 5.0 TB</span>
+              </div>
+              <div class="w-full bg-stone-light rounded-full h-4">
+                <div class="bar bar-danger h-4 rounded-full" role="progressbar" aria-valuenow="100" aria-valuemin="0" aria-valuemax="100" style="width: 100%"></div>
+              </div>
+            </div>
           </div>
-          <div class="flex justify-between text-sm text-iron-light mb-1">
-            <span>Usage</span>
-            <span>120/100</span>
-          </div>
-          <div class="w-full bg-gray-700 rounded-full h-3 mb-2">
-            <div class="bg-red-500 h-3 rounded-full" role="progressbar" aria-valuenow="120" aria-valuemin="0" aria-valuemax="100" style="width: 120%"></div>
-          </div>
-          <div class="flex justify-between text-xs text-iron-light">
-            <span>Billing Cycle</span>
-            <span>Monthly</span>
-          </div>
-        </div>
 
-        <!-- Empty Provider -->
-        <div class="bg-gray-800 rounded-lg p-4">
-          <div class="flex justify-between items-start mb-2">
-            <h3 class="text-lg font-semibold">Provider Delta</h3>
-            <span class="text-sm text-iron-light">No usage</span>
-          </div>
-          <div class="flex justify-between text-sm text-iron-light mb-1">
-            <span>Usage</span>
-            <span>0/100</span>
-          </div>
-          <div class="w-full bg-gray-700 rounded-full h-3 mb-2">
-            <div class="bg-gray-500 h-3 rounded-full" role="progressbar" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100" style="width: 0%"></div>
-          </div>
-          <div class="flex justify-between text-xs text-iron-light">
-            <span>Billing Cycle</span>
-            <span>Monthly</span>
+          <!-- Empty provider -->
+          <div class="bg-stone-dark p-4 rounded-lg border border-iron">
+            <div class="flex justify-between items-start mb-3">
+              <div>
+                <h3 class="text-lg font-semibold text-gold">Provider Delta</h3>
+                <p class="text-sm text-iron-light">Monthly billing cycle</p>
+              </div>
+              <span class="badge badge-inactive">Inactive</span>
+            </div>
+            <div class="space-y-2">
+              <div class="flex justify-between items-center">
+                <span class="text-sm">Usage</span>
+                <span class="text-sm font-mono text-iron-light">No usage</span>
+              </div>
+              <div class="w-full bg-stone-light rounded-full h-4">
+                <div class="bar bar-ok h-4 rounded-full bg-gray-600" role="progressbar" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100" style="width: 0%"></div>
+              </div>
+            </div>
           </div>
         </div>
+      </div>
+
+      <div class="tab-panel" id="history-panel">
+        <p class="text-gray-400">Quota history will be displayed here.</p>
       </div>
     </div>
   </div>
 </main>
 
 <script>
+  // Sidebar functionality
+  const sidebar = document.getElementById('sidebar');
+  const sidebarOverlay = document.getElementById('sidebar-overlay');
+
   function closeSidebar() {
-    document.getElementById('sidebar').classList.remove('open');
-    document.getElementById('sidebar-overlay').classList.remove('open');
+    sidebar.classList.remove('open');
+    sidebarOverlay.classList.remove('open');
   }
+
+  function openSidebar() {
+    sidebar.classList.add('open');
+    sidebarOverlay.classList.add('open');
+  }
+
+  // Mobile menu button
+  const mobileMenuBtn = document.createElement('button');
+  mobileMenuBtn.className = 'mobile-menu-btn';
+  mobileMenuBtn.innerHTML = '&#9776;';
+  mobileMenuBtn.onclick = openSidebar;
+  document.body.insertBefore(mobileMenuBtn, document.body.firstChild);
+
+  // Tab functionality
+  document.querySelectorAll('.tab-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+      document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+
+      btn.classList.add('active');
+      document.getElementById(btn.dataset.tab + '-panel').classList.add('active');
+    });
+  });
 </script>
 </body>
 </html>
