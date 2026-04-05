@@ -1,3 +1,11 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Stronghold - Prompts</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
 @media (max-width: 768px) {
     .sidebar { position:fixed; top:0; left:-260px; z-index:1000; width:260px; height:100vh; transition:left 0.3s; }
     .sidebar.open { left:0; }
@@ -199,57 +207,29 @@ function showDiff(oldContent, newContent) {
 }
 </script>
 </head>
-<body class="antialiased">
+<body class="bg-stone-dark text-stone-light font-mono">
   <div class="flex min-h-screen">
-    <aside class="sidebar">
-      <nav class="py-4">
-        <a href="/dashboard/prompts" class="sidebar-item active">
-          <span>&#x1F4E4;</span>
-          <span>Scrolls</span>
-        </a>
-        <a href="/dashboard/approvals" class="sidebar-item">
-          <span>&#x1F4C4;</span>
-          <span>Approvals</span>
-        </a>
-        <a href="/dashboard/settings" class="sidebar-item">
-          <span>&#x1F527;</span>
-          <span>Settings</span>
-        </div>
+    <aside class="sidebar w-64 bg-stone-mid p-4 flex flex-col">
+      <nav class="flex-1">
+        <ul class="space-y-2">
+          <li>
+            <a href="/dashboard" class="sidebar-item block p-3 rounded-r-lg hover:bg-stone-light hover:text-gold transition-colors" style="border-left: 4px solid transparent;">
+              <span>Dashboard</span>
+            </a>
+          </li>
+          <li>
+            <a href="/dashboard/prompts" class="sidebar-item block p-3 rounded-r-lg hover:bg-stone-light hover:text-gold transition-colors" style="border-left: 4px solid transparent;">
+              <span>Prompts</span>
+            </a>
+          </li>
+        </ul>
       </nav>
     </aside>
 
-    <main class="flex-1 p-8">
-      <div id="prompt-list" class="space-y-2">
-        <div class="p-4 text-sm text-[var(--iron-light)] sh-loading">&#x1F5E3; Loading scrolls...</div>
-      </div>
-
+    <main class="flex-1 p-6">
+      <div id="prompt-list" class="space-y-2"></div>
       <div id="prompt-detail" class="hidden"></div>
     </main>
   </div>
-
-  <div class="sidebar-overlay" id="sidebar-overlay"></div>
-
-  <button class="mobile-menu-btn" id="mobile-menu-btn">&#9776;</button>
-
-  <script>
-    // Mobile menu toggle
-    const mobileMenuBtn = document.getElementById('mobile-menu-btn');
-    const sidebar = document.querySelector('.sidebar');
-    const sidebarOverlay = document.getElementById('sidebar-overlay');
-
-    mobileMenuBtn.addEventListener('click', () => {
-      sidebar.classList.toggle('open');
-      sidebarOverlay.classList.toggle('open');
-    });
-
-    sidebarOverlay.addEventListener('click', () => {
-      sidebar.classList.remove('open');
-      sidebarOverlay.classList.remove('open');
-    });
-
-    // Load initial content
-    document.addEventListener('DOMContentLoaded', loadVersionHistory);
-  </script>
 </body>
 </html>
-```
