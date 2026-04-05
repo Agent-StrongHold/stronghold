@@ -19,7 +19,8 @@ if TYPE_CHECKING:
 from stronghold.builders.contracts import RunRequest, RunStatus, StageEvent, WorkerName
 
 _ALLOWED_STAGE_TRANSITIONS: dict[str, tuple[str, ...]] = {
-    "queued": ("issue_analyzed",),
+    # Python pipeline (Frank + Mason)
+    "queued": ("issue_analyzed", "ui_analyzed"),
     "issue_analyzed": ("acceptance_defined", "blocked"),
     "acceptance_defined": ("tests_written", "blocked"),
     "tests_written": ("implementation_started", "blocked"),
@@ -31,6 +32,13 @@ _ALLOWED_STAGE_TRANSITIONS: dict[str, tuple[str, ...]] = {
         "failed",
     ),
     "quality_checks_passed": ("completed", "acceptance_defined", "failed"),
+    # UI pipeline (Piper + Glazier)
+    "ui_analyzed": ("ui_criteria_defined", "blocked"),
+    "ui_criteria_defined": ("ui_tests_written", "blocked"),
+    "ui_tests_written": ("ui_implemented", "blocked", "failed"),
+    "ui_implemented": ("ui_verified", "ui_tests_written", "failed"),
+    "ui_verified": ("completed", "ui_criteria_defined", "failed"),
+    # Terminal
     "blocked": (),
     "failed": (),
     "completed": (),
