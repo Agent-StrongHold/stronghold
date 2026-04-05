@@ -62,3 +62,20 @@ class TestUptimeEndpoint:
             assert "uptime_seconds" in second_data
 
             assert second_data["uptime_seconds"] > first_data["uptime_seconds"]
+
+    def test_uptime_increases_by_at_least_one_second(self, app: FastAPI) -> None:
+        with TestClient(app) as client:
+            first_resp = client.get("/v1/stronghold/status/uptime")
+            assert first_resp.status_code == 200
+            first_data = first_resp.json()
+            assert "uptime_seconds" in first_data
+
+            import time
+            time.sleep(1.1)
+
+            second_resp = client.get("/v1/stronghold/status/uptime")
+            assert second_resp.status_code == 200
+            second_data = second_resp.json()
+            assert "uptime_seconds" in second_data
+
+            assert second_data["uptime_seconds"] >= first_data["uptime_seconds"] + 1
