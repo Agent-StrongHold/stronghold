@@ -136,7 +136,7 @@ function showCreate() {
   header.className = "px-8 py-6 border-b border-[var(--iron)] flex items-center justify-between";
   header.innerHTML = `
     <h2 class="text-2xl font-bold">Create New Prompt</h2>
-    <button class="btn-primary px-4 py-2 rounded-md text-sm">Save</button>
+    <button class="btn-primary px-4 py-2 rounded-md" onclick="loadVersionHistory()">Cancel</button>
   `;
   container.appendChild(header);
 
@@ -146,73 +146,84 @@ function showCreate() {
   form.innerHTML = `
     <div>
       <label class="label">Prompt Name</label>
-      <input type="text" class="w-full p-3 rounded-md bg-[var(--stone-dark)] border border-[var(--iron)] text-[var(--parchment)]" placeholder="Enter prompt name">
+      <input type="text" class="w-full p-3 rounded-md bg-[var(--stone-dark)] border border-[var(--iron)] focus:border-[var(--gold-dim)] outline-none" placeholder="e.g., Customer Support Bot">
     </div>
     <div>
       <label class="label">Prompt Content</label>
-      <textarea class="w-full p-3 rounded-md bg-[var(--stone-dark)] border border-[var(--iron)] text-[var(--parchment)] min-h-[200px]" placeholder="Enter prompt content"></textarea>
+      <textarea class="w-full p-3 rounded-md bg-[var(--stone-dark)] border border-[var(--iron)] focus:border-[var(--gold-dim)] outline-none min-h-[200px]" placeholder="Enter your prompt instructions here..."></textarea>
+    </div>
+    <div class="flex gap-4">
+      <button type="submit" class="btn-primary flex-1 py-3 rounded-md">Create Prompt</button>
+      <button type="button" class="btn-secondary flex-1 py-3 rounded-md" onclick="loadVersionHistory()">Cancel</button>
     </div>
   `;
   container.appendChild(form);
 }
 
-function showDiff() {
+function showDiff(oldContent, newContent) {
   const container = document.getElementById('prompt-detail');
   if (!container) return;
 
-  // Clear previous content
   container.innerHTML = '';
-
-  // Create header
   const header = document.createElement('header');
   header.className = "px-8 py-6 border-b border-[var(--iron)] flex items-center justify-between";
   header.innerHTML = `
-    <h2 class="text-2xl font-bold">Prompt Diff</h2>
-    <div class="flex gap-2">
-      <button class="btn-secondary px-4 py-2 rounded-md text-sm">Compare</button>
-      <button class="btn-green px-4 py-2 rounded-md text-sm">Approve</button>
-    </div>
+    <h2 class="text-2xl font-bold">Diff Viewer</h2>
+    <button class="btn-primary px-4 py-2 rounded-md" onclick="loadVersionHistory()">Back to List</button>
   `;
   container.appendChild(header);
 
-  // Create diff container
   const diffContainer = document.createElement('div');
   diffContainer.className = "diff-container mx-8 my-6";
   diffContainer.innerHTML = `
     <div class="diff-header">
-      <span class="flex-1">${fromLabel || 'Old Version'}</span>
-      <span class="flex-1">${toLabel || 'New Version'}</span>
+      <span class="flex-1">${fromLabel || 'old'}</span>
+      <span class="flex-1">${toLabel || 'new'}</span>
     </div>
-    <div class="diff-left" role="region" aria-label="Old version content">
-      <div class="diff-line diff-context">
-        <span class="diff-line-num">1</span>
-        <span>This is some unchanged context from the previous version</span>
-      </div>
-      <div class="diff-line diff-remove">
-        <span class="diff-line-num">2</span>
-        <span>This line was removed from the previous version</span>
-      </div>
-      <div class="diff-line diff-context">
-        <span class="diff-line-num">3</span>
-        <span>More unchanged context here</span>
-      </div>
-    </div>
-    <div class="diff-right" role="region" aria-label="New version content">
-      <div class="diff-line diff-context">
-        <span class="diff-line-num">1</span>
-        <span>This is some unchanged context from the previous version</span>
-      </div>
-      <div class="diff-line diff-add">
-        <span class="diff-line-num">2</span>
-        <span>This is a newly added line in the new version</span>
-      </div>
-      <div class="diff-line diff-context">
-        <span class="diff-line-num">3</span>
-        <span>More unchanged context here</span>
-      </div>
-    </div>
+    <div class="diff-left" id="diff-left"></div>
+    <div class="diff-right" id="diff-right"></div>
   `;
   container.appendChild(diffContainer);
+
+  // Simple diff implementation
+  const oldLines = oldContent.split('\n');
+  const newLines = newContent.split('\n');
+
+  const diffLeft = document.getElementById('diff-left');
+  const diffRight = document.getElementById('diff-right');
+
+  // Add line numbers to both sides
+  for (let i = 0; i < Math.max(oldLines.length, newLines.length); i++) {
+    const oldLine = oldLines[i] || '';
+    const newLine = newLines[i] || '';
+
+    // Create line elements for both sides
+    const oldLineEl = document.createElement('div');
+    oldLineEl.className = 'diff-line';
+    oldLineEl.innerHTML = `<span class="diff-line-num">${i + 1}</span><span>${oldLine}</span>`;
+
+    const newLineEl = document.createElement('div');
+    newLineEl.className = 'diff-line';
+    newLineEl.innerHTML = `<span class="diff-line-num">${i + 1}</span><span>${newLine}</span>`;
+
+    // Compare lines to determine diff type
+    if (oldLine === newLine) {
+      oldLineEl.classList.add('diff-context');
+      newLineEl.classList.add('diff-context');
+    } else if (newLine.startsWith('+')) {
+      oldLineEl.classList.add('diff-empty');
+      newLineEl.classList.add('diff-add');
+    } else if (oldLine.startsWith('-')) {
+      oldLineEl.classList.add('diff-remove');
+      newLineEl.classList.add('diff-empty');
+    } else {
+      oldLineEl.classList.add('diff-remove');
+      newLineEl.classList.add('diff-add');
+    }
+
+    diffLeft.appendChild(oldLineEl);
+    diffRight.appendChild(newLineEl);
+  }
 }
 </script>
 </head>
@@ -220,78 +231,52 @@ function showDiff() {
   <div class="flex min-h-screen">
     <aside class="sidebar">
       <nav class="py-4">
-        <a href="#" class="sidebar-item active">
-          <span>&#x1F5E3;</span>
-          <span>The Scrolls</span>
+        <a href="/dashboard/prompts" class="sidebar-item active">
+          <span>&#x1F4E4;</span>
+          <span>Scrolls</span>
         </a>
-        <a href="#" class="sidebar-item">
-          <span>&#x1F4E5;</span>
-          <span>Secrets</span>
+        <a href="/dashboard/approvals" class="sidebar-item">
+          <span>&#x1F4C4;</span>
+          <span>Approvals</span>
         </a>
-        <a href="#" class="sidebar-item">
-          <span>&#x1F469;&#x200D;&#x1F3A4;</span>
-          <span>Agents</span>
+        <a href="/dashboard/settings" class="sidebar-item">
+          <span>&#x1F527;</span>
+          <span>Settings</span>
         </a>
       </nav>
     </aside>
 
-    <main class="flex-1 flex flex-col">
-      <header class="bg-[var(--stone-light)] border-b border-[var(--iron)] px-6 py-4 flex items-center justify-between">
-        <div class="flex items-center gap-4">
-          <button class="mobile-menu-btn">&#x2630;</button>
-          <h1 class="text-2xl font-bold">Stronghold</h1>
-        </div>
-        <div class="flex items-center gap-4">
-          <span class="text-sm">Logged in as user@example.com</span>
-          <button class="btn-secondary px-4 py-2 rounded text-sm">Logout</button>
-        </div>
-      </header>
-
-      <div class="flex flex-1 overflow-hidden">
-        <aside class="w-64 bg-[var(--stone-dark)] border-r border-[var(--iron)] p-4 overflow-y-auto">
-          <div class="space-y-2">
-            <button onclick="showCreate()" class="w-full btn-primary p-3 rounded-md text-left font-medium">Create New</button>
-            <div id="prompt-list" class="space-y-2 mt-4">
-              <!-- Prompts will be loaded here -->
-              <div class="prompt-row p-4 flex justify-between items-center">
-                <div class="flex items-center gap-3">
-                  <span style="font-size:1.2rem">&#x1F4DC;</span>
-                  <div>
-                    <h3 class="font-medium text-[var(--parchment)]">Sample Prompt</h3>
-                    <p class="text-xs text-[var(--iron-light)]">3 versions</p>
-                  </div>
-                </div>
-                <span class="badge badge-green">v1.2.3</span>
-              </div>
-            </div>
-          </div>
-        </aside>
-
-        <section id="prompt-detail" class="flex-1 overflow-y-auto p-6">
-          <!-- Content will be loaded here -->
-        </section>
+    <main class="flex-1 p-8">
+      <div id="prompt-list" class="space-y-2">
+        <div class="p-4 text-sm text-[var(--iron-light)] sh-loading">&#x1F5E3; Loading scrolls...</div>
       </div>
+
+      <div id="prompt-detail" class="hidden"></div>
     </main>
   </div>
 
-  <div class="sidebar-overlay" id="sidebarOverlay"></div>
+  <div class="sidebar-overlay" id="sidebar-overlay"></div>
+
+  <button class="mobile-menu-btn" id="mobile-menu-btn">&#9776;</button>
 
   <script>
     // Mobile menu toggle
-    document.querySelector('.mobile-menu-btn').addEventListener('click', function() {
-      document.querySelector('.sidebar').classList.toggle('open');
-      document.getElementById('sidebarOverlay').classList.toggle('open');
+    const mobileMenuBtn = document.getElementById('mobile-menu-btn');
+    const sidebar = document.querySelector('.sidebar');
+    const sidebarOverlay = document.getElementById('sidebar-overlay');
+
+    mobileMenuBtn.addEventListener('click', () => {
+      sidebar.classList.toggle('open');
+      sidebarOverlay.classList.toggle('open');
     });
 
-    document.getElementById('sidebarOverlay').addEventListener('click', function() {
-      document.querySelector('.sidebar').classList.remove('open');
-      this.classList.remove('open');
+    sidebarOverlay.addEventListener('click', () => {
+      sidebar.classList.remove('open');
+      sidebarOverlay.classList.remove('open');
     });
 
     // Load initial content
-    document.addEventListener('DOMContentLoaded', function() {
-      loadVersionHistory();
-    });
+    document.addEventListener('DOMContentLoaded', loadVersionHistory);
   </script>
 </body>
 </html>
