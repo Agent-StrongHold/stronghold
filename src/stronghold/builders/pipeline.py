@@ -493,18 +493,62 @@ class RuntimePipeline:
         repo: str,
         issue_number: int,
         body: str,
+        *,
+        run: Any = None,
     ) -> str:
-        """Post a comment to the GitHub issue."""
-        return await self._td.execute(
+        """Post or update the single run comment on the issue.
+
+        First call creates the comment and stashes the ID on the run.
+        Subsequent calls edit the same comment, appending new content.
+        """
+        import json as _json
+
+        comment_id = getattr(run, "_comment_id", None) if run else None
+
+        if comment_id:
+            # Edit existing comment — append new section
+            old_body = getattr(run, "_comment_body", "")
+            new_body = old_body + "\n\n---\n\n" + body
+            # Trim if too long (GitHub limit ~65536)
+            if len(new_body) > 60000:
+                new_body = new_body[-60000:]
+            result = await self._td.execute(
+                "github",
+                {
+                    "action": "edit_comment",
+                    "owner": owner,
+                    "repo": repo,
+                    "comment_id": comment_id,
+                    "body": new_body,
+                },
+            )
+            if run:
+                run._comment_body = new_body
+            return result
+
+        # First call — create the comment
+        run_id = getattr(run, "run_id", "?") if run else "?"
+        header = f"## Builders Run `{run_id}`\n\n"
+        full_body = header + body
+        result = await self._td.execute(
             "github",
             {
                 "action": "post_pr_comment",
                 "owner": owner,
                 "repo": repo,
                 "issue_number": issue_number,
-                "body": body,
+                "body": full_body,
             },
         )
+        # Stash comment ID for future edits
+        if run and not result.startswith("Error:"):
+            try:
+                data = _json.loads(result)
+                run._comment_id = data.get("id")
+                run._comment_body = full_body
+            except Exception:
+                pass
+        return result
 
     # ── Stage 1: Issue Analysis ──────────────────────────────────────
 
@@ -559,7 +603,7 @@ class RuntimePipeline:
             f"**Approach:** {analysis.get('approach', '')}\n"
         )
 
-        await self._post_to_issue(owner, repo, run.issue_number, summary)
+        await self._post_to_issue(owner, repo, run.issue_number, summary, run=run)
 
         return StageResult(
             success=True,
@@ -645,7 +689,7 @@ class RuntimePipeline:
             f"**Total scenarios:** {len(scenarios)}\n"
         )
 
-        await self._post_to_issue(owner, repo, run.issue_number, summary)
+        await self._post_to_issue(owner, repo, run.issue_number, summary, run=run)
 
         # Stash for next stage
         run._criteria = scenarios
@@ -847,6 +891,7 @@ class RuntimePipeline:
                 await self._post_to_issue(
                     owner, repo, run.issue_number,
                     f"Criterion {i + 1}: failed to generate test — {e}",
+                    run=run,
                 )
                 continue
 
@@ -954,6 +999,7 @@ class RuntimePipeline:
                 owner, repo, run.issue_number,
                 f"**Criterion {i + 1}/{len(criteria)}:** {p} passed, {f} failed\n\n"
                 f"```\n{final_output[:1000]}\n```",
+                run=run,
             )
 
             if tracker.has_failed:
@@ -995,7 +1041,7 @@ class RuntimePipeline:
             f"(hwm: {tracker.high_water_mark})\n\n"
             f"**Pytest:**\n```\n{final_output[:2000]}\n```\n"
         )
-        await self._post_to_issue(owner, repo, run.issue_number, summary)
+        await self._post_to_issue(owner, repo, run.issue_number, summary, run=run)
 
         return StageResult(
             success=final_passing > 0,
@@ -1141,7 +1187,7 @@ class RuntimePipeline:
             )
             + "\n"
         )
-        await self._post_to_issue(owner, repo, run.issue_number, summary)
+        await self._post_to_issue(owner, repo, run.issue_number, summary, run=run)
 
         return StageResult(
             success=True,
@@ -1178,7 +1224,7 @@ class RuntimePipeline:
             f"**Git log:**\n```\n{git_log}\n```\n\n"
             f"**Changes vs main:**\n```\n{git_diff_stat}\n```\n"
         )
-        await self._post_to_issue(owner, repo, run.issue_number, summary)
+        await self._post_to_issue(owner, repo, run.issue_number, summary, run=run)
 
         return StageResult(
             success=True,
@@ -1270,7 +1316,7 @@ class RuntimePipeline:
                 f"- {r}" for r in analysis.get("requirements", [])
             )
         )
-        await self._post_to_issue(owner, repo, run.issue_number, summary)
+        await self._post_to_issue(owner, repo, run.issue_number, summary, run=run)
 
         return StageResult(
             success=True, summary=summary,
@@ -1322,7 +1368,7 @@ class RuntimePipeline:
             f"**Rendering model:** {rendering_model}\n\n"
             f"```gherkin\n{scenarios_text}\n```\n"
         )
-        await self._post_to_issue(owner, repo, run.issue_number, summary)
+        await self._post_to_issue(owner, repo, run.issue_number, summary, run=run)
 
         return StageResult(
             success=True, summary=summary,
@@ -1494,7 +1540,7 @@ class RuntimePipeline:
             f"{final_failing} failed\n"
         )
         await self._post_to_issue(
-            owner, repo, run.issue_number, summary,
+            owner, repo, run.issue_number, summary, run=run,
         )
 
         return StageResult(
@@ -1543,7 +1589,7 @@ class RuntimePipeline:
             f"**Git log:**\n```\n{git_log}\n```\n\n"
             f"**Changes:**\n```\n{git_diff}\n```\n"
         )
-        await self._post_to_issue(owner, repo, run.issue_number, summary)
+        await self._post_to_issue(owner, repo, run.issue_number, summary, run=run)
 
         return StageResult(
             success=True, summary=summary,

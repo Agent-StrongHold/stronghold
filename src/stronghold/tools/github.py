@@ -247,6 +247,21 @@ class GitHubToolExecutor:
             comment = resp.json()
             return {"id": comment["id"], "url": comment["html_url"]}
 
+    async def _edit_comment(self, args: dict[str, Any]) -> dict[str, Any]:
+        import httpx
+
+        owner, repo = args["owner"], args["repo"]
+        comment_id = args["comment_id"]
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            resp = await client.patch(
+                f"{self._base_url}/repos/{owner}/{repo}/issues/comments/{comment_id}",
+                headers=self._headers(),
+                json={"body": args.get("body", "")},
+            )
+            resp.raise_for_status()
+            comment = resp.json()
+            return {"id": comment["id"], "url": comment["html_url"]}
+
     async def _list_pr_comments(self, args: dict[str, Any]) -> list[dict[str, Any]]:
         import httpx
 
@@ -390,6 +405,7 @@ class GitHubToolExecutor:
         "create_pr": _create_pr,
         "get_pr_diff": _get_pr_diff,
         "post_pr_comment": _post_pr_comment,
+        "edit_comment": _edit_comment,
         "list_pr_comments": _list_pr_comments,
         "list_issue_comments": _list_issue_comments,
         "search_issues": _search_issues,
