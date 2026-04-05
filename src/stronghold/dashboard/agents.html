@@ -10,7 +10,7 @@
   :root { --stone-dark:#1a1a2e; --stone-mid:#16213e; --stone-light:#1e2d4a; --iron:#4a4a5a; --iron-light:#6b6b7b; --gold:#e2a529; --gold-dim:#c9a227; --parchment:#f5f0e1; --blood:#8b2500; --emerald:#2d6a4f; }
   body { background: linear-gradient(135deg, var(--stone-dark), var(--stone-mid)); color: #d4d0c8; font-family: 'JetBrains Mono', monospace; min-height: 100vh; }
   h1,h2,h3 { font-family: 'Playfair Display', Georgia, serif; color: var(--gold); }
-  .sidebar { background: linear-gradient(180deg, #0d1321, #1a1a2e); border-right: 2px solid var(--iron); width: 240px; min-height: 100vh; }
+  .sidebar { background: linear-gradient(180deg, #0d1321, var(--stone-dark)); border-right: 2px solid var(--iron); width: 240px; min-height: 100vh; }
   .sidebar-item { padding: 12px 20px; cursor: pointer; transition: all 0.2s; border-left: 3px solid transparent; display: flex; align-items: center; gap: 10px; color: #8b8b9b; font-size: 0.85rem; text-decoration: none; }
   .sidebar-item:hover { background: rgba(226,165,41,0.08); color: var(--gold-dim); border-left-color: var(--gold-dim); }
   .sidebar-item.active { background: rgba(226,165,41,0.12); color: var(--gold); border-left-color: var(--gold); }
@@ -67,19 +67,66 @@
     .stat-label { font-size: 0.6rem; }
     select, textarea, input[type=text] { font-size: 16px !important; }
   }
+  .agent-card {
+    background: var(--stone-light);
+    border: 1px solid var(--iron);
+    border-radius: 8px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+    transition: transform 0.2s, box-shadow 0.2s;
+  }
+  .agent-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 16px rgba(226,165,41,0.15);
+  }
   .agent-description {
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+    max-width: 120px;
   }
   .agent-description:hover {
     overflow: visible;
     white-space: normal;
     word-break: break-word;
+    background-color: var(--stone-dark);
+    color: var(--parchment);
+    padding: 4px 8px;
+    border-radius: 4px;
+    position: absolute;
+    z-index: 10;
+  }
+  .tooltip {
+    position: relative;
+    display: inline-block;
+  }
+  .tooltip .tooltiptext {
+    visibility: hidden;
+    width: auto;
+    max-width: 300px;
+    background-color: var(--stone-dark);
+    color: var(--parchment);
+    text-align: left;
+    border-radius: 4px;
+    padding: 8px 12px;
+    position: absolute;
+    z-index: 1;
+    bottom: 125%;
+    left: 50%;
+    transform: translateX(-50%);
+    opacity: 0;
+    transition: opacity 0.3s;
+    font-size: 0.8rem;
+    line-height: 1.4;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+  }
+  .tooltip:hover .tooltiptext {
+    visibility: visible;
+    opacity: 1;
   }
 </style>
 <script src="/dashboard/auth.js"></script>
 </head>
+
 <body class="flex">
 <div class="sidebar-overlay" id="sidebar-overlay" role="button" onclick="closeSidebar()"></div>
 
@@ -103,115 +150,65 @@
   <div class="py-2 border-t border-[var(--iron)]">
     <a href="/dashboard/profile" class="sidebar-item"><span style="width:24px;text-align:center">&#x1F464;</span> Profile</a>
   </div>
-  <div class="p-4 border-t border-[var(--iron)] text-xs text-[var(--iron-light)]">
-    <div class="flex justify-between items-center"><span>v0.1.0</span><a href="/logout" onclick="strongholdLogout();return false" style="color:var(--iron-light);text-decoration:none;transition:color 0.2s" class="sh-logout">Logout</a></div>
-  </div>
 </nav>
 
-<main class="flex-1 overflow-auto">
-  <header class="px-8 py-6 border-b border-[var(--iron)] flex items-center justify-between">
-    <div>
-      <div class="flex items-center gap-3"><button class="mobile-menu-btn" onclick="openSidebar()">&#x2630;</button><h2 class="text-2xl">&#x2694; The Knights</h2></div>
-      <p class="text-sm text-[var(--iron-light)] mt-1">Specialist agents sworn to defend the realm</p>
-    </div>
-    <div class="flex gap-2">
-      <label class="btn-iron btn-sm flex items-center gap-1" style="cursor:pointer">
-        &#x1F4E5; Import Zip
-        <input type="file" accept=".zip" id="import-file" style="display:none">
-      </label>
-      <button class="btn-iron btn-sm" onclick="promptImportUrl()">&#x1F517;<
-</button></div>
-  </header>
+<main class="flex-1 p-8 overflow-y-auto">
+  <div class="max-w-7xl mx-auto">
+    <h1 class="text-3xl font-bold mb-8 text-gold">Knights</h1>
 
-  <div class="px-8 py-6">
-    <h2 class="text-xl text-[var(--gold)] mb-6">Agent Roster</h2>
+    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+      <!-- Agent Card Template -->
+      <div class="agent-card p-6 flex flex-col">
+        <div class="flex items-center gap-4 mb-4">
+          <div class="sigil">&#x2654;</div>
+          <div>
+            <h3 class="text-lg font-semibold text-gold">Knight Captain</h3>
+            <p class="text-xs text-iron-light">ID: knight-captain-001</p>
+          </div>
+        </div>
 
-    <div id="agents-container" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-      <!-- Agent cards will be rendered here by JavaScript -->
+        <div class="mb-4">
+          <h5 class="text-iron-light mb-2 text-sm font-medium">Description:</h5>
+          <p class="agent-description truncate" title="Leads the defense of the stronghold and coordinates all defensive operations. Expert in tactical formations and siege warfare.">Leads the defense of the stronghold and coordinates all defensive operations. Expert in tactical formations and siege warfare.</p>
+        </div>
+
+        <div class="mb-4">
+          <h5 class="text-iron-light mb-2 text-sm font-medium">Tools:</h5>
+          <ul class="list-disc list-inside text-sm text-[var(--iron-light)] space-y-1">
+            <li>Sword</li>
+            <li>Shield</li>
+            <li>Tactical Map</li>
+          </ul>
+        </div>
+
+        <div class="mt-auto flex gap-2">
+          <button class="btn-gold btn-sm">View</button>
+          <button class="btn-iron btn-sm">Edit</button>
+        </div>
+      </div>
+
+      <!-- More agent cards would go here -->
     </div>
   </div>
 </main>
 
 <script>
-  document.addEventListener('DOMContentLoaded', () => {
-    const agentsContainer = document.getElementById('agents-container');
+  // Mobile menu functionality
+  function openSidebar() {
+    document.getElementById('sidebar').classList.add('open');
+    document.getElementById('sidebar-overlay').classList.add('open');
+  }
 
-    // Sample agent data - in a real app this would come from an API
-    const agents = [
-      {
-        id: 1,
-        name: 'Sir Aldric the Wise',
-        description: 'A veteran strategist with decades of experience in castle defense and siege warfare. Specializes in long-term tactical planning and resource allocation for sustained defense operations.',
-        tools: ['Longsword', 'Shield Wall', 'Tactical Planning'],
-        sigil: '&#9876;'
-      },
-      {
-        id: 2,
-        name: 'Lady Elara the Arcane',
-        description: 'Master of arcane arts and defensive enchantments. Can summon protective barriers and detect magical intrusions before they breach castle walls.',
-        tools: ['Arcane Barrier', 'Detection Runes', 'Healing Spells'],
-        sigil: '&#9731;'
-      },
-      {
-        id: 3,
-        name: 'Garrick the Unbreakable',
-        description: 'A towering knight with legendary endurance. His mere presence on the battlements demoralizes would-be attackers and inspires castle defenders to greater feats.',
-        tools: ['Greatsword', 'Heavy Armor', 'Morale Boost'],
-        sigil: '&#9877;'
-      },
-      {
-        id: 4,
-        name: 'Mira the Swift',
-        description: 'Elven scout and messenger with unmatched speed and stealth. Can traverse the castle grounds undetected and deliver critical intelligence to commanders in record time.',
-        tools: ['Short Bow', 'Stealth', 'Message Magic'],
-        sigil: '&#9732;'
-      },
-      {
-        id: 5,
-        name: 'Brother Cedric the Pious',
-        description: 'The castle chaplain who maintains spiritual defenses and morale among the garrison. His prayers can temporarily strengthen castle walls against magical attacks.',
-        tools: ['Prayer', 'Blessing', 'Counsel'],
-        sigil: '&#9999;'
-      }
-    ];
+  function closeSidebar() {
+    document.getElementById('sidebar').classList.remove('open');
+    document.getElementById('sidebar-overlay').classList.remove('open');
+  }
 
-    agents.forEach(agent => {
-      const agentCard = document.createElement('div');
-      agentCard.className = 'card p-6 knight-card';
-      agentCard.innerHTML = `
-        <div class="flex items-start gap-4">
-          <div class="sigil">${agent.sigil}</div>
-          <div class="flex-1 min-w-0">
-            <h3 class="text-lg font-bold text-[var(--gold)] truncate" title="${agent.name}">${agent.name}</h3>
-            <p class="text-sm text-[var(--iron-light)] mt-2 truncate" title="${agent.description}">${agent.description}</p>
-          </div>
-        </div>
-        <div class="mt-4">
-          <h5 class="text-iron-light mb-2 text-sm font-medium">Tools:</h5>
-          <ul class="list-disc list-inside text-sm text-[var(--iron-light)] space-y-1">
-            ${agent.tools.map(tool => `<li>${tool}</li>`).join('')}
-          </ul>
-        </div>
-        <div class="mt-4 flex gap-2">
-          <button class="btn-gold btn-sm flex-1" onclick="viewAgent(${agent.id})">View Details</button>
-          <button class="btn-iron btn-sm flex-1" onclick="editAgent(${agent.id})">Edit</button>
-        </div>
-      `;
-      agentsContainer.appendChild(agentCard);
-    });
-
-    // Mobile menu functionality
-    function openSidebar() {
-      document.getElementById('sidebar').classList.add('open');
-      document.getElementById('sidebar-overlay').classList.add('open');
-    }
-
-    function closeSidebar() {
-      document.getElementById('sidebar').classList.remove('open');
-      document.getElementById('sidebar-overlay').classList.remove('open');
-    }
-  });
+  // Initialize mobile menu button if needed
+  const mobileMenuBtn = document.querySelector('.mobile-menu-btn');
+  if (mobileMenuBtn) {
+    mobileMenuBtn.addEventListener('click', openSidebar);
+  }
 </script>
-
 </body>
 </html>
