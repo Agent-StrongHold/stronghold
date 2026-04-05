@@ -207,7 +207,7 @@ class GitHubToolExecutor:
                 json={
                     "title": args.get("title", ""),
                     "body": args.get("body", ""),
-                    "head": args["branch"],
+                    "head": args.get("head", args.get("branch", "")),
                     "base": args.get("base", "main"),
                 },
             )
