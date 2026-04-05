@@ -112,3 +112,14 @@ class TestUptimeEndpoint:
             assert second_resp.status_code == 200
             second_data = second_resp.json()
             assert second_data["started_at"] == started_at
+
+    def test_uptime_endpoint_returns_valid_json(self, app: FastAPI) -> None:
+        """Test that the uptime endpoint returns valid JSON."""
+        with TestClient(app) as client:
+            resp = client.get("/v1/stronghold/status/uptime")
+            assert resp.status_code == 200
+            try:
+                data = resp.json()
+                assert isinstance(data, dict)
+            except Exception as e:
+                pytest.fail(f"Response is not valid JSON: {e}")
