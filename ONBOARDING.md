@@ -27,24 +27,30 @@ the first request. This means:
 
 You do NOT need to set up database connections in tests.
 
-## Route Paths in Tests vs Production
+## Route Paths in This Codebase
 
-**CRITICAL:** In tests, you create a bare FastAPI app and include the router directly:
+**In this codebase, routes define their FULL path in the decorator.** There are no
+router prefixes. The path you see in the code IS the path you test.
+
+Examples from the actual code:
+```python
+# src/stronghold/api/routes/status.py
+@router.get("/health")                          # test: client.get("/health")
+
+# src/stronghold/api/routes/admin.py
+@router.get("/v1/stronghold/admin/learnings")   # test: client.get("/v1/stronghold/admin/learnings")
+```
+
+**Before writing a test, read the route file** and find the actual decorator path.
+Use THAT path in your test. Do not guess or abbreviate.
 
 ```python
 app = FastAPI()
-app.include_router(status_router)  # No prefix!
+app.include_router(status_router)  # No prefix added here
+# The route IS whatever the decorator says
 ```
 
-This means routes are mounted at their **bare paths** — e.g., `/health`, `/version`.
-In production, `create_app()` may mount routers with prefixes, but **in tests the
-paths match the router definition exactly**.
-
-So if the router defines `@router.get("/version")`, the test calls `client.get("/version")`.
-Do NOT use the production path like `/v1/stronghold/version` in tests unless the router
-itself defines that full path.
-
-**Rule:** Look at what the router defines, test that path. Not the production URL.
+**Rule:** Read the route decorator. Test that exact path. No guessing.
 
 ---
 
@@ -297,24 +303,24 @@ def app() -> FastAPI:
 class TestVersionEndpoint:
     def test_returns_200(self, app: FastAPI) -> None:
         with TestClient(app) as client:
-            # Use bare router path — NOT /v1/stronghold/version
-            # Tests mount the router directly without prefix
-            resp = client.get("/version")
+            # Use the EXACT path from the route decorator
+            # Read the route file first to find it
+            resp = client.get("/v1/stronghold/version")
             assert resp.status_code == 200
 
     def test_response_has_version_field(self, app: FastAPI) -> None:
         with TestClient(app) as client:
-            data = client.get("/version").json()
+            data = client.get("/v1/stronghold/version").json()
             assert "version" in data
 
     def test_response_has_python_version(self, app: FastAPI) -> None:
         with TestClient(app) as client:
-            data = client.get("/version").json()
+            data = client.get("/v1/stronghold/version").json()
             assert "python_version" in data
 
     def test_service_field_is_stronghold(self, app: FastAPI) -> None:
         with TestClient(app) as client:
-            data = client.get("/version").json()
+            data = client.get("/v1/stronghold/version").json()
             assert data["service"] == "stronghold"
 ```
 

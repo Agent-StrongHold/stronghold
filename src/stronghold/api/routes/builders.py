@@ -101,6 +101,15 @@ _STAGE_SEQUENCE = [
     "quality_checks_passed",
 ]
 
+# UI pipeline stages (Piper + Glazier)
+_UI_STAGE_SEQUENCE = [
+    "ui_analyzed",
+    "ui_criteria_defined",
+    "ui_tests_written",
+    "ui_implemented",
+    "ui_verified",
+]
+
 
 @router.post("/runs")
 async def create_run(request: Request) -> JSONResponse:
@@ -140,14 +149,30 @@ async def create_run(request: Request) -> JSONResponse:
     run_id = f"run-{uuid.uuid4().hex[:8]}"
     orch = _get_orchestrator()
 
+    # Detect UI issues by signals in title/body
+    ui_signals = [
+        "dashboard/", ".html", "sidebar", "button", "scroll",
+        "css", "tailwind", "overlap", "animate", "active state",
+        "tooltip", "diff view", "progress bar", "hover",
+    ]
+    search_text = f"{issue_title} {issue_body}".lower()
+    is_ui = any(s in search_text for s in ui_signals)
+
+    if is_ui:
+        initial_stage = "ui_analyzed"
+        initial_worker = WorkerName("piper")
+    else:
+        initial_stage = "issue_analyzed"
+        initial_worker = WorkerName.FRANK
+
     orch.create_run(
         run_id=run_id,
         repo=f"{owner}/{repo}",
         issue_number=issue_number or 1,
         branch=f"builders/{issue_number or 1}-{run_id}",
         workspace_ref=f"ws_{run_id}",
-        initial_stage="issue_analyzed",
-        initial_worker=WorkerName.FRANK,
+        initial_stage=initial_stage,
+        initial_worker=initial_worker,
     )
 
     logger.info("Builders run created: run_id=%s repo=%s", run_id, f"{owner}/{repo}")
@@ -403,6 +428,23 @@ _STAGE_WORKER = {
     "quality_checks_passed": "mason",
 }
 
+# UI pipeline (Piper + Glazier)
+_UI_STAGE_HANDLERS = {
+    "ui_analyzed": "analyze_ui",
+    "ui_criteria_defined": "define_ui_criteria",
+    "ui_tests_written": "write_ui_tests",
+    "ui_implemented": "implement_ui",
+    "ui_verified": "verify_ui",
+}
+
+_UI_STAGE_WORKER = {
+    "ui_analyzed": "piper",
+    "ui_criteria_defined": "piper",
+    "ui_tests_written": "glazier",
+    "ui_implemented": "glazier",
+    "ui_verified": "glazier",
+}
+
 
 async def _execute_one_stage(run_id: str, orch: Any, container: Any, service_auth: Any) -> None:
     """Execute a single stage using runtime-controlled pipeline.
@@ -420,7 +462,7 @@ async def _execute_one_stage(run_id: str, orch: Any, container: Any, service_aut
     worker = run.current_worker
     owner, repo_name = run.repo.split("/")
 
-    handler_name = _STAGE_HANDLERS.get(stage)
+    handler_name = _STAGE_HANDLERS.get(stage) or _UI_STAGE_HANDLERS.get(stage)
     if not handler_name:
         logger.error("No pipeline handler for stage %s", stage)
         return
@@ -491,15 +533,25 @@ async def _execute_one_stage(run_id: str, orch: Any, container: Any, service_aut
         ],
     )
 
-    idx = _STAGE_SEQUENCE.index(stage) if stage in _STAGE_SEQUENCE else -1
+    # Determine which sequence this stage belongs to
+    if stage in _UI_STAGE_SEQUENCE:
+        seq = _UI_STAGE_SEQUENCE
+        worker_map = _UI_STAGE_WORKER
+        terminal_stage = "ui_verified"
+    else:
+        seq = _STAGE_SEQUENCE
+        worker_map = _STAGE_WORKER
+        terminal_stage = "quality_checks_passed"
 
-    if status == RunStatus.PASSED and idx >= 0 and idx + 1 < len(_STAGE_SEQUENCE):
-        next_stage = _STAGE_SEQUENCE[idx + 1]
-        next_worker_name = _STAGE_WORKER.get(next_stage)
+    idx = seq.index(stage) if stage in seq else -1
+
+    if status == RunStatus.PASSED and idx >= 0 and idx + 1 < len(seq):
+        next_stage = seq[idx + 1]
+        next_worker_name = worker_map.get(next_stage)
         next_worker = WorkerName(next_worker_name) if next_worker_name else worker
         orch.apply_result(run_result, next_stage=next_stage)
         orch._runs[run_id].current_worker = next_worker
-    elif status == RunStatus.PASSED and stage == "quality_checks_passed":
+    elif status == RunStatus.PASSED and stage == terminal_stage:
         orch.apply_result(run_result)
         orch.complete_run_if_ready(
             run_id,

@@ -353,3 +353,8 @@ BUILDER_PROMPT_DEFAULTS: dict[str, str] = {
     "builders.auditor.stage.implementation_ready": AUDITOR_STAGE_IMPLEMENTATION_READY,
     "builders.auditor.stage.quality_checks_passed": AUDITOR_STAGE_QUALITY_CHECKS_PASSED,
 }
+
+# Merge UI prompts (Piper + Glazier)
+from stronghold.builders.ui_prompts import UI_PROMPT_DEFAULTS  # noqa: E402
+
+BUILDER_PROMPT_DEFAULTS.update(UI_PROMPT_DEFAULTS)
