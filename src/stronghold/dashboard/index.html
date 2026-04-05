@@ -173,15 +173,15 @@ document.addEventListener('DOMContentLoaded', function() {
           progressBar.setAttribute('role', 'progressbar');
           progressBar.setAttribute('aria-valuenow', data.used);
           progressBar.setAttribute('aria-valuemin', '0');
-          progressBar.setAttribute('aria-valuemax', data.total);
-          progressBar.style.width = `${(data.used / data.total) * 100}%`;
+          progressBar.setAttribute('aria-valuemax', data.limit);
+          progressBar.style.width = `${(data.used / data.limit) * 100}%`;
         }
       })
-      .catch(error => console.error('Error loading quota:', error));
+      .catch(console.error);
   }
 
   loadQuota();
-  let analystChart = null;
+  let analystChart;
 
   function askAnalyst() {
     const input = document.getElementById('chat-input');
@@ -196,10 +196,10 @@ document.addEventListener('DOMContentLoaded', function() {
     ai.innerHTML = 'The analyst is processing your request...';
     hist.appendChild(ai);
 
-    const btn = document.querySelector('.chat-input button');
-    btn.disabled = true;
+    const btn = document.querySelector('button[onclick="askAnalyst()"]');
+    if (btn) btn.disabled = true;
 
-    fetch('/api/analyst', {
+    fetch('/api/ask', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ message: input.value })
@@ -212,195 +212,16 @@ document.addEventListener('DOMContentLoaded', function() {
         err.style.color = 'var(--blood)';
         err.textContent = 'Failed to reach the analyst.';
         hist.appendChild(err);
-      })
-      .catch(e => {
-        thinking.remove();
-        const err = document.createElement('div');
-        err.className = 'chat-msg chat-msg-ai';
-        err.style.color = 'var(--blood)';
-        err.textContent = 'Failed to reach the analyst.';
-        hist.appendChild(err);
       });
 
     btn.disabled = false;
     hist.scrollTop = hist.scrollHeight;
   }
-
-  document.addEventListener('DOMContentLoaded',function(){
-    var i=document.getElementById('chat-input');
-    if(i)i.addEventListener('keydown',function(e){
-      if(e.key==='Enter'&&!e.shiftKey){
-        e.preventDefault();
-        askAnalyst();
-      }
-    });
-  });
+  document.addEventListener('DOMContentLoaded',function(){var i=document.getElementById('chat-input');if(i)i.addEventListener('keydown',function(e){if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();askAnalyst();}});});
 
   loadQuota();
-  function openSidebar(){
-    document.getElementById('sidebar').classList.add('open');
-    document.getElementById('sidebar-overlay').classList.add('open');
-  }
-  function closeSidebar(){
-    document.getElementById('sidebar').classList.remove('open');
-    document.getElementById('sidebar-overlay').classList.remove('open');
-  }
+  function openSidebar(){document.getElementById('sidebar').classList.add('open');document.getElementById('sidebar-overlay').classList.add('open');}
+  function closeSidebar(){document.getElementById('sidebar').classList.remove('open');document.getElementById('sidebar-overlay').classList.remove('open');}
 </script>
-</head>
-<body class="bg-stone-900 text-stone-200">
-  <div id="sidebar-overlay" class="sidebar-overlay"></div>
-  <aside id="sidebar" class="sidebar">
-    <nav>
-      <a href="#" class="sidebar-item active">
-        <span class="sidebar-icon">🏰</span>
-        <span>Dashboard</span>
-      </a>
-      <a href="#" class="sidebar-item">
-        <span class="sidebar-icon">🤖</span>
-        <span>Agents</span>
-      </a>
-      <a href="#" class="sidebar-item">
-        <span class="sidebar-icon">📚</span>
-        <span>Skills</span>
-      </a>
-      <a href="#prompt-versions" class="sidebar-item">
-        <span class="sidebar-icon">📜</span>
-        <span>Prompt Versions</span>
-      </a>
-    </nav>
-  </aside>
-
-  <main class="px-8 py-6">
-    <div class="max-w-7xl mx-auto">
-      <h1 class="text-3xl font-bold mb-6">The Great Hall</h1>
-
-      <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-        <div class="card">
-          <div class="card-header">
-            <h2 class="text-xl font-semibold">System Status</h2>
-          </div>
-          <div class="card-body">
-            <div class="flex items-center gap-4">
-              <div class="w-16 h-16 rounded-full bg-stone-800 flex items-center justify-center">
-                <span class="text-2xl">⚙️</span>
-              </div>
-              <div>
-                <div class="stat-value">98%</div>
-                <div class="stat-label">Uptime</div>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <div class="card">
-          <div class="card-header">
-            <h2 class="text-xl font-semibold">Active Agents</h2>
-          </div>
-          <div class="card-body">
-            <div class="stat-value">42</div>
-            <div class="stat-label">Running</div>
-          </div>
-        </div>
-
-        <div class="card">
-          <div class="card-header">
-            <h2 class="text-xl font-semibold">Quota Usage</h2>
-          </div>
-          <div class="card-body">
-            <div class="w-full bg-stone-700 rounded-full h-4 mb-2">
-              <div id="quota-progress" class="bg-emerald-500 h-4 rounded-full" role="progressbar" aria-label="Quota usage" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100" style="width: 0%"></div>
-            </div>
-            <div class="text-sm text-stone-400">12.5TB / 25TB used</div>
-          </div>
-        </div>
-      </div>
-
-      <section class="card mb-8">
-        <div class="card-header">
-          <h2 class="text-xl font-semibold">Recent Activity</h2>
-        </div>
-        <div class="card-body">
-          <div class="space-y-4">
-            <div class="flex items-center gap-3 p-3 bg-stone-800 rounded-lg">
-              <span class="text-green-400">✓</span>
-              <span>Agent "Scout" completed task #4567</span>
-              <span class="ml-auto text-stone-500 text-sm">2h ago</span>
-            </div>
-            <div class="flex items-center gap-3 p-3 bg-stone-800 rounded-lg">
-              <span class="text-blue-400">📊</span>
-              <span>New skill "Data Analysis" deployed</span>
-              <span class="ml-auto text-stone-500 text-sm">5h ago</span>
-            </div>
-            <div class="flex items-center gap-3 p-3 bg-stone-800 rounded-lg">
-              <span class="text-yellow-400">⚠️</span>
-              <span>Quota warning: 85% used</span>
-              <span class="ml-auto text-stone-500 text-sm">1d ago</span>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      <section id="prompt-versions" class="card">
-        <div class="card-header">
-          <h2 class="text-xl font-semibold">Prompt Versions</h2>
-        </div>
-        <div class="card-body">
-          <div class="overflow-x-auto">
-            <table class="w-full text-left">
-              <thead>
-                <tr class="border-b border-stone-700">
-                  <th class="py-2 pr-4">Version</th>
-                  <th class="py-2 pr-4">Date</th>
-                  <th class="py-2 pr-4">Changes</th>
-                  <th class="py-2">Status</th>
-                </tr>
-              </thead>
-              <tbody class="space-y-2">
-                <tr class="border-b border-stone-800">
-                  <td class="py-3 pr-4">v1.2.3</td>
-                  <td class="py-3 pr-4">May 15, 2024</td>
-                  <td class="py-3 pr-4">Added safety checks</td>
-                  <td class="py-3"><span class="badge badge-intent">Active</span></td>
-                </tr>
-                <tr class="border-b border-stone-800">
-                  <td class="py-3 pr-4">v1.2.2</td>
-                  <td class="py-3 pr-4">May 10, 2024</td>
-                  <td class="py-3 pr-4">Performance improvements</td>
-                  <td class="py-3"><span class="badge badge-intent">Active</span></td>
-                </tr>
-                <tr class="border-b border-stone-800">
-                  <td class="py-3 pr-4">v1.2.1</td>
-                  <td class="py-3 pr-4">May 5, 2024</td>
-                  <td class="py-3 pr-4">Bug fixes</td>
-                  <td class="py-3"><span class="badge badge-t3">Deprecated</span></td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-        </div>
-      </section>
-
-      <section class="mt-12">
-        <div class="card">
-          <div class="card-header">
-            <h2 class="text-xl font-semibold">Chat with Analyst</h2>
-          </div>
-          <div class="card-body">
-            <div id="chat-history" class="space-y-4 mb-4 h-96 overflow-y-auto">
-              <!-- Chat messages will appear here -->
-            </div>
-            <div class="flex gap-2">
-              <textarea id="chat-input" class="chat-input flex-1 p-3 rounded-lg min-h-[120px]" placeholder="Ask the analyst..."></textarea>
-              <button class="btn-gold self-end">Send</button>
-            </div>
-          </div>
-        </div>
-      </section>
-    </div>
-  </main>
-
-  <button class="mobile-menu-btn fixed top-4 left-4 z-50">
-    ☰ Menu
-  </button>
 </body>
 </html>
