@@ -32,3 +32,9 @@ class TestVersionEndpoint:
             assert "python_version" in data
             assert "service" in data
             assert data["service"] == "stronghold"
+
+    def test_version_field_is_non_empty_string(self, app: FastAPI) -> None:
+        with TestClient(app) as client:
+            data = client.get("/v1/stronghold/version").json()
+            assert isinstance(data["version"], str)
+            assert data["version"].strip() != ""
