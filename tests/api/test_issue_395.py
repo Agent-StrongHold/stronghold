@@ -79,3 +79,19 @@ class TestPromptDiffSyntaxHighlighting:
         html = (DASHBOARD_DIR / "prompts.html").read_text()
         assert "line-number" in html or "line-no" in html, "Missing line number class"
         assert "data-line-number" in html or "data-line" in html, "Missing line number attribute"
+
+class TestPromptDiffLayoutAndTypography:
+    def test_diff_view_is_side_by_side_on_large_screens(self) -> None:
+        html = (DASHBOARD_DIR / "prompts.html").read_text()
+        assert "md:flex" in html or "lg:flex" in html, "Missing flex layout for large screens"
+        assert "gap-" in html, "Missing gap utility for spacing between diff panes"
+
+    def test_diff_content_uses_jetbrains_mono_font(self) -> None:
+        html = (DASHBOARD_DIR / "prompts.html").read_text()
+        assert "font-mono" in html, "Missing monospace font class"
+        assert "JetBrains" in html or "font-mono" in html, "Missing JetBrains Mono font reference"
+
+    def test_long_lines_wrap_without_horizontal_scrolling(self) -> None:
+        css = (DASHBOARD_DIR / "styles.css").read_text()
+        assert "whitespace-normal" in css, "Missing whitespace-normal to allow line wrapping"
+        assert "overflow-x-hidden" in css or "overflow-hidden" in css, "Missing overflow handling to prevent horizontal scroll"
