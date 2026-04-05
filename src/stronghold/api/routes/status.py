@@ -2,14 +2,15 @@
 
 from __future__ import annotations
 
-from typing import Any
 import sys
+from typing import Any
 
 from fastapi import APIRouter, HTTPException, Request
 
 from stronghold import __version__
 
 router = APIRouter()
+
 
 @router.get("/health")
 async def health(request: Request) -> dict[str, Any]:
@@ -52,6 +53,7 @@ async def health(request: Request) -> dict[str, Any]:
 
     return result
 
+
 @router.get("/status/reactor")
 async def reactor_status(request: Request) -> dict[str, Any]:
     """Reactor loop status — triggers, events, stats. Requires auth."""
@@ -74,6 +76,7 @@ async def reactor_status(request: Request) -> dict[str, Any]:
         "recent_events": status.recent_events,
     }
 
+
 @router.get("/version")
 async def version() -> dict[str, Any]:
     """Version endpoint — returns service version and Python version."""
@@ -82,6 +85,7 @@ async def version() -> dict[str, Any]:
         "python_version": sys.version,
         "service": "stronghold",
     }
+
 
 @router.get("/v1/stronghold/version")
 async def version_v1() -> dict[str, Any]:
