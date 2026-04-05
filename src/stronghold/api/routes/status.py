@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import time
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Request
@@ -10,6 +11,8 @@ from stronghold import __version__
 
 router = APIRouter()
 
+# Record service start time at module level
+_SERVICE_START_TIME = time.monotonic()
 
 @router.get("/health")
 async def health(request: Request) -> dict[str, Any]:
@@ -52,7 +55,6 @@ async def health(request: Request) -> dict[str, Any]:
 
     return result
 
-
 @router.get("/status/reactor")
 async def reactor_status(request: Request) -> dict[str, Any]:
     """Reactor loop status — triggers, events, stats. Requires auth."""
@@ -73,4 +75,19 @@ async def reactor_status(request: Request) -> dict[str, Any]:
         "tasks_failed": status.tasks_failed,
         "triggers": status.triggers,
         "recent_events": status.recent_events,
+    }
+
+@router.get("/status/uptime")
+async def uptime() -> dict[str, Any]:
+    """Uptime information — no auth required (public like /health).
+
+    Returns how long the service has been running.
+    """
+    uptime_seconds = time.monotonic() - _SERVICE_START_TIME
+    started_at = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(_SERVICE_START_TIME))
+
+    return {
+        "uptime_seconds": uptime_seconds,
+        "started_at": started_at,
+        "service": "stronghold",
     }
