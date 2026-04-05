@@ -45,3 +45,20 @@ class TestUptimeEndpoint:
                 datetime.fromisoformat(data["started_at"].replace("Z", "+00:00"))
             except ValueError:
                 pytest.fail("started_at is not a valid ISO 8601 timestamp")
+
+    def test_uptime_increases_over_time(self, app: FastAPI) -> None:
+        with TestClient(app) as client:
+            first_resp = client.get("/v1/stronghold/status/uptime")
+            assert first_resp.status_code == 200
+            first_data = first_resp.json()
+            assert "uptime_seconds" in first_data
+
+            import time
+            time.sleep(1)
+
+            second_resp = client.get("/v1/stronghold/status/uptime")
+            assert second_resp.status_code == 200
+            second_data = second_resp.json()
+            assert "uptime_seconds" in second_data
+
+            assert second_data["uptime_seconds"] > first_data["uptime_seconds"]
