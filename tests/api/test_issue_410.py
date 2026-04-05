@@ -93,3 +93,22 @@ class TestUptimeEndpoint:
                 assert resp.status_code == 200
                 data = resp.json()
                 assert data["started_at"] == first_data["started_at"]
+
+    def test_started_at_timestamp_is_unchanged_across_restarts(self, app: FastAPI) -> None:
+        """Verify that started_at remains the same even after recreating the app."""
+        first_resp = client.get("/v1/stronghold/status/uptime")
+        assert first_resp.status_code == 200
+        first_data = first_resp.json()
+        started_at = first_data["started_at"]
+
+        # Recreate the app (simulating a restart)
+        new_app = FastAPI()
+        new_app.include_router(status_router)
+        container = make_test_container()
+        new_app.state.container = container
+
+        with TestClient(new_app) as client:
+            second_resp = client.get("/v1/stronghold/status/uptime")
+            assert second_resp.status_code == 200
+            second_data = second_resp.json()
+            assert second_data["started_at"] == started_at

@@ -92,3 +92,19 @@ async def uptime() -> dict[str, Any]:
         "started_at": started_at,
         "service": "stronghold",
     }
+
+@router.get("/v1/stronghold/status/uptime")
+async def uptime_v1() -> dict[str, Any]:
+    """Uptime endpoint — returns service uptime metrics.
+
+    No authentication required (public like /health).
+    """
+    uptime_seconds = time.monotonic() - _SERVICE_START
+    import datetime  # noqa: PLC0415
+    started_at = datetime.datetime.fromtimestamp(_SERVICE_START).isoformat()
+
+    return {
+        "uptime_seconds": uptime_seconds,
+        "started_at": started_at,
+        "service": "stronghold",
+    }
