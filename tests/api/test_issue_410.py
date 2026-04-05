@@ -79,3 +79,17 @@ class TestUptimeEndpoint:
             assert "uptime_seconds" in second_data
 
             assert second_data["uptime_seconds"] >= first_data["uptime_seconds"] + 1
+
+    def test_started_at_timestamp_consistency_across_requests(self, app: FastAPI) -> None:
+        with TestClient(app) as client:
+            first_resp = client.get("/v1/stronghold/status/uptime")
+            assert first_resp.status_code == 200
+            first_data = first_resp.json()
+            assert "started_at" in first_data
+
+            # Make multiple requests to verify consistency
+            for _ in range(5):
+                resp = client.get("/v1/stronghold/status/uptime")
+                assert resp.status_code == 200
+                data = resp.json()
+                assert data["started_at"] == first_data["started_at"]
