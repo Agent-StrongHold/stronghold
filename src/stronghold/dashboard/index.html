@@ -30,7 +30,7 @@
   .sidebar { background: linear-gradient(180deg, #0d1321 0%, #1a1a2e 100%); border-right: 2px solid var(--iron); width: 240px; height: 100vh; overflow-y: auto; overflow-x: hidden; position: sticky; top: 0; }
   .sidebar-item { padding: 12px 20px; cursor: pointer; transition: all 0.2s; border-left: 3px solid transparent; display: flex; align-items: center; gap: 10px; color: #8b8b9b; font-size: 0.85rem; }
   .sidebar-item:hover { background: rgba(226,165,41,0.08); color: var(--gold-dim); border-left-color: var(--gold-dim); }
-  .sidebar-item.active { background: rgba(226,165,41,0.12); color: var(--gold); border-left-color: var(--gold); border-right-color: var(--emerald); }
+  .sidebar-item.active { background: rgba(226,165,41,0.12); color: var(--gold); border-left-color: var(--gold); border-right-color: var(--emerald-500); }
   .sidebar-icon { font-size: 1.1rem; width: 24px; text-align: center; }
 
   /* Cards */
@@ -160,112 +160,102 @@
   </div>
 </nav>
 
-<main class="flex-1 overflow-y-auto">
-  <div class="p-8 space-y-6">
-    <!-- Login Form -->
-    <div class="max-w-md mx-auto card p-8 space-y-6">
+<main class="flex-1 p-8 overflow-auto">
+  <!-- Login Form -->
+  <div class="max-w-md mx-auto mt-16">
+    <div class="card p-8 space-y-6">
       <div class="text-center">
-        <h2 class="text-2xl font-bold mb-2">Sign In</h2>
-        <p class="text-sm text-gray-400">Enter your credentials to access the Stronghold</p>
+        <h1 class="text-3xl font-bold text-gold">Sign In</h1>
+        <p class="mt-2 text-sm text-iron-light">Enter your credentials to access the Stronghold</p>
       </div>
 
-      <form id="loginForm" class="space-y-4">
-        <div class="space-y-2">
-          <label for="username" class="block text-sm font-medium">Username</label>
-          <input type="text" id="username" name="username" required class="w-full p-3 rounded border border-gray-600 focus:border-gold focus:outline-none focus:ring-2 focus:ring-gold-dim bg-stone-dark text-parchment">
+      <div class="space-y-4">
+        <div>
+          <label for="username" class="block text-sm font-medium text-iron-light mb-1">Username</label>
+          <input type="text" id="username" name="username" class="w-full" autocomplete="username">
         </div>
+        <div>
+          <label for="password" class="block text-sm font-medium text-iron-light mb-1">Password</label>
+          <input type="password" id="password" name="password" class="w-full" autocomplete="current-password">
+        </div>
+      </div>
 
-        <div class="space-y-2">
-          <label for="password" class="block text-sm font-medium">Password</label>
-          <input type="password" id="password" name="password" required class="w-full p-3 rounded border border-gray-600 focus:border-gold focus:outline-none focus:ring-2 focus:ring-gold-dim bg-stone-dark text-parchment">
-        </div>
+      <!-- Error message container -->
+      <div id="error-message" class="mt-4 bg-red-900/30 border border-red-500 rounded p-3 text-red-400 text-sm hidden">
+        Invalid username or password. Please try again.
+        <button onclick="document.getElementById('error-message').style.display='none'" class="float-right text-red-300 hover:text-red-100">×</button>
+      </div>
 
-        <div class="space-y-2">
-          <button type="submit" class="btn-gold w-full mt-6">Sign In</button>
-        </div>
-      </form>
+      <div class="pt-6">
+        <button id="login-btn" class="btn-gold w-full">Sign In</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Progress Bar -->
+  <div class="max-w-md mx-auto mt-8">
+    <div class="w-full bg-gray-700 rounded-full h-2.5">
+      <div id="progress-bar" class="bg-emerald-500 h-2.5 rounded-full" role="progressbar" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100"></div>
     </div>
   </div>
 </main>
 
 <script>
-  // Mobile menu toggle
-  const mobileMenuBtn = document.querySelector('.mobile-menu-btn');
+  // Mobile sidebar toggle
   const sidebar = document.getElementById('sidebar');
   const sidebarOverlay = document.getElementById('sidebar-overlay');
+  const mobileMenuBtn = document.querySelector('.mobile-menu-btn');
 
   function openSidebar() {
     sidebar.classList.add('open');
     sidebarOverlay.classList.add('open');
-    document.body.style.overflow = 'hidden';
   }
 
   function closeSidebar() {
     sidebar.classList.remove('open');
     sidebarOverlay.classList.remove('open');
-    document.body.style.overflow = '';
   }
 
   if (mobileMenuBtn) {
     mobileMenuBtn.addEventListener('click', openSidebar);
   }
 
-  // Close sidebar when clicking overlay
-  sidebarOverlay.addEventListener('click', closeSidebar);
+  // Login form handling
+  const loginBtn = document.getElementById('login-btn');
+  const errorMessage = document.getElementById('error-message');
+  const progressBar = document.getElementById('progress-bar');
 
-  // Login form submission
-  const loginForm = document.getElementById('loginForm');
-  if (loginForm) {
-    loginForm.addEventListener('submit', async (e) => {
-      e.preventDefault();
-      const formData = new FormData(loginForm);
-      const response = await fetch('/api/auth/login', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(Object.fromEntries(formData)),
-      });
+  if (loginBtn) {
+    loginBtn.addEventListener('click', async () => {
+      errorMessage.style.display = 'none';
 
-      if (!response.ok) {
-        const error = await response.json();
-        showError(error.message || 'Login failed');
-      } else {
-        window.location.href = '/greathall';
-      }
+      // Simulate login process
+      progressBar.style.width = '0%';
+      progressBar.setAttribute('aria-valuenow', '0');
+
+      // Simulate progress
+      let progress = 0;
+      const interval = setInterval(() => {
+        progress += 10;
+        progressBar.style.width = `${progress}%`;
+        progressBar.setAttribute('aria-valuenow', `${progress}`);
+
+        if (progress >= 100) {
+          clearInterval(interval);
+        }
+      }, 100);
     });
   }
 
-  function showError(message) {
-    // Remove existing error message
-    const existingError = document.getElementById('login-error');
-    if (existingError) existingError.remove();
-
-    // Create error message element
-    const errorDiv = document.createElement('div');
-    errorDiv.id = 'login-error';
-    errorDiv.className = 'bg-red-500 text-white p-3 rounded mb-4 flex items-center justify-between';
-    errorDiv.setAttribute('role', 'alert');
-    errorDiv.setAttribute('aria-live', 'assertive');
-
-    const errorText = document.createElement('span');
-    errorText.textContent = message;
-
-    const closeButton = document.createElement('button');
-    closeButton.className = 'text-white hover:text-gray-200 ml-2';
-    closeButton.innerHTML = '&times;';
-    closeButton.setAttribute('aria-label', 'Close error message');
-    closeButton.addEventListener('click', () => errorDiv.remove());
-
-    errorDiv.appendChild(errorText);
-    errorDiv.appendChild(closeButton);
-
-    // Insert error message before the form
-    const form = document.getElementById('loginForm');
-    if (form) {
-      form.prepend(errorDiv);
-    }
+  // Show error message on failed login
+  function showLoginError() {
+    errorMessage.style.display = 'block';
+    progressBar.style.width = '0%';
+    progressBar.setAttribute('aria-valuenow', '0');
   }
+
+  // Expose to global scope for auth.js
+  window.showLoginError = showLoginError;
 </script>
 </body>
 </html>
