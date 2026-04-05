@@ -25,9 +25,13 @@ COPY config/ config/
 COPY pyproject.toml .
 COPY ONBOARDING.md .
 COPY CLAUDE.md .
+COPY pyrefly.toml .
 
 # Remove uvloop — it requires socketpair() which fails in unprivileged containers
 RUN pip uninstall -y uvloop 2>/dev/null; true
+
+# Type inference + annotation tools for quality gate pipeline
+RUN pip install --no-cache-dir autotyping pyrefly
 
 # Workspace directory for Mason worktrees
 RUN mkdir -p /workspace && chmod 777 /workspace
