@@ -709,6 +709,43 @@ class RuntimePipeline:
             if content:
                 source_context += f"\n# --- {fpath} ---\n{content}\n"
 
+        # Detect rendering model: static HTML vs JS-rendered DOM
+        rendering_hint = ""
+        for fpath in affected_files[:1]:
+            js_signals = await self._td.execute(
+                "grep_content",
+                {
+                    "pattern": r"createElement|innerHTML|appendChild|\.insertAdjacentHTML",
+                    "workspace": ws,
+                    "glob": fpath,
+                    "max_results": 5,
+                },
+            )
+            if js_signals and not js_signals.startswith("Error:"):
+                import json as _json
+                try:
+                    matches = _json.loads(js_signals).get("count", 0)
+                except Exception:
+                    matches = 0
+                if matches > 0:
+                    rendering_hint = (
+                        "\n## RENDERING MODEL: JavaScript-rendered DOM\n"
+                        f"The target file `{fpath}` builds UI elements "
+                        "dynamically with JavaScript (createElement, "
+                        "innerHTML, appendChild). The HTML markup does "
+                        "NOT contain the final DOM.\n\n"
+                        "**For tests:** Check the JAVASCRIPT SOURCE "
+                        "CODE for the expected changes, not static "
+                        "HTML attributes. For example, check that the "
+                        "JS sets `.title =` or adds a CSS class, not "
+                        "that `title=\"` exists in the HTML.\n\n"
+                        "**For implementation:** Modify the JAVASCRIPT "
+                        "code that builds the elements, not the static "
+                        "HTML markup. Find the createElement/innerHTML "
+                        "block and add the fix there.\n"
+                    )
+                    source_context += rendering_hint
+
         # Recon: scan for existing test patterns matching the file type
         recon_context = ""
         issue_type = self._detect_issue_type(run)
