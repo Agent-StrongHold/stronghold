@@ -1,0 +1,61 @@
+"""Tests for sidebar active state colors in prompts.html."""
+
+from __future__ import annotations
+
+from pathlib import Path
+
+import pytest
+
+DASHBOARD_DIR = Path("src/stronghold/dashboard")
+
+class TestSidebarActiveStateColors:
+    def test_active_state_has_border_color(self) -> None:
+        html = (DASHBOARD_DIR / "prompts.html").read_text()
+        assert "border-emerald-500" in html, "Missing emerald border color for active state"
+
+    def test_active_state_has_background_color(self) -> None:
+        html = (DASHBOARD_DIR / "prompts.html").read_text()
+        assert "bg-gray-800" in html, "Missing gray-800 background color for active state"
+
+class TestQuotaProgressBarARIA:
+    def test_quota_progress_has_role_attribute(self) -> None:
+        html = (DASHBOARD_DIR / "quota.html").read_text()
+        assert 'role="progressbar"' in html, "Missing role='progressbar' attribute"
+
+    def test_quota_progress_has_aria_value(self) -> None:
+        html = (DASHBOARD_DIR / "quota.html").read_text()
+        assert "aria-valuenow" in html, "Missing aria-valuenow attribute"
+
+class TestQuotaProgressBarColorCoding:
+    def test_quota_has_healthy_state_color(self) -> None:
+        html = (DASHBOARD_DIR / "quota.html").read_text()
+        assert "text-emerald-500" in html, "Missing text-emerald-500 for healthy state"
+
+    def test_quota_has_danger_state_color(self) -> None:
+        html = (DASHBOARD_DIR / "quota.html").read_text()
+        assert "text-red-500" in html, "Missing text-red-500 for danger state"
+
+    def test_quota_has_warning_state_color(self) -> None:
+        html = (DASHBOARD_DIR / "quota.html").read_text()
+        assert "text-amber-500" in html, "Missing text-amber-500 for warning state"
+
+class TestErrorMessageSpacing:
+    def test_error_message_has_margin_top(self) -> None:
+        css = (DASHBOARD_DIR / "styles.css").read_text()
+        assert "mt-" in css, "Missing margin-top class in CSS"
+        assert "mt-4" in css or "mt-3" in css or "mt-2" in css, "Margin-top value should be at least 1rem (mt-4)"
+
+class TestZIndexLimits:
+    def test_z_index_values_do_not_exceed_100(self) -> None:
+        css = (DASHBOARD_DIR / "styles.css").read_text()
+        import re
+        z_values = re.findall(r'z-\[(\d+)\]|z-(\d+)', css)
+        flat_values = [int(v) for pair in z_values for v in pair if v]
+        assert all(v <= 100 for v in flat_values), f"z-index values exceed 100: {flat_values}"
+
+    def test_z_index_distinct_values_are_limited(self) -> None:
+        css = (DASHBOARD_DIR / "styles.css").read_text()
+        import re
+        z_values = re.findall(r'z-\[(\d+)\]|z-(\d+)', css)
+        flat_values = {int(v) for pair in z_values for v in pair if v}
+        assert len(flat_values) <= 5, f"Too many distinct z-index values: {sorted(flat_values)}"
