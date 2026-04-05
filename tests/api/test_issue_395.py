@@ -59,3 +59,23 @@ class TestZIndexLimits:
         z_values = re.findall(r'z-\[(\d+)\]|z-(\d+)', css)
         flat_values = {int(v) for pair in z_values for v in pair if v}
         assert len(flat_values) <= 5, f"Too many distinct z-index values: {sorted(flat_values)}"
+
+class TestPromptDiffSyntaxHighlighting:
+    def test_added_lines_have_green_background_and_prefix(self) -> None:
+        html = (DASHBOARD_DIR / "prompts.html").read_text()
+        assert "bg-green-100" in html, "Missing green background for added lines"
+        assert "class=\\\"+\" " in html or "class=\"+\"" in html, "Missing '+' prefix for added lines"
+
+    def test_removed_lines_have_red_background_and_prefix(self) -> None:
+        html = (DASHBOARD_DIR / "prompts.html").read_text()
+        assert "bg-red-100" in html, "Missing red background for removed lines"
+        assert "class=\\\"-\\\" " in html or "class=\"-\"" in html, "Missing '-' prefix for removed lines"
+
+    def test_unchanged_lines_have_neutral_background(self) -> None:
+        html = (DASHBOARD_DIR / "prompts.html").read_text()
+        assert "bg-gray-50" in html or "bg-gray-100" in html, "Missing neutral background for unchanged lines"
+
+    def test_diff_view_has_line_numbers(self) -> None:
+        html = (DASHBOARD_DIR / "prompts.html").read_text()
+        assert "line-number" in html or "line-no" in html, "Missing line number class"
+        assert "data-line-number" in html or "data-line" in html, "Missing line number attribute"

@@ -1,56 +1,4 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Stronghold — The Scrolls</title>
-<script src="https://cdn.tailwindcss.com"></script>
-<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-<style>
-  :root { --stone-dark:#1a1a2e; --stone-mid:#16213e; --stone-light:#1e2d4a; --iron:#4a4a5a; --iron-light:#6b6b7b; --gold:#e2a529; --gold-dim:#c9a227; --gold-bright:#f4c430; --parchment:#f5f0e1; --blood:#8b2500; --emerald:#2d6a4f; --copper:#cd7f32; --silver:#c0c0c0; --platinum:#e5e4e2; --diamond:#b9f2ff; }
-  body { background: linear-gradient(135deg, var(--stone-dark), var(--stone-mid)); color: #d4d0c8; font-family: 'JetBrains Mono', monospace; min-height: 100vh; }
-  h1,h2,h3 { font-family: 'Playfair Display', Georgia, serif; color: var(--gold); }
-  .sidebar { background: linear-gradient(180deg, #0d1321, #1a1a2e); border-right: 2px solid var(--iron); width: 240px; min-height: 100vh; }
-  .sidebar-item { padding: 12px 20px; cursor: pointer; transition: all 0.2s; border-left: 3px solid transparent; display: flex; align-items: center; gap: 10px; color: #8b8b9b; font-size: 0.85rem; text-decoration: none; }
-  .sidebar-item:hover { background: rgba(226,165,41,0.08); color: var(--gold-dim); border-left-color: var(--gold-dim); }
-  .sidebar-item.active { background: #262626; color: var(--gold); border-left-color: var(--emerald); }
-  .card { background: var(--stone-light); border: 1px solid var(--iron); border-radius: 8px; }
-  select, textarea, input { background: var(--stone-dark); border: 1px solid var(--iron); color: var(--parchment); font-family: 'JetBrains Mono', monospace; }
-  select:focus, textarea:focus, input:focus { border-color: var(--gold-dim); outline: none; }
-  .btn-primary { background: linear-gradient(135deg, var(--gold-dim), var(--gold)); color: #1a1a2e; font-weight: 600; cursor: pointer; border: none; }
-  .btn-primary:hover { box-shadow: 0 0 12px rgba(226,165,41,0.3); }
-  .btn-secondary { background: var(--iron); color: #d4d0c8; cursor: pointer; border: none; }
-  .btn-secondary:hover { background: var(--iron-light); }
-  .btn-green { background: var(--emerald); color: #f5f0e1; cursor: pointer; border: none; }
-  .btn-green:hover { background: #357a5a; }
-  .btn-amber { background: #d97706; color: white; cursor: pointer; border: none; }
-  .btn-amber:hover { background: #b45309; }
-  .btn-red { background: var(--blood); color: #f5f0e1; cursor: pointer; border: none; }
-  .btn-red:hover { background: #a63000; }
-  .label { font-size: 0.75rem; color: var(--iron-light); margin-bottom: 0.25rem; display: block; }
-  .badge { display: inline-block; padding: 2px 8px; border-radius: 9999px; font-size: 0.65rem; }
-  .badge-blue { background: rgba(96,165,250,0.15); color: #60a5fa; }
-  .badge-green { background: rgba(45,106,79,0.3); color: #4ade80; }
-  .badge-amber { background: rgba(217,119,6,0.2); color: #fbbf24; }
-  .badge-red { background: rgba(139,37,0,0.3); color: #f87171; }
-  .prompt-row { border-bottom: 1px solid rgba(74,74,90,0.3); cursor: pointer; transition: background 0.15s; }
-  .prompt-row:hover { background: rgba(226,165,41,0.06); }
-  .diff-container { display: grid; grid-template-columns: 1fr 1fr; gap: 0; border: 1px solid var(--iron); border-radius: 8px; overflow: hidden; font-family: 'JetBrains Mono', monospace; font-size: 0.8rem; }
-  .diff-header { background: rgba(74,74,90,0.4); padding: 8px 12px; font-weight: 600; font-size: 0.75rem; display: flex; align-items: center; gap: 10px; }
-  .diff-left, .diff-right { min-height: 200px; max-height: 500px; overflow-y: auto; }
-  .diff-line { padding: 2px 8px; white-space: pre-wrap; word-break: break-all; min-height: 1.4em; display: flex; align-items: center; gap: 10px; }
-  .diff-line-num { display: inline-block; width: 30px; color: var(--iron-light); text-align: right; margin-right: 8px; user-select: none; }
-  .diff-add { background: rgba(34,197,94,0.3); color: #4ade80; border-left: 3px solid #22c55e; }
-  .diff-add::before { content: "+ "; color: #22c55e; font-weight: bold; }
-  .diff-remove { background: rgba(248,113,113,0.3); color: #f87171; border-left: 3px solid #f87171; }
-  .diff-remove::before { content: "- "; color: #f87171; font-weight: bold; }
-  .diff-context { color: var(--iron-light); }
-  .diff-empty { background: var(--stone-light); }
-  .approval-card { border: 1px solid var(--iron); border-radius: 8px; padding: 12px; margin-bottom: 8px; }
-  .sidebar-overlay { display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.5); z-index:999; }
-  .sidebar-overlay.open { display:block; }
-  .mobile-menu-btn { display: none; background: none; border: none; color: var(--gold); font-size: 1.5rem; cursor: pointer; }
-  @media (max-width: 768px) {
+@media (max-width: 768px) {
     .sidebar { position:fixed; top:0; left:-260px; z-index:1000; width:260px; height:100vh; transition:left 0.3s; }
     .sidebar.open { left:0; }
     .mobile-menu-btn { display:block; }
@@ -160,6 +108,23 @@ function showCreate() {
   container.appendChild(form);
 }
 
+function parseDiff(diffText) {
+  const lines = diffText.split('\n');
+  const result = { added: [], removed: [], context: [] };
+
+  for (const line of lines) {
+    if (line.startsWith('+') && !line.startsWith('++')) {
+      result.added.push(line.substring(1));
+    } else if (line.startsWith('-') && !line.startsWith('--')) {
+      result.removed.push(line.substring(1));
+    } else if (line.startsWith(' ')) {
+      result.context.push(line.substring(1));
+    }
+  }
+
+  return result;
+}
+
 function showDiff(oldContent, newContent) {
   const container = document.getElementById('prompt-detail');
   if (!container) return;
@@ -174,55 +139,62 @@ function showDiff(oldContent, newContent) {
   container.appendChild(header);
 
   const diffContainer = document.createElement('div');
-  diffContainer.className = "diff-container mx-8 my-6";
+  diffContainer.className = "diff-container mx-8 my-6 flex flex-col lg:flex-row gap-4";
   diffContainer.innerHTML = `
-    <div class="diff-header">
-      <span class="flex-1">${fromLabel || 'old'}</span>
-      <span class="flex-1">${toLabel || 'new'}</span>
+    <div class="w-full lg:w-1/2">
+      <div class="diff-header text-sm font-mono mb-2">
+        <span class="flex-1">${fromLabel || 'old'}</span>
+      </div>
+      <div class="diff-left bg-gray-900 rounded-md font-mono overflow-hidden" id="diff-left"></div>
     </div>
-    <div class="diff-left" id="diff-left"></div>
-    <div class="diff-right" id="diff-right"></div>
+    <div class="w-full lg:w-1/2">
+      <div class="diff-header text-sm font-mono mb-2">
+        <span class="flex-1">${toLabel || 'new'}</span>
+      </div>
+      <div class="diff-right bg-gray-900 rounded-md font-mono overflow-hidden" id="diff-right"></div>
+    </div>
   `;
   container.appendChild(diffContainer);
 
-  // Simple diff implementation
-  const oldLines = oldContent.split('\n');
-  const newLines = newContent.split('\n');
+  // Parse diff
+  const diff = parseDiff(newContent);
 
   const diffLeft = document.getElementById('diff-left');
   const diffRight = document.getElementById('diff-right');
 
   // Add line numbers to both sides
-  for (let i = 0; i < Math.max(oldLines.length, newLines.length); i++) {
-    const oldLine = oldLines[i] || '';
-    const newLine = newLines[i] || '';
+  for (let i = 0; i < Math.max(diff.context.length, diff.added.length, diff.removed.length); i++) {
+    const contextLine = diff.context[i] || '';
+    const addedLine = diff.added[i] || '';
+    const removedLine = diff.removed[i] || '';
 
     // Create line elements for both sides
-    const oldLineEl = document.createElement('div');
-    oldLineEl.className = 'diff-line';
-    oldLineEl.innerHTML = `<span class="diff-line-num">${i + 1}</span><span>${oldLine}</span>`;
+    const leftLineEl = document.createElement('div');
+    leftLineEl.className = 'diff-line flex w-full';
+    leftLineEl.innerHTML = `<span class="line-number text-gray-600 w-12 text-right border-r border-gray-700 pr-2">${i + 1}</span><span class="flex-1 whitespace-pre-wrap break-words">${removedLine}</span>`;
 
-    const newLineEl = document.createElement('div');
-    newLineEl.className = 'diff-line';
-    newLineEl.innerHTML = `<span class="diff-line-num">${i + 1}</span><span>${newLine}</span>`;
+    const rightLineEl = document.createElement('div');
+    rightLineEl.className = 'diff-line flex w-full';
+    rightLineEl.innerHTML = `<span class="line-number text-gray-600 w-12 text-right border-r border-gray-700 pr-2">${i + 1}</span><span class="flex-1 whitespace-pre-wrap break-words">${addedLine}</span>`;
 
-    // Compare lines to determine diff type
-    if (oldLine === newLine) {
-      oldLineEl.classList.add('diff-context');
-      newLineEl.classList.add('diff-context');
-    } else if (newLine.startsWith('+')) {
-      oldLineEl.classList.add('diff-empty');
-      newLineEl.classList.add('diff-add');
-    } else if (oldLine.startsWith('-')) {
-      oldLineEl.classList.add('diff-remove');
-      newLineEl.classList.add('diff-empty');
+    // Apply diff styling
+    if (removedLine) {
+      leftLineEl.classList.add('bg-red-900/30');
     } else {
-      oldLineEl.classList.add('diff-remove');
-      newLineEl.classList.add('diff-add');
+      leftLineEl.classList.add('bg-gray-800');
     }
 
-    diffLeft.appendChild(oldLineEl);
-    diffRight.appendChild(newLineEl);
+    if (addedLine) {
+      rightLineEl.classList.add('bg-green-900/30');
+    } else if (contextLine) {
+      leftLineEl.classList.add('bg-gray-800');
+      rightLineEl.classList.add('bg-gray-800');
+    } else {
+      rightLineEl.classList.add('bg-gray-800');
+    }
+
+    diffLeft.appendChild(leftLineEl);
+    diffRight.appendChild(rightLineEl);
   }
 }
 </script>
@@ -242,7 +214,7 @@ function showDiff(oldContent, newContent) {
         <a href="/dashboard/settings" class="sidebar-item">
           <span>&#x1F527;</span>
           <span>Settings</span>
-        </a>
+        </div>
       </nav>
     </aside>
 
@@ -280,3 +252,4 @@ function showDiff(oldContent, newContent) {
   </script>
 </body>
 </html>
+```
