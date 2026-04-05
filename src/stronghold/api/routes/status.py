@@ -77,14 +77,14 @@ async def reactor_status(request: Request) -> dict[str, Any]:
         "recent_events": status.recent_events,
     }
 
-@router.get("/status/uptime")
+@router.get("/v1/stronghold/status/uptime")
 async def uptime() -> dict[str, Any]:
     """Uptime information — no auth required (public like /health).
 
     Returns how long the service has been running.
     """
     uptime_seconds = time.monotonic() - _SERVICE_START_TIME
-    started_at = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(_SERVICE_START_TIME))
+    started_at = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(time.time() - uptime_seconds))
 
     return {
         "uptime_seconds": uptime_seconds,
