@@ -191,7 +191,7 @@ class WorkspaceManager:
         if not worktree_dir.exists():
             return {"status": "error", "error": "worktree not found"}
         branch = self._run(["git", "branch", "--show-current"], cwd=worktree_dir).strip()
-        self._run(["git", "push", "-u", "origin", branch], cwd=worktree_dir)
+        self._run(["git", "push", "-u", "--force-with-lease", "origin", branch], cwd=worktree_dir)
         return {"status": "pushed", "branch": branch}
 
     def _cleanup(self, args: dict[str, Any]) -> dict[str, str]:
