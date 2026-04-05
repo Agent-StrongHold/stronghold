@@ -402,6 +402,7 @@ class RuntimePipeline:
         response = await self._llm.complete(
             [{"role": "user", "content": prompt}],
             model,
+            fallback_models=self.MODEL_ROTATION,
         )
         choices = response.get("choices", [])
         if not choices:

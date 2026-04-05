@@ -114,8 +114,8 @@ class LiteLLMClient:
             if resp.status_code == 200:  # noqa: PLR2004
                 return resp.json()  # type: ignore[no-any-return]
 
-            # Retryable: 429, 400 (cooldown), 422 (model doesn't support tools), 5xx
-            if resp.status_code in (400, 422, 429, 500, 502, 503):
+            # Retryable: 402 (quota), 429, 400 (cooldown), 422 (no tools), 5xx
+            if resp.status_code in (400, 402, 422, 429, 500, 502, 503):
                 logger.debug("Model %s returned %d, skipping", model, resp.status_code)
                 await asyncio.sleep(0.2)
                 return httpx.HTTPStatusError(
