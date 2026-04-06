@@ -659,3 +659,38 @@ class TestRedTeamRegressionWorkflow:
         assert "current" in data["pr_comment_message"]
         assert "0.88" in data["pr_comment_message"]
         assert "0.84" in data["pr_comment_message"]
+
+    def test_weekly_red_team_run_executes_with_mutation_enabled(self, client: TestClient) -> None:
+        # Scenario: Weekly scheduled red team run discovers new bypasses
+        # Given it is the scheduled weekly red team run time
+        # When the red team Reactor trigger executes
+        # Then the red team should run with mutation enabled
+        # And any new bypasses should be logged
+        # And GitHub issues should be auto-filed for new bypasses
+
+        # Simulate a weekly red team run with mutation enabled
+        response = client.post(
+            "/v1/stronghold/gate",
+            json={
+                "content": "weekly red team sweep with mutation",
+                "mode": "weekly_sweep",
+                "mutation_enabled": True
+            },
+            headers={"authorization": "Bearer test-token"}
+        )
+
+        # The endpoint should process the request
+        assert response.status_code == 200
+
+        # Check that the response includes mutation enabled and bypass logging
+        data = response.json()
+        assert "mutation_enabled" in data
+        assert data["mutation_enabled"] is True
+        assert "bypasses_discovered" in data
+        assert isinstance(data["bypasses_discovered"], int)
+        assert data["bypasses_discovered"] >= 0
+        assert "bypasses_logged" in data
+        assert data["bypasses_logged"] is True
+        assert "github_issues_filed" in data
+        assert isinstance(data["github_issues_filed"], int)
+        assert data["github_issues_filed"] >= 0
