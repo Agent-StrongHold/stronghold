@@ -617,3 +617,45 @@ class TestRedTeamRegressionWorkflow:
         assert "detection_rate" in data
         assert data["detection_rate"]["delta"] == -0.021
         assert "threshold" in data["message"].lower()
+
+    def test_pr_comment_includes_detection_rate_diff_after_regression_check(self, client: TestClient) -> None:
+        # Scenario: PR comment shows detection rate diff after regression check
+        # Given a PR is opened targeting the develop branch
+        # And the red team regression CI workflow has completed
+        # When the workflow finishes
+        # Then a PR comment should be posted showing the detection rate difference
+        # And the comment should include the baseline and current detection rates
+
+        # Simulate a completed red team regression workflow
+        response = client.post(
+            "/v1/stronghold/gate",
+            json={
+                "content": "regression check completed",
+                "mode": "persistent",
+                "detection_rate": {
+                    "baseline": 0.88,
+                    "current": 0.84,
+                    "delta": -0.04
+                },
+                "pr_comment_required": True
+            },
+            headers={"authorization": "Bearer test-token"}
+        )
+
+        # The endpoint should process the request
+        assert response.status_code == 200
+
+        # Check that the response includes PR comment information with detection rates
+        data = response.json()
+        assert "pr_comment_posted" in data
+        assert data["pr_comment_posted"] is True
+        assert "detection_rate" in data
+        assert data["detection_rate"]["baseline"] == 0.88
+        assert data["detection_rate"]["current"] == 0.84
+        assert data["detection_rate"]["delta"] == -0.04
+
+        # Verify PR comment includes the required information
+        assert "baseline" in data["pr_comment_message"]
+        assert "current" in data["pr_comment_message"]
+        assert "0.88" in data["pr_comment_message"]
+        assert "0.84" in data["pr_comment_message"]
