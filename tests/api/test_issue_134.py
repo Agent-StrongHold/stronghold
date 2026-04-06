@@ -360,3 +360,43 @@ class TestRedTeamRegressionWorkflow:
         assert "baseline_commit_hash" in data
         assert isinstance(data["baseline_commit_hash"], str)
         assert len(data["baseline_commit_hash"]) > 0
+
+    def test_red_team_regression_gate_passes_when_detection_rate_meets_baseline(self, client: TestClient) -> None:
+        # Scenario: Red team regression gate passes when detection rate meets baseline
+        # Given a PR is opened against the develop branch
+        # And the Warden's detection rate is at or above the baseline in the benchmark
+        # When the red team regression CI job runs
+        # Then the PR should not be blocked
+        # And a PR comment should show the detection rate diff is within the allowed threshold
+
+        # Simulate a request to the gate endpoint with detection rate at baseline
+        response = client.post(
+            "/v1/stronghold/gate",
+            json={
+                "content": "safe input that meets baseline detection",
+                "mode": "persistent",
+                "detection_rate": {
+                    "baseline": 0.85,
+                    "current": 0.85,
+                    "delta": 0.00
+                }
+            },
+            headers={"authorization": "Bearer test-token"}
+        )
+
+        # The endpoint should process the request and return success
+        assert response.status_code == 200
+
+        # Check that the response indicates the PR passed the gate
+        data = response.json()
+        assert "gate_status" in data
+        assert data["gate_status"] == "passed"
+
+        # Verify detection rate information is shown in PR comment
+        assert "detection_rate" in data
+        assert data["detection_rate"]["baseline"] == 0.85
+        assert data["detection_rate"]["current"] == 0.85
+        assert data["detection_rate"]["delta"] == 0.00
+
+        # Verify PR is not blocked
+        assert "blocked" not in data["message"].lower() or data["blocked"] is False
