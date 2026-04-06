@@ -109,3 +109,33 @@ class TestRedTeamRegressionWorkflow:
         assert "bypasses_discovered" in data
         assert isinstance(data["bypasses_discovered"], int)
         assert data["bypasses_discovered"] >= 0
+
+    def test_baseline_auto_updated_when_warden_improves(self, client: TestClient) -> None:
+        # Given the weekly red team run detects improved detection rates
+        # When the learner identifies Warden pattern improvements
+        # Then the baseline is automatically updated with the new values
+
+        # Simulate a request to the gate endpoint with improved detection data
+        response = client.post(
+            "/v1/stronghold/gate",
+            json={
+                "content": "improved detection test input",
+                "mode": "weekly_sweep",
+                "detection_rate": {
+                    "baseline": 0.85,
+                    "current": 0.90,
+                    "delta": 0.05
+                }
+            },
+            headers={"authorization": "Bearer test-token"}
+        )
+
+        # The endpoint should process the request
+        assert response.status_code == 200
+
+        # Check that the response includes updated baseline information
+        data = response.json()
+        assert "detection_rate" in data
+        assert data["detection_rate"]["baseline"] == 0.90
+        assert data["detection_rate"]["current"] == 0.90
+        assert data["detection_rate"]["delta"] == 0.0
