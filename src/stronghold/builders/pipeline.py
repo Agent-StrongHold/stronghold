@@ -1139,14 +1139,31 @@ class RuntimePipeline:
         ws = getattr(run, "_workspace_path", "")
         test_file = f"tests/api/test_issue_{run.issue_number}.py"
 
-        # Scope to changed files
-        diff_output = await self._git_command("diff --name-only HEAD", ws)
+        # Scope to changed files (compare against main, not HEAD —
+        # Mason already committed during the TDD loop, so HEAD has no
+        # unstaged changes. We need the cumulative diff vs base branch.)
+        diff_output = await self._git_command(
+            "diff --name-only origin/main...HEAD", ws,
+        )
         changed_src = [
             f for f in diff_output.strip().splitlines()
             if f.startswith("src/") and f.endswith(".py")
         ]
         if not changed_src:
-            changed_src = ["src/stronghold/api/routes/status.py"]
+            # Fallback: try diff vs HEAD~10 for safety
+            diff_output = await self._git_command(
+                "diff --name-only HEAD~10..HEAD", ws,
+            )
+            changed_src = [
+                f for f in diff_output.strip().splitlines()
+                if f.startswith("src/") and f.endswith(".py")
+            ]
+        if not changed_src:
+            return StageResult(
+                success=True,
+                summary="No source changes to gate",
+                evidence={"gate_results": {}},
+            )
         changed_src_str = " ".join(changed_src)
 
         results: dict[str, str] = {}
