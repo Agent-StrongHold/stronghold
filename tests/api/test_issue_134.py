@@ -942,3 +942,30 @@ class TestRedTeamRegressionWorkflow:
         assert "error" in data
         assert "baseline" in data["error"].lower() or "missing" in data["error"].lower()
         assert "benchmark_baseline.json" in data["error"]
+
+    def test_red_team_regression_fails_due_to_invalid_baseline_format(self, client: TestClient) -> None:
+        # Scenario: Red team regression test fails due to invalid baseline format
+        # Given a PR is opened targeting main or develop branch
+        # When the CI workflow executes the red team regression test
+        # And the baseline file has an invalid format
+        # Then the workflow fails with an error message
+        # And the PR is blocked
+
+        # Simulate a request to the gate endpoint with invalid baseline format
+        response = client.post(
+            "/v1/stronghold/gate",
+            json={
+                "content": "test input for regression check",
+                "mode": "persistent",
+                "baseline_file": "benchmark_baseline.json",
+                "baseline_format": "invalid"
+            },
+            headers={"authorization": "Bearer test-token"}
+        )
+
+        # The endpoint should return an error indicating invalid baseline format
+        assert response.status_code == 400
+        data = response.json()
+        assert "error" in data
+        assert "baseline" in data["error"].lower() or "format" in data["error"].lower()
+        assert "invalid" in data["error"].lower()
