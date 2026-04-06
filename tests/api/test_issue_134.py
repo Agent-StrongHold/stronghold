@@ -916,3 +916,29 @@ class TestRedTeamRegressionWorkflow:
         # Verify baseline was updated
         assert "baseline_updated" in data
         assert data["baseline_updated"] is True
+
+    def test_red_team_regression_fails_to_run_when_baseline_file_missing(self, client: TestClient) -> None:
+        # Scenario: Red team regression test fails to run due to missing baseline
+        # Given a PR is opened targeting main or develop branch
+        # When the CI workflow attempts to execute the red team regression test
+        # And the baseline file is missing
+        # Then the workflow fails with an error message
+        # And the PR is blocked
+
+        # Simulate a request to the gate endpoint with missing baseline file
+        response = client.post(
+            "/v1/stronghold/gate",
+            json={
+                "content": "test input for regression check",
+                "mode": "persistent",
+                "baseline_file": "benchmark_baseline.json"
+            },
+            headers={"authorization": "Bearer test-token"}
+        )
+
+        # The endpoint should return an error indicating missing baseline file
+        assert response.status_code == 400
+        data = response.json()
+        assert "error" in data
+        assert "baseline" in data["error"].lower() or "missing" in data["error"].lower()
+        assert "benchmark_baseline.json" in data["error"]
