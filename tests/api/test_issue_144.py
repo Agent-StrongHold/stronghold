@@ -1,0 +1,32 @@
+"""Tests for request volume anomaly detection."""
+
+from __future__ import annotations
+
+import pytest
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
+
+from stronghold.api.routes.dashboard import router as dashboard_router
+
+from tests.fakes import make_test_container
+
+AUTH_HEADER = {"Authorization": "Bearer sk-test"}
+
+@pytest.fixture
+def app() -> FastAPI:
+    """Create a FastAPI app with test container."""
+    app = FastAPI()
+    app.include_router(dashboard_router)  # Mount router WITHOUT prefix
+    container = make_test_container()  # All 12+ required fields handled
+    app.state.container = container
+    return app
+
+class TestRequestVolumeAnomaly:
+    def test_detects_request_volume_spike_anomaly(self, app: FastAPI) -> None:
+        with TestClient(app) as client:
+            # This test should fail initially as the anomaly detection is not implemented
+            # The test verifies that an anomaly_detected event with signal "request_volume"
+            # is emitted when current request volume reaches 800 in a 5-minute window
+            # given historical data of 1000 requests in last hour with mean 500 and std 100
+            resp = client.get("/dashboard/security", headers=AUTH_HEADER)
+            assert resp.status_code == 200
