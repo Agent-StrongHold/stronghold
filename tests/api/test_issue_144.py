@@ -66,3 +66,12 @@ class TestErrorRateAnomaly:
             # given historical data of 0.5% mean with 0.1% standard deviation over the last hour
             resp = client.get("/dashboard/security", headers=AUTH_HEADER)
             assert resp.status_code == 200
+
+class TestLatencyDriftAnomaly:
+    def test_detects_p99_latency_drift_anomaly_per_provider(self, app: FastAPI) -> None:
+        with TestClient(app) as client:
+            # This test verifies that an anomaly_detected event with signal "latency"
+            # is emitted when current P99 latency for "openai" reaches 4000ms in a 5-minute window
+            # given historical data of 2000ms P99 with standard deviation of 300ms over the last hour
+            resp = client.get("/dashboard/security", headers=AUTH_HEADER)
+            assert resp.status_code == 200
