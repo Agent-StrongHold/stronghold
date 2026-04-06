@@ -69,6 +69,8 @@ async def get_config(request: Request) -> JSONResponse:
         if value is not None:
             if key == "rate_limit":
                 response[key] = str(value)
+            elif key == "cors_origins":
+                response[key] = value
             else:
                 response[key] = value
 
