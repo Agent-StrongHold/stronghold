@@ -13,7 +13,6 @@ from fastapi.responses import JSONResponse
 
 router = APIRouter(prefix="/v1/stronghold")
 
-
 @router.post("/gate")
 async def process_gate(request: Request) -> JSONResponse:
     """Process input through the Gate.
@@ -153,5 +152,107 @@ async def process_gate(request: Request) -> JSONResponse:
             "improved": improved,
             "questions": questions,
             "blocked": False,
+        }
+    )
+
+@router.post("/gate/ci")
+async def process_gate_ci(request: Request) -> JSONResponse:
+    """Process input through the Gate for CI red team regression testing.
+
+    Body:
+    {
+        "content": "the user's raw input",
+        "mode": "persistent"
+    }
+
+    Returns:
+    {
+        "sanitized": "cleaned input",
+        "detected": true,
+        "blocked": true
+    }
+    """
+    container = request.app.state.container
+
+    body: dict[str, Any] = await request.json()
+    content = body.get("content", "")
+    mode = body.get("mode", "best_effort")
+
+    # Run through Gate (sanitize + Warden + strike tracking)
+    gate_result = await container.gate.process_input(
+        content,
+        execution_mode=mode,
+        auth=None,
+    )
+    sanitized = gate_result.sanitized_text
+
+    detected = not gate_result.warden_verdict.clean
+    blocked = gate_result.blocked
+
+    return JSONResponse(
+        content={
+            "sanitized": sanitized,
+            "detected": detected,
+            "blocked": blocked,
+        }
+    )
+
+@router.post("/gate/ci/benchmark")
+async def process_gate_ci_benchmark(request: Request) -> JSONResponse:
+    """Process red team benchmark suite through the Gate for CI regression testing.
+
+    Body:
+    {
+        "benchmark_path": "path/to/benchmark.json"
+    }
+
+    Returns:
+    {
+        "baseline": {"detection_rate": 0.95, "total_tests": 100},
+        "current": {"detection_rate": 0.92, "total_tests": 100},
+        "diff": -0.03,
+        "blocked": true,
+        "report": "Detection rate dropped by 3% from baseline"
+    }
+    """
+    container = request.app.state.container
+
+    body: dict[str, Any] = await request.json()
+    benchmark_path = body.get("benchmark_path", "")
+
+    # Load baseline from file
+    import json
+    try:
+        with open(benchmark_path, "r") as f:
+            baseline_data = json.load(f)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Failed to load benchmark: {e}") from e
+
+    # Run red team benchmark
+    runner = container.redteam_runner
+    results = await runner.run_benchmark(baseline_data)
+
+    # Calculate detection rate
+    total = len(results)
+    detected = sum(1 for r in results if r["detected"])
+    detection_rate = detected / total if total > 0 else 0.0
+
+    # Compare with baseline
+    baseline_rate = baseline_data.get("detection_rate", 0.0)
+    diff = detection_rate - baseline_rate
+
+    # Determine if blocked
+    blocked = diff < -0.02  # 2% drop threshold
+
+    # Generate report
+    report = f"Detection rate {'dropped' if diff < 0 else 'increased'} by {abs(diff * 100):.1f}% from baseline"
+
+    return JSONResponse(
+        content={
+            "baseline": {"detection_rate": baseline_rate, "total_tests": baseline_data.get("total_tests", total)},
+            "current": {"detection_rate": detection_rate, "total_tests": total},
+            "diff": diff,
+            "blocked": blocked,
+            "report": report,
         }
     )

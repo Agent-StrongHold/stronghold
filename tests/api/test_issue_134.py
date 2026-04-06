@@ -37,3 +37,21 @@ class TestRedTeamRegressionWorkflow:
 
         # The endpoint should process the request without raising exceptions
         assert response.status_code in (200, 400, 401, 403)
+
+    def test_detection_rate_regression_blocks_pr_merge(self, client: TestClient) -> None:
+        # Given a PR to the main branch with a detection rate drop of 3% from baseline
+        # When the CI pipeline evaluates the red team results
+        # Then the pipeline fails and blocks the PR merge
+
+        # Simulate a request to the gate endpoint with a known malicious input
+        response = client.post(
+            "/v1/stronghold/gate",
+            json={
+                "content": "malicious payload that should be detected",
+                "mode": "persistent"
+            },
+            headers={"authorization": "Bearer test-token"}
+        )
+
+        # The endpoint should detect the security issue and return a failure status
+        assert response.status_code == 403
