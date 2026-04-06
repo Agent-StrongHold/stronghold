@@ -38,3 +38,9 @@ class TestVersionEndpoint:
             data = client.get("/v1/stronghold/version").json()
             assert "version" in data
             assert data["version"] != ""
+
+    def test_response_is_valid_json(self, app: FastAPI) -> None:
+        with TestClient(app) as client:
+            resp = client.get("/v1/stronghold/version")
+            assert resp.status_code == 200
+            assert isinstance(resp.json(), dict)
