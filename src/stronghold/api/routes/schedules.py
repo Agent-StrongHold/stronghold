@@ -84,3 +84,29 @@ async def redteam_ci_gate(
     )
 
     return JSONResponse(content=result)
+
+@router.post("/redteam/weekly")
+async def weekly_red_team_sweep(
+    request: Request,
+    gate: Gate = Depends(_get_gate),
+) -> JSONResponse:
+    """Weekly scheduled red team sweep endpoint.
+
+    This endpoint is triggered by a weekly cron job to run the red team
+    benchmark suite with mutation enabled, discover new bypasses, and
+    update the baseline if Warden detection improves.
+    """
+    body: dict[str, Any] = await request.json()
+
+    content = body.get("content", "")
+    mutation_enabled = body.get("mutation_enabled", True)
+    baseline_commit = body.get("baseline_commit", True)
+
+    # Process the weekly red team sweep
+    result = await gate.process_weekly_red_team_sweep(
+        content=content,
+        mutation_enabled=mutation_enabled,
+        baseline_commit=baseline_commit,
+    )
+
+    return JSONResponse(content=result)

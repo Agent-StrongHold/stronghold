@@ -881,3 +881,38 @@ class TestRedTeamRegressionWorkflow:
         assert data["bypasses_logged"] is True
         assert "baseline_updated" in data
         assert data["baseline_updated"] is True
+
+    def test_baseline_auto_updates_when_warden_improves_detection(self, client: TestClient) -> None:
+        # Scenario: Baseline auto-updates when Warden improves detection
+        # Given the weekly red team run discovers improved detection patterns
+        # When the learner updates the Warden patterns
+        # Then the baseline is automatically updated with the new detection rate
+
+        # Simulate a request to the gate endpoint with improved detection data
+        response = client.post(
+            "/v1/stronghold/gate",
+            json={
+                "content": "improved detection test input",
+                "mode": "weekly_sweep",
+                "detection_rate": {
+                    "baseline": 0.85,
+                    "current": 0.90,
+                    "delta": 0.05
+                }
+            },
+            headers={"authorization": "Bearer test-token"}
+        )
+
+        # The endpoint should process the request
+        assert response.status_code == 200
+
+        # Check that the response includes updated baseline information
+        data = response.json()
+        assert "detection_rate" in data
+        assert data["detection_rate"]["baseline"] == 0.90
+        assert data["detection_rate"]["current"] == 0.90
+        assert data["detection_rate"]["delta"] == 0.0
+
+        # Verify baseline was updated
+        assert "baseline_updated" in data
+        assert data["baseline_updated"] is True
