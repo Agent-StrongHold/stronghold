@@ -320,3 +320,43 @@ class TestRedTeamRegressionWorkflow:
         assert data["github_issues_filed"] >= 0
         assert "bypasses_discovered" in data
         assert data["bypasses_discovered"] >= data["github_issues_filed"]
+
+    def test_baseline_auto_updates_when_warden_improves(self, client: TestClient) -> None:
+        # Scenario: Baseline auto-updates when Warden improves
+        # Given the weekly red team run identifies improved detection patterns
+        # When the learner component processes the bypass data
+        # Then the baseline file is updated with the new detection rate
+        # And the updated baseline is committed to the repository
+
+        # Simulate a request to the gate endpoint with improved detection data
+        response = client.post(
+            "/v1/stronghold/gate",
+            json={
+                "content": "improved detection test input",
+                "mode": "weekly_sweep",
+                "detection_rate": {
+                    "baseline": 0.85,
+                    "current": 0.92,
+                    "delta": 0.07
+                },
+                "baseline_commit": True
+            },
+            headers={"authorization": "Bearer test-token"}
+        )
+
+        # The endpoint should process the request
+        assert response.status_code == 200
+
+        # Check that the response includes updated baseline information
+        data = response.json()
+        assert "detection_rate" in data
+        assert data["detection_rate"]["baseline"] == 0.92
+        assert data["detection_rate"]["current"] == 0.92
+        assert data["detection_rate"]["delta"] == 0.0
+
+        # Verify baseline was committed
+        assert "baseline_updated" in data
+        assert data["baseline_updated"] is True
+        assert "baseline_commit_hash" in data
+        assert isinstance(data["baseline_commit_hash"], str)
+        assert len(data["baseline_commit_hash"]) > 0
