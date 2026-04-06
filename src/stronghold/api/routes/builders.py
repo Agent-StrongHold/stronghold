@@ -323,6 +323,105 @@ async def decompose(request: Request) -> JSONResponse:
     })
 
 
+# ── Gatekeeper: PR Review Endpoint ───────────────────────────────────
+
+_gatekeeper_config: dict[str, Any] = {
+    "auto_merge_enabled": False,
+    "allowed_authors": (),
+    "coverage_tolerance_pct": -1.0,
+    "protected_branches": ("main", "master"),
+}
+
+
+@router.post("/review-pr")
+async def review_pr_endpoint(request: Request) -> JSONResponse:
+    """Gatekeeper endpoint: review a PR and either approve or request changes.
+
+    Body:
+    {
+        "repo_url": "https://github.com/owner/repo",
+        "pr_number": 404,
+        "auto_merge_enabled": false  (optional override)
+    }
+    """
+    await _require_auth(request)
+    container = request.app.state.container
+    body = await request.json()
+
+    repo_url = body.get("repo_url", "")
+    pr_number = body.get("pr_number")
+    if not repo_url or not pr_number:
+        raise HTTPException(
+            status_code=400,
+            detail="'repo_url' and 'pr_number' are required",
+        )
+
+    parts = repo_url.rstrip("/").replace("https://github.com/", "").split("/")
+    if len(parts) < 2:
+        raise HTTPException(status_code=400, detail="Invalid repo_url")
+    owner, repo = parts[0], parts[1]
+
+    auto_merge = bool(body.get(
+        "auto_merge_enabled", _gatekeeper_config["auto_merge_enabled"],
+    ))
+
+    pipeline = _build_pipeline(container)
+    result = await pipeline.review_pr(
+        owner=owner,
+        repo=repo,
+        pr_number=int(pr_number),
+        auto_merge_enabled=auto_merge,
+        allowed_authors=_gatekeeper_config["allowed_authors"],
+        coverage_tolerance_pct=_gatekeeper_config["coverage_tolerance_pct"],
+        protected_branches=_gatekeeper_config["protected_branches"],
+    )
+
+    return JSONResponse(content={
+        "pr_number": pr_number,
+        "success": result.success,
+        "summary": result.summary,
+        "evidence": result.evidence,
+    })
+
+
+@router.post("/gatekeeper/config")
+async def gatekeeper_config_update(request: Request) -> JSONResponse:
+    """Update Gatekeeper guardrails (auto-merge, allowed authors, etc.)."""
+    await _require_auth(request)
+    body = await request.json()
+    if "auto_merge_enabled" in body:
+        _gatekeeper_config["auto_merge_enabled"] = bool(body["auto_merge_enabled"])
+    if "allowed_authors" in body:
+        _gatekeeper_config["allowed_authors"] = tuple(body["allowed_authors"])
+    if "coverage_tolerance_pct" in body:
+        _gatekeeper_config["coverage_tolerance_pct"] = float(
+            body["coverage_tolerance_pct"],
+        )
+    if "protected_branches" in body:
+        _gatekeeper_config["protected_branches"] = tuple(body["protected_branches"])
+    return JSONResponse(content={
+        "config": {
+            "auto_merge_enabled": _gatekeeper_config["auto_merge_enabled"],
+            "allowed_authors": list(_gatekeeper_config["allowed_authors"]),
+            "coverage_tolerance_pct": _gatekeeper_config["coverage_tolerance_pct"],
+            "protected_branches": list(_gatekeeper_config["protected_branches"]),
+        },
+    })
+
+
+@router.get("/gatekeeper/config")
+async def gatekeeper_config_get(request: Request) -> JSONResponse:
+    await _require_auth(request)
+    return JSONResponse(content={
+        "config": {
+            "auto_merge_enabled": _gatekeeper_config["auto_merge_enabled"],
+            "allowed_authors": list(_gatekeeper_config["allowed_authors"]),
+            "coverage_tolerance_pct": _gatekeeper_config["coverage_tolerance_pct"],
+            "protected_branches": list(_gatekeeper_config["protected_branches"]),
+        },
+    })
+
+
 # ── Priority Scheduler ───────────────────────────────────────────────
 
 _LABEL_PRIORITIES: dict[str, int] = {
@@ -461,7 +560,20 @@ _scheduler_state: dict[str, Any] = {
     "task": None,
     "last_run": None,
     "last_dispatched": [],
-    "stats": {"dispatched": 0, "skipped_blocked": 0, "skipped_inflight": 0},
+    "completed_issues": set(),  # issue numbers already completed this session
+    "failed_issues": set(),     # issue numbers that failed — don't retry until cleared
+    "reviewed_prs": set(),      # PR numbers already reviewed this session
+    "review_enabled": True,     # Gatekeeper runs alongside dispatch
+    "stats": {
+        "dispatched": 0,
+        "skipped_blocked": 0,
+        "skipped_inflight": 0,
+        "skipped_completed": 0,
+        "skipped_failed": 0,
+        "reviewed": 0,
+        "merged": 0,
+        "review_changes_requested": 0,
+    },
 }
 
 
@@ -486,12 +598,33 @@ async def _scheduler_loop(container: Any, owner: str, repo: str) -> None:
                 _datetime.timezone.utc,
             ).isoformat()
 
+            # Harvest outcomes of completed runs and move to completed/failed sets
+            completed_set = _scheduler_state["completed_issues"]
+            failed_set = _scheduler_state["failed_issues"]
+            for r in orch._runs.values():
+                status_val = r.status.value
+                if status_val == "passed":
+                    completed_set.add(r.issue_number)
+                elif status_val in ("failed", "blocked"):
+                    failed_set.add(r.issue_number)
+
             if slots > 0:
                 candidates = await _rank_candidate_issues(container, owner, repo)
                 dispatched: list[int] = []
-                for issue in candidates[:slots]:
-                    # Avoid re-dispatching an issue that already has a run
+                for issue in candidates:
+                    if len(dispatched) >= slots:
+                        break
                     number = issue["number"]
+
+                    # Skip if already completed or failed this session
+                    if number in completed_set:
+                        _scheduler_state["stats"]["skipped_completed"] += 1
+                        continue
+                    if number in failed_set:
+                        _scheduler_state["stats"]["skipped_failed"] += 1
+                        continue
+
+                    # Skip if an in-flight run exists for this issue
                     already_running = any(
                         r.issue_number == number
                         and r.status.value not in ("passed", "failed", "blocked")
@@ -514,10 +647,80 @@ async def _scheduler_loop(container: Any, owner: str, repo: str) -> None:
                         len(dispatched), dispatched,
                     )
 
+            # Review pass — run Gatekeeper on any open builders PRs
+            if _scheduler_state.get("review_enabled", True):
+                await _review_pass(container, owner, repo)
+
         except Exception as e:
             logger.exception("Scheduler loop error: %s", e)
 
         await _asyncio.sleep(_scheduler_state["interval_seconds"])
+
+
+async def _review_pass(container: Any, owner: str, repo: str) -> None:
+    """Find open PRs created by builders and run Gatekeeper on each."""
+    import json as _json
+
+    td = container.tool_dispatcher
+
+    # Fetch open PRs (list_issues returns both issues and PRs)
+    issues_raw = await td.execute(
+        "github",
+        {
+            "action": "list_issues",
+            "owner": owner, "repo": repo,
+            "state": "open", "per_page": 50, "max_pages": 2,
+        },
+    )
+    if issues_raw.startswith("Error:"):
+        return
+
+    try:
+        items = _json.loads(issues_raw)
+    except Exception:
+        return
+
+    prs = [i for i in items if i.get("is_pr", False)]
+    reviewed_set = _scheduler_state["reviewed_prs"]
+
+    # Review at most 2 PRs per loop
+    pipeline = _build_pipeline(container)
+    review_slots = 2
+    for pr_item in prs:
+        if review_slots <= 0:
+            break
+        pr_number = pr_item["number"]
+        if pr_number in reviewed_set:
+            continue
+
+        # Only review PRs with branch name matching our conventions
+        title = pr_item.get("title", "")
+        if not any(
+            title.startswith(prefix)
+            for prefix in ("feat:", "fix:", "refactor:", "test:")
+        ):
+            continue
+
+        try:
+            result = await pipeline.review_pr(
+                owner=owner,
+                repo=repo,
+                pr_number=pr_number,
+                auto_merge_enabled=_gatekeeper_config["auto_merge_enabled"],
+                allowed_authors=_gatekeeper_config["allowed_authors"],
+                coverage_tolerance_pct=_gatekeeper_config["coverage_tolerance_pct"],
+                protected_branches=_gatekeeper_config["protected_branches"],
+            )
+            reviewed_set.add(pr_number)
+            _scheduler_state["stats"]["reviewed"] += 1
+            if result.success:
+                if result.evidence.get("merged"):
+                    _scheduler_state["stats"]["merged"] += 1
+            else:
+                _scheduler_state["stats"]["review_changes_requested"] += 1
+            review_slots -= 1
+        except Exception as e:
+            logger.warning("Review of PR #%d failed: %s", pr_number, e)
 
     logger.info("Scheduler loop stopped")
 
@@ -622,16 +825,40 @@ async def scheduler_status(request: Request) -> JSONResponse:
 
 
 def _scheduler_snapshot() -> dict[str, Any]:
+    completed = _scheduler_state.get("completed_issues", set())
+    failed = _scheduler_state.get("failed_issues", set())
+    reviewed = _scheduler_state.get("reviewed_prs", set())
     return {
         "enabled": _scheduler_state.get("enabled", False),
         "interval_seconds": _scheduler_state.get("interval_seconds", 300),
         "max_concurrent": _scheduler_state.get("max_concurrent", 2),
+        "review_enabled": _scheduler_state.get("review_enabled", True),
         "last_run": _scheduler_state.get("last_run"),
         "last_dispatched": _scheduler_state.get("last_dispatched", []),
+        "completed_count": len(completed),
+        "failed_count": len(failed),
+        "reviewed_count": len(reviewed),
+        "completed_issues": sorted(completed),
+        "failed_issues": sorted(failed),
+        "reviewed_prs": sorted(reviewed),
         "stats": _scheduler_state.get("stats", {}),
         "owner": _scheduler_state.get("owner"),
         "repo": _scheduler_state.get("repo"),
+        "gatekeeper": {
+            "auto_merge_enabled": _gatekeeper_config["auto_merge_enabled"],
+            "allowed_authors": list(_gatekeeper_config["allowed_authors"]),
+            "protected_branches": list(_gatekeeper_config["protected_branches"]),
+        },
     }
+
+
+@router.post("/scheduler/reset")
+async def scheduler_reset(request: Request) -> JSONResponse:
+    """Clear the completed/failed issue sets so they can be retried."""
+    await _require_auth(request)
+    _scheduler_state["completed_issues"] = set()
+    _scheduler_state["failed_issues"] = set()
+    return JSONResponse({"status": "reset", "state": _scheduler_snapshot()})
 
 
 MAX_STAGE_RETRIES = 3

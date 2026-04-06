@@ -333,6 +333,89 @@ checklist:
 rejection_format: State WHICH check failed, quoting the evidence
 """
 
+# ── Gatekeeper prompts ───────────────────────────────────────────────
+
+GATEKEEPER_REVIEW_PR = """\
+You are the Gatekeeper reviewing a pull request.
+
+## PR #{{pr_number}}: {{pr_title}}
+
+**Author:** {{pr_author}}
+**Base:** {{base_branch}} ← **Head:** {{head_branch}}
+**Files changed:** {{files_count}} | **+{{additions}} / -{{deletions}}**
+
+### PR Body
+{{pr_body}}
+
+## Parent Issue #{{issue_number}}
+{{issue_body}}
+
+## Mechanical Gates Result
+```
+{{mechanical_result}}
+```
+
+## Coverage
+{{coverage_summary}}
+
+## Changed Files (full contents)
+{{changed_files}}
+
+## Sibling Files (parallel structure reference)
+{{sibling_files}}
+
+## Callers of Changed Symbols
+{{callers}}
+
+## Repo Standards
+{{repo_standards}}
+
+## Your Task
+
+Review this PR against ALL of these criteria:
+
+1. **Mechanical gates** — must all be passing (ruff, mypy, bandit, pytest)
+2. **Coverage** — must not regress beyond tolerance
+3. **Side effects** — callers of changed symbols must still work
+4. **Parallel structure** — new code should match sibling patterns
+5. **Code smells** — no long funcs, deep nesting, duplication, magic numbers, bare excepts
+6. **Repo standards** — protocol-driven DI, no mocks for internal classes, mypy strict
+7. **Acceptance criteria** — each bullet from the parent issue must be addressed
+
+Output ONLY a JSON object with this exact schema:
+
+{
+  "decision": "approve" | "request_changes",
+  "summary": "1-2 sentence overview of your verdict",
+  "checked": [
+    "specific thing you verified, e.g., 'ruff check passed on 2 files'",
+    ...
+  ],
+  "blockers": [
+    {
+      "file": "src/stronghold/...",
+      "line": 47,
+      "severity": "error" | "warning",
+      "category": "coverage" | "side_effect" | "parallel_structure" | "code_smell" | "standard" | "acceptance" | "mechanical",
+      "message": "specific, actionable feedback"
+    }
+  ],
+  "suggestions": [
+    {
+      "file": "src/stronghold/...",
+      "line": 12,
+      "message": "optional improvement (not blocking)"
+    }
+  ]
+}
+
+Rules:
+- `decision: approve` ONLY if `blockers` is empty
+- Every blocker must have a concrete file and line
+- `checked` must have at least 3 items — be specific about what you actually verified
+- Do not include "suggestions" as blockers — if it's not blocking, put it in suggestions
+"""
+
 # ── Quartermaster prompts ────────────────────────────────────────────
 
 QUARTERMASTER_DECOMPOSE = """\
@@ -396,6 +479,8 @@ BUILDER_PROMPT_DEFAULTS: dict[str, str] = {
     "builders.auditor.stage.quality_checks_passed": AUDITOR_STAGE_QUALITY_CHECKS_PASSED,
     # Quartermaster
     "builders.quartermaster.decompose": QUARTERMASTER_DECOMPOSE,
+    # Gatekeeper
+    "builders.gatekeeper.review_pr": GATEKEEPER_REVIEW_PR,
 }
 
 # Merge UI prompts (Piper + Glazier)

@@ -23,6 +23,7 @@ class WorkerName(StrEnum):
     PIPER = "piper"
     GLAZIER = "glazier"
     QUARTERMASTER = "quartermaster"
+    GATEKEEPER = "gatekeeper"
 
 
 class RunStatus(StrEnum):

@@ -46,6 +46,11 @@ GITHUB_TOOL_DEF = ToolDefinition(
                     "add_blocked_by",
                     "list_blocked_by",
                     "list_blocking",
+                    "review_pr",
+                    "merge_pr",
+                    "list_pr_files",
+                    "get_check_runs",
+                    "get_pr",
                 ],
                 "description": "The GitHub operation to perform.",
             },
@@ -574,16 +579,174 @@ class GitHubToolExecutor:
                 for i in resp.json()
             ]
 
+    async def _get_pr(self, args: dict[str, Any]) -> dict[str, Any]:
+        import httpx
+
+        owner, repo = args["owner"], args["repo"]
+        number = args["issue_number"]
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            resp = await client.get(
+                f"{self._base_url}/repos/{owner}/{repo}/pulls/{number}",
+                headers=self._headers(),
+            )
+            resp.raise_for_status()
+            pr = resp.json()
+            return {
+                "number": pr["number"],
+                "title": pr.get("title", ""),
+                "body": pr.get("body") or "",
+                "state": pr["state"],
+                "user": pr.get("user", {}).get("login", ""),
+                "head": {
+                    "ref": pr["head"]["ref"],
+                    "sha": pr["head"]["sha"],
+                },
+                "base": {
+                    "ref": pr["base"]["ref"],
+                    "sha": pr["base"]["sha"],
+                },
+                "mergeable": pr.get("mergeable"),
+                "mergeable_state": pr.get("mergeable_state", ""),
+                "html_url": pr.get("html_url", ""),
+                "draft": pr.get("draft", False),
+                "additions": pr.get("additions", 0),
+                "deletions": pr.get("deletions", 0),
+                "changed_files": pr.get("changed_files", 0),
+            }
+
+    async def _list_pr_files(self, args: dict[str, Any]) -> list[dict[str, Any]]:
+        import httpx
+
+        owner, repo = args["owner"], args["repo"]
+        number = args["issue_number"]
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            resp = await client.get(
+                f"{self._base_url}/repos/{owner}/{repo}/pulls/{number}/files",
+                headers=self._headers(),
+                params={"per_page": 100},
+            )
+            resp.raise_for_status()
+            return [
+                {
+                    "filename": f["filename"],
+                    "status": f["status"],
+                    "additions": f["additions"],
+                    "deletions": f["deletions"],
+                    "changes": f["changes"],
+                    "patch": f.get("patch", "")[:5000],
+                }
+                for f in resp.json()
+            ]
+
+    async def _review_pr(self, args: dict[str, Any]) -> dict[str, Any]:
+        """Submit a review on a PR.
+
+        event: APPROVE | REQUEST_CHANGES | COMMENT
+        """
+        import httpx
+
+        owner, repo = args["owner"], args["repo"]
+        number = args["issue_number"]
+        event = args.get("event", "COMMENT")
+        body = args.get("body", "")
+        comments = args.get("comments", [])
+
+        payload: dict[str, Any] = {"event": event, "body": body}
+        if comments:
+            payload["comments"] = comments
+
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            resp = await client.post(
+                f"{self._base_url}/repos/{owner}/{repo}/pulls/{number}/reviews",
+                headers=self._headers(),
+                json=payload,
+            )
+            resp.raise_for_status()
+            review = resp.json()
+            return {
+                "id": review["id"],
+                "state": review["state"],
+                "url": review.get("html_url", ""),
+            }
+
+    async def _merge_pr(self, args: dict[str, Any]) -> dict[str, Any]:
+        """Merge a PR.
+
+        merge_method: merge | squash | rebase
+        """
+        import httpx
+
+        owner, repo = args["owner"], args["repo"]
+        number = args["issue_number"]
+        payload: dict[str, Any] = {
+            "merge_method": args.get("merge_method", "squash"),
+        }
+        if "commit_title" in args:
+            payload["commit_title"] = args["commit_title"]
+        if "commit_message" in args:
+            payload["commit_message"] = args["commit_message"]
+
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            resp = await client.put(
+                f"{self._base_url}/repos/{owner}/{repo}/pulls/{number}/merge",
+                headers=self._headers(),
+                json=payload,
+            )
+            if resp.status_code == 405:
+                return {
+                    "merged": False,
+                    "message": "Not mergeable (method not allowed)",
+                }
+            if resp.status_code == 409:
+                return {"merged": False, "message": "Head sha mismatch"}
+            resp.raise_for_status()
+            result = resp.json()
+            return {
+                "merged": result.get("merged", False),
+                "sha": result.get("sha", ""),
+                "message": result.get("message", ""),
+            }
+
+    async def _get_check_runs(self, args: dict[str, Any]) -> dict[str, Any]:
+        """Get check runs for a commit SHA."""
+        import httpx
+
+        owner, repo = args["owner"], args["repo"]
+        ref = args.get("ref") or args.get("sha", "")
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            resp = await client.get(
+                f"{self._base_url}/repos/{owner}/{repo}/commits/{ref}/check-runs",
+                headers=self._headers(),
+            )
+            resp.raise_for_status()
+            data = resp.json()
+            return {
+                "total_count": data.get("total_count", 0),
+                "check_runs": [
+                    {
+                        "name": c["name"],
+                        "status": c["status"],
+                        "conclusion": c.get("conclusion", ""),
+                    }
+                    for c in data.get("check_runs", [])
+                ],
+            }
+
     _handlers: dict[str, Any] = {
         "list_issues": _list_issues,
         "get_issue": _get_issue,
         "create_issue": _create_issue,
         "create_branch": _create_branch,
         "create_pr": _create_pr,
+        "get_pr": _get_pr,
         "get_pr_diff": _get_pr_diff,
         "post_pr_comment": _post_pr_comment,
         "edit_comment": _edit_comment,
         "list_pr_comments": _list_pr_comments,
+        "list_pr_files": _list_pr_files,
+        "review_pr": _review_pr,
+        "merge_pr": _merge_pr,
+        "get_check_runs": _get_check_runs,
         "create_sub_issue": _create_sub_issue,
         "list_sub_issues": _list_sub_issues,
         "get_parent_issue": _get_parent_issue,
