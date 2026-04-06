@@ -69,3 +69,11 @@ class TestAdminConfigEndpoint:
             assert isinstance(data["auth_method"], str)
             assert isinstance(data["rate_limit"], str)
             assert isinstance(data["cors_origins"], list)
+
+    def test_admin_config_returns_401_for_unauthenticated_user(self, app: FastAPI) -> None:
+        with TestClient(app) as client:
+            resp = client.get("/v1/stronghold/admin/config")
+            assert resp.status_code == 401
+            error_data = resp.json()
+            assert "detail" in error_data
+            assert "authentication" in error_data["detail"].lower()
