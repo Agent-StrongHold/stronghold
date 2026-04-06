@@ -1697,6 +1697,206 @@ class RuntimePipeline:
     # ── Quartermaster: Issue Decomposition ────────────────────────────
 
     @staticmethod
+    def _triage_issue(title: str, body: str) -> str:
+        """Classify an issue into a decomposition strategy.
+
+        Returns one of:
+        - "atomic"          — single file, no decomposition needed
+        - "enumerable:ruff" — work is enumerable from ruff output
+        - "enumerable:mypy" — work is enumerable from mypy output
+        - "agentic"         — needs LLM-driven planning
+        """
+        import re as _re
+
+        text = f"{title}\n{body}".lower()
+
+        # Enumerable: tool-driven cleanup
+        if "ruff check" in text or "ruff errors" in text or "ruff lint" in text:
+            return "enumerable:ruff"
+        if "mypy --strict" in text or "mypy errors" in text or "type errors" in text:
+            return "enumerable:mypy"
+
+        # Atomic: single file mention with single criterion
+        path_matches = _re.findall(r"src/stronghold/[\w/]+\.(?:py|html)", text)
+        unique_paths = set(path_matches)
+        criteria_count = body.count("- [ ]") + body.count("- [x]")
+
+        if len(unique_paths) == 1 and criteria_count <= 5:
+            return "atomic"
+
+        # Otherwise, agentic LLM decomposition
+        return "agentic"
+
+    async def _enumerable_ruff(
+        self, run: Any, ws: str,
+    ) -> list[dict[str, Any]]:
+        """Run ruff and produce one step per file with errors.
+
+        Returns step dicts compatible with the agentic decomposer output.
+        """
+        import json as _json
+        from collections import defaultdict
+
+        result = await self._td.execute(
+            "shell",
+            {
+                "command": (
+                    "ruff check src/stronghold/ "
+                    "--output-format=json --no-fix 2>&1 || true"
+                ),
+                "workspace": ws,
+            },
+        )
+
+        # The shell tool wraps output in JSON. Extract the actual ruff JSON.
+        try:
+            wrapped = _json.loads(result)
+            stdout = wrapped.get("stdout", "")
+        except Exception:
+            stdout = result
+
+        # Find the JSON array in stdout (ruff outputs an array of objects)
+        try:
+            json_start = stdout.find("[")
+            json_end = stdout.rfind("]") + 1
+            if json_start == -1 or json_end == 0:
+                return []
+            ruff_errors = _json.loads(stdout[json_start:json_end])
+        except Exception:
+            return []
+
+        if not ruff_errors:
+            return []
+
+        # Group by file
+        by_file: dict[str, list[dict[str, Any]]] = defaultdict(list)
+        for err in ruff_errors:
+            fname = err.get("filename", "")
+            if fname.startswith("/"):
+                # Make path relative to workspace
+                fname = fname.split("/src/stronghold/", 1)[-1]
+                fname = "src/stronghold/" + fname
+            by_file[fname].append(err)
+
+        # Build steps — one per file
+        steps = []
+        for fname, errors in sorted(by_file.items()):
+            rules = sorted({e.get("code", "?") for e in errors})
+            error_lines = []
+            for e in errors[:20]:
+                code = e.get("code", "?")
+                msg = e.get("message", "")
+                loc = e.get("location", {})
+                line = loc.get("row", 0)
+                col = loc.get("column", 0)
+                fix_avail = "✓" if e.get("fix") else " "
+                error_lines.append(f"  {fix_avail} {code} {fname}:{line}:{col}  {msg}")
+            if len(errors) > 20:
+                error_lines.append(f"  ... and {len(errors) - 20} more")
+
+            body = (
+                f"## Description\n"
+                f"Fix all ruff violations in `{fname}`.\n\n"
+                f"## Errors ({len(errors)} total)\n"
+                f"Rules: {', '.join(rules)}\n\n"
+                f"```\n{chr(10).join(error_lines)}\n```\n\n"
+                f"## Acceptance Criteria\n"
+                f"- [ ] `ruff check {fname}` returns zero errors\n"
+                f"- [ ] `ruff format --check {fname}` passes\n"
+                f"- [ ] No functional changes (lint/format only)\n\n"
+                f"## Implementation Notes\n"
+                f"Run `ruff check --fix {fname}` and `ruff format {fname}` "
+                f"first to handle auto-fixable items, then manually fix the rest.\n\n"
+                f"## Files\n- {fname}"
+            )
+            steps.append({
+                "title": (
+                    f"fix: ruff cleanup in "
+                    f"{fname.replace('src/stronghold/', '')}"
+                ),
+                "body": body,
+                "depends_on": [],
+                "file": fname,
+            })
+
+        return steps
+
+    async def _enumerable_mypy(
+        self, run: Any, ws: str,
+    ) -> list[dict[str, Any]]:
+        """Run mypy and produce one step per file with errors."""
+        from collections import defaultdict
+        import re as _re
+
+        result = await self._td.execute(
+            "shell",
+            {
+                "command": (
+                    "mypy src/stronghold/ --strict --no-error-summary 2>&1 || true"
+                ),
+                "workspace": ws,
+            },
+        )
+
+        # Extract stdout
+        import json as _json
+        try:
+            wrapped = _json.loads(result)
+            stdout = wrapped.get("stdout", "") + wrapped.get("stderr", "")
+        except Exception:
+            stdout = result
+
+        # Parse mypy lines: path:line: error: message  [code]
+        line_pat = _re.compile(
+            r"^(src/stronghold/[^:]+):(\d+):(?:\d+:)?\s*(error|warning):\s*(.+?)(?:\s+\[([^\]]+)\])?$",
+            _re.MULTILINE,
+        )
+        by_file: dict[str, list[dict[str, str]]] = defaultdict(list)
+        for m in line_pat.finditer(stdout):
+            fname, line, _sev, msg, code = m.groups()
+            by_file[fname].append({
+                "line": line,
+                "message": msg.strip(),
+                "code": code or "",
+            })
+
+        if not by_file:
+            return []
+
+        steps = []
+        for fname, errors in sorted(by_file.items()):
+            error_lines = "\n".join(
+                f"  {e['line']}: {e['message']}"
+                + (f"  [{e['code']}]" if e["code"] else "")
+                for e in errors[:30]
+            )
+            if len(errors) > 30:
+                error_lines += f"\n  ... and {len(errors) - 30} more"
+
+            body = (
+                f"## Description\n"
+                f"Fix mypy --strict errors in `{fname}`.\n\n"
+                f"## Errors ({len(errors)} total)\n"
+                f"```\n{error_lines}\n```\n\n"
+                f"## Acceptance Criteria\n"
+                f"- [ ] `mypy {fname} --strict` passes with zero errors\n"
+                f"- [ ] No type-ignore comments added unless absolutely necessary\n"
+                f"- [ ] Existing behavior preserved\n\n"
+                f"## Files\n- {fname}"
+            )
+            steps.append({
+                "title": (
+                    f"fix: mypy strict in "
+                    f"{fname.replace('src/stronghold/', '')}"
+                ),
+                "body": body,
+                "depends_on": [],
+                "file": fname,
+            })
+
+        return steps
+
+    @staticmethod
     def _needs_further_decomposition(title: str, body: str) -> bool:
         """Heuristic: is this sub-issue still too broad for Mason to solve?
 
@@ -1759,48 +1959,96 @@ class RuntimePipeline:
         issue_content = getattr(run, "_issue_content", "")
         issue_title = getattr(run, "_issue_title", "")
 
-        # Gather repo context for the decomposer
-        file_listing = await self._list_files("src/", ws)
-
-        # Read any files the issue explicitly mentions
-        relevant_files = ""
-        import re as _re
-        mentioned_paths = _re.findall(
-            r"(src/stronghold/[\w/]+\.py)", issue_content,
-        )
-        for path in mentioned_paths[:5]:
-            content = await self._read_file(path, ws)
-            if content:
-                relevant_files += f"\n# --- {path} ---\n{content[:2000]}\n"
-
-        template = await self._get_prompt("builders.quartermaster.decompose")
-        if not template:
-            from stronghold.builders.prompts import QUARTERMASTER_DECOMPOSE
-            template = QUARTERMASTER_DECOMPOSE
-
-        prompt = self._render(
-            template,
-            issue_number=str(run.issue_number),
-            issue_title=issue_title,
-            issue_content=issue_content,
-            file_listing=file_listing[:4000],
-            relevant_files=relevant_files[:6000],
+        # ── Triage: pick the right strategy ──
+        strategy = self._triage_issue(issue_title, issue_content)
+        logger.info(
+            "Quartermaster triage on #%s → %s",
+            run.issue_number, strategy,
         )
 
-        plan = await self._llm_extract(
-            prompt, self._frank_model, extract_json, "decomposition plan",
-        )
+        plan_summary = ""
+        steps: list[dict[str, Any]] = []
 
-        steps = plan.get("steps", [])
+        if strategy == "atomic":
+            # No decomposition needed — leave the issue for Mason to work directly
+            return StageResult(
+                success=True,
+                summary=(
+                    f"Triage: atomic — single-file work order, "
+                    f"no decomposition needed."
+                ),
+                evidence={
+                    "parent": run.issue_number,
+                    "strategy": "atomic",
+                    "depth": depth,
+                    "created": [],
+                },
+            )
+
+        elif strategy == "enumerable:ruff":
+            steps = await self._enumerable_ruff(run, ws)
+            plan_summary = (
+                f"Enumerable ruff decomposition: {len(steps)} files with errors. "
+                f"One sub-issue per file."
+            )
+
+        elif strategy == "enumerable:mypy":
+            steps = await self._enumerable_mypy(run, ws)
+            plan_summary = (
+                f"Enumerable mypy decomposition: {len(steps)} files with errors. "
+                f"One sub-issue per file."
+            )
+
+        else:  # agentic
+            file_listing = await self._list_files("src/", ws)
+
+            relevant_files = ""
+            import re as _re
+            mentioned_paths = _re.findall(
+                r"(src/stronghold/[\w/]+\.py)", issue_content,
+            )
+            for path in mentioned_paths[:5]:
+                content = await self._read_file(path, ws)
+                if content:
+                    relevant_files += f"\n# --- {path} ---\n{content[:2000]}\n"
+
+            template = await self._get_prompt("builders.quartermaster.decompose")
+            if not template:
+                from stronghold.builders.prompts import QUARTERMASTER_DECOMPOSE
+                template = QUARTERMASTER_DECOMPOSE
+
+            prompt = self._render(
+                template,
+                issue_number=str(run.issue_number),
+                issue_title=issue_title,
+                issue_content=issue_content,
+                file_listing=file_listing[:4000],
+                relevant_files=relevant_files[:6000],
+            )
+
+            plan = await self._llm_extract(
+                prompt, self._frank_model, extract_json, "decomposition plan",
+            )
+            steps = plan.get("steps", [])
+            plan_summary = plan.get("summary", "")
+
         if not steps:
             return StageResult(
-                success=False, summary="No steps in decomposition plan",
+                success=False,
+                summary=f"Triage: {strategy} produced no steps",
             )
-        if len(steps) > 10:
+
+        # Enumerable strategies are uncapped; agentic capped at 10
+        if strategy == "agentic" and len(steps) > 10:
             return StageResult(
                 success=False,
                 summary=f"Too many steps ({len(steps)}) — parent is too broad",
             )
+
+        # Hard safety cap to prevent runaway issue creation
+        if len(steps) > 100:
+            steps = steps[:100]
+            plan_summary += f" (capped at 100 from larger set)"
 
         # Create all child issues first, recording step index → issue number
         created: list[dict[str, Any]] = []
@@ -1919,8 +2167,10 @@ class RuntimePipeline:
         )
 
         # Post summary comment to the parent
-        lines = [f"## Quartermaster Decomposition (depth {depth})\n"]
-        lines.append(f"{plan.get('summary', '')}\n")
+        lines = [
+            f"## Quartermaster Decomposition (depth {depth}, strategy: {strategy})\n"
+        ]
+        lines.append(f"{plan_summary}\n")
         lines.append(f"**{len(created)} sub-issues created:**\n")
         for c in created:
             deps = c["depends_on"]
@@ -1958,6 +2208,7 @@ class RuntimePipeline:
             evidence={
                 "parent": run.issue_number,
                 "depth": depth,
+                "strategy": strategy,
                 "created": [{"number": c["number"], "title": c["title"]} for c in created],
                 "dependency_count": sum(len(c["depends_on"]) for c in created),
                 "recursed": recurse_counts,
