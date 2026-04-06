@@ -36,6 +36,7 @@ async def gate_endpoint(
     mutation_enabled = body.get("mutation_enabled", False)
     baseline_commit = body.get("baseline_commit", False)
     simulate_permission_error = body.get("simulate_permission_error", False)
+    pr_comment_required = body.get("pr_comment_required", False)
 
     # Process the gate request
     result = await gate.process_red_team_request(
@@ -48,6 +49,7 @@ async def gate_endpoint(
         mutation_enabled=mutation_enabled,
         baseline_commit=baseline_commit,
         simulate_permission_error=simulate_permission_error,
+        pr_comment_required=pr_comment_required,
     )
 
     return JSONResponse(content=result)

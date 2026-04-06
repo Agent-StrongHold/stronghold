@@ -734,3 +734,41 @@ class TestRedTeamRegressionWorkflow:
         assert "baseline_commit_hash" in data
         assert isinstance(data["baseline_commit_hash"], str)
         assert len(data["baseline_commit_hash"]) > 0
+
+    def test_red_team_regression_blocks_pr_when_detection_rate_drops_by_more_than_2_percent(self, client: TestClient) -> None:
+        # Scenario: Red team regression blocks PR when detection rate drops by more than 2%
+        # Given a PR is opened targeting the main branch
+        # When the CI workflow executes the red team regression test
+        # Then the detection rate is compared against the baseline
+        # And if the detection rate drops by more than 2%, the PR is blocked
+
+        # Simulate a request to the gate endpoint with a detection rate drop of 2.5%
+        response = client.post(
+            "/v1/stronghold/gate",
+            json={
+                "content": "malicious input causing detection drop",
+                "mode": "persistent",
+                "detection_rate": {
+                    "baseline": 0.85,
+                    "current": 0.825,
+                    "delta": -0.025  # 2.5% drop which is >2%
+                }
+            },
+            headers={"authorization": "Bearer test-token"}
+        )
+
+        # The endpoint should detect the regression and block the PR
+        assert response.status_code == 403
+
+        # Check that the response includes PR blocking information
+        data = response.json()
+        assert "blocked" in data
+        assert data["blocked"] is True
+        assert "ci_failed" in data
+        assert data["ci_failed"] is True
+
+        # Verify detection rate diff is shown in PR comment
+        assert "detection_rate" in data
+        assert data["detection_rate"]["delta"] == -0.025
+        assert "threshold" in data["message"].lower()
+        assert "2%" in data["message"] or "0.02" in str(data["detection_rate"]["delta"])
