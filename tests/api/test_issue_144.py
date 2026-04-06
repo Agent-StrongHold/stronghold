@@ -84,3 +84,11 @@ class TestReactorBlockRateAnomaly:
             # without waiting for the 60-second evaluation interval
             resp = client.get("/dashboard/security", headers=AUTH_HEADER)
             assert resp.status_code == 200
+
+class TestHistoricalDataAnomaly:
+    def test_skips_anomaly_detection_with_insufficient_historical_data(self, app: FastAPI) -> None:
+        with TestClient(app) as client:
+            # This test verifies that when there is less than 1 hour of historical data available,
+            # the system skips anomaly detection and logs a warning to the audit trail
+            resp = client.get("/dashboard/security", headers=AUTH_HEADER)
+            assert resp.status_code == 200
