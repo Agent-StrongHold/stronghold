@@ -1230,13 +1230,21 @@ async def _execute_one_stage(run_id: str, orch: Any, container: Any, service_aut
             coverage_pct=95.0,
             quality_passed=True,
         )
-        # Create PR on completion
-        ws_path = getattr(run, "_workspace_path", "")
-        if ws_path and container:
-            import asyncio as _asyncio
-            _asyncio.create_task(
-                _create_pr_on_finish(run, container, owner, repo_name, ws_path),
+        # Create PR on completion — guarded against double-fire when both
+        # _execute_one_stage and _execute_full_workflow are running
+        if getattr(run, "_pr_creation_started", False):
+            logger.info(
+                "Skipping PR creation for %s — already started by another path",
+                run_id,
             )
+        else:
+            run._pr_creation_started = True
+            ws_path = getattr(run, "_workspace_path", "")
+            if ws_path and container:
+                import asyncio as _asyncio
+                _asyncio.create_task(
+                    _create_pr_on_finish(run, container, owner, repo_name, ws_path),
+                )
     else:
         orch.apply_result(run_result)
 
@@ -1412,9 +1420,15 @@ async def _execute_full_workflow(run_id: str, orch: Any, container: Any, service
         if not run:
             break
 
-        # If passed → create PR and exit
+        # If passed → create PR and exit (guarded against double-fire)
         if run.status == RunStatus.PASSED:
-            if ws_path:
+            if getattr(run, "_pr_creation_started", False):
+                logger.info(
+                    "Skipping PR creation for %s — already started by another path",
+                    run_id,
+                )
+            elif ws_path:
+                run._pr_creation_started = True
                 await _create_pr_on_finish(run, container, owner, repo, ws_path)
             break
 
