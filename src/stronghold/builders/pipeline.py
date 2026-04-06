@@ -1732,28 +1732,28 @@ class RuntimePipeline:
     ) -> list[dict[str, Any]]:
         """Run ruff and produce one step per file with errors.
 
-        Returns step dicts compatible with the agentic decomposer output.
+        Writes ruff JSON to a temp file (shell tool truncates stdout at
+        3000 chars; ruff output for many errors is much bigger). Then
+        reads the file and parses.
         """
         import json as _json
         from collections import defaultdict
 
-        result = await self._td.execute(
+        # Write ruff JSON to a temp file in the worktree
+        await self._td.execute(
             "shell",
             {
                 "command": (
                     "ruff check src/stronghold/ "
-                    "--output-format=json --no-fix 2>&1 || true"
+                    "--output-format=json --no-fix > .ruff_errors.json 2>&1 || true"
                 ),
                 "workspace": ws,
             },
         )
 
-        # The shell tool wraps output in JSON. Extract the actual ruff JSON.
-        try:
-            wrapped = _json.loads(result)
-            stdout = wrapped.get("stdout", "")
-        except Exception:
-            stdout = result
+        stdout = await self._read_file(".ruff_errors.json", ws)
+        if not stdout:
+            return []
 
         # Find the JSON array in stdout (ruff outputs an array of objects)
         try:
@@ -1828,23 +1828,20 @@ class RuntimePipeline:
         from collections import defaultdict
         import re as _re
 
-        result = await self._td.execute(
+        await self._td.execute(
             "shell",
             {
                 "command": (
-                    "mypy src/stronghold/ --strict --no-error-summary 2>&1 || true"
+                    "mypy src/stronghold/ --strict --no-error-summary "
+                    "> .mypy_errors.txt 2>&1 || true"
                 ),
                 "workspace": ws,
             },
         )
 
-        # Extract stdout
-        import json as _json
-        try:
-            wrapped = _json.loads(result)
-            stdout = wrapped.get("stdout", "") + wrapped.get("stderr", "")
-        except Exception:
-            stdout = result
+        stdout = await self._read_file(".mypy_errors.txt", ws)
+        if not stdout:
+            return []
 
         # Parse mypy lines: path:line: error: message  [code]
         line_pat = _re.compile(
