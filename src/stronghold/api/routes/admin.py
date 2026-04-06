@@ -71,39 +71,3 @@ async def get_config(request: Request) -> JSONResponse:
         response["cors_origins"] = cfg.cors_origins
 
     return JSONResponse(content=response)
-
-def _check_csrf(request: Request) -> None:
-    """Verify CSRF defense header on cookie-authenticated mutations.
-
-    CSRF only applies when auth is via cookies (browser session).
-    Bearer token auth and unauthenticated requests are not CSRF-vulnerable.
-    """
-    if request.method not in ("POST", "PUT", "DELETE"):
-        return
-    if request.headers.get("authorization"):
-        return  # Bearer token — not CSRF-vulnerable
-    # Only enforce CSRF when a session cookie is present (browser auth)
-    if not request.cookies:
-        return  # No cookies = not a browser session, auth will reject
-    if not request.headers.get("x-stronghold-request"):
-        raise HTTPException(
-            status_code=403,
-            detail="Missing X-Stronghold-Request header (CSRF protection)",
-        )
-
-async def _require_admin(request: Request) -> Any:
-    """Authenticate, require admin, then check CSRF on mutations."""
-    container = request.app.state.container
-    auth_header = request.headers.get("authorization")
-    try:
-        auth = await container.auth_provider.authenticate(
-            auth_header, headers=dict(request.headers)
-        )
-    except ValueError as e:
-        raise HTTPException(status_code=401, detail=str(e)) from e
-    if not auth.has_role("admin"):
-        raise HTTPException(status_code=403, detail="Admin role required")
-    _check_csrf(request)
-    return auth
-
-# ── Route Mounting ──
