@@ -47,3 +47,15 @@ class TestVersionEndpoint:
             assert python_version.startswith("3.")
             assert "." in python_version
             assert len(python_version.split(".")) >= 2
+
+
+class TestInvalidEndpoint:
+    def test_invalid_endpoint_returns_404(self, app: FastAPI) -> None:
+        with TestClient(app) as client:
+            resp = client.get("/v1/stronghold/invalid")
+            assert resp.status_code == 404
+
+    def test_invalid_endpoint_response_has_error(self, app: FastAPI) -> None:
+        with TestClient(app) as client:
+            data = client.get("/v1/stronghold/invalid").json()
+            assert "error" in data
