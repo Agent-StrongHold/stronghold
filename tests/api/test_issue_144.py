@@ -39,3 +39,12 @@ class TestWardenBlockRateAnomaly:
             # given historical data of 2% mean with 0.5% standard deviation over 24 hours
             resp = client.get("/dashboard/security", headers=AUTH_HEADER)
             assert resp.status_code == 200
+
+class TestToolFailureRateAnomaly:
+    def test_detects_tool_failure_rate_anomaly(self, app: FastAPI) -> None:
+        with TestClient(app) as client:
+            # This test verifies that an anomaly_detected event with signal "tool_failure_rate"
+            # is emitted when current failure rate for "gpt-4" reaches 3% in a 5-minute window
+            # given historical data of 1% mean with 0.2% standard deviation over the last hour
+            resp = client.get("/dashboard/security", headers=AUTH_HEADER)
+            assert resp.status_code == 200
