@@ -86,3 +86,17 @@ class TestAdminConfigEndpoint:
             error_data = resp.json()
             assert "detail" in error_data
             assert "permission denied" in error_data["detail"].lower()
+
+    def test_admin_config_returns_valid_json_response(self, app: FastAPI) -> None:
+        with TestClient(app) as client:
+            resp = client.get("/v1/stronghold/admin/config", headers=AUTH_HEADER)
+            assert resp.status_code == 200
+            assert resp.headers["content-type"] == "application/json"
+            data = resp.json()
+            assert isinstance(data, dict)
+            assert "litellm_url" in data
+            assert "auth_method" in data
+            assert "rate_limit" in data
+            assert "cors_origins" in data
+            assert all(isinstance(v, (str, list)) for k, v in data.items() if k != "cors_origins")
+            assert isinstance(data["cors_origins"], list)

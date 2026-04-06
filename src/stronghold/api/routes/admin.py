@@ -66,7 +66,7 @@ async def get_config(request: Request) -> JSONResponse:
     if hasattr(cfg, "auth_method") and cfg.auth_method:
         response["auth_method"] = cfg.auth_method
     if hasattr(cfg, "rate_limit") and cfg.rate_limit:
-        response["rate_limit"] = cfg.rate_limit
+        response["rate_limit"] = str(cfg.rate_limit)
     if hasattr(cfg, "cors_origins") and cfg.cors_origins:
         response["cors_origins"] = cfg.cors_origins
 
