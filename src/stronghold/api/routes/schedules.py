@@ -33,6 +33,9 @@ async def gate_endpoint(
     benchmark_suite = body.get("benchmark_suite", False)
     baseline_file = body.get("baseline_file", "tests/security/benchmark_baseline.json")
     detection_rate = body.get("detection_rate")
+    mutation_enabled = body.get("mutation_enabled", False)
+    baseline_commit = body.get("baseline_commit", False)
+    simulate_permission_error = body.get("simulate_permission_error", False)
 
     # Process the gate request
     result = await gate.process_red_team_request(
@@ -42,6 +45,9 @@ async def gate_endpoint(
         benchmark_suite=benchmark_suite,
         baseline_file=baseline_file,
         detection_rate=detection_rate,
+        mutation_enabled=mutation_enabled,
+        baseline_commit=baseline_commit,
+        simulate_permission_error=simulate_permission_error,
     )
 
     return JSONResponse(content=result)

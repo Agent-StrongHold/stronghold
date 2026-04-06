@@ -579,3 +579,41 @@ class TestRedTeamRegressionWorkflow:
 
         # Verify PR is not blocked
         assert "blocked" not in data["message"].lower() or data["blocked"] is False
+
+    def test_red_team_regression_gate_fails_when_detection_rate_drops_below_threshold(self, client: TestClient) -> None:
+        # Scenario: Red team regression gate fails when detection rate drops below threshold
+        # Given a PR is opened targeting the develop branch
+        # And the Warden's detection rate is more than 2% below the baseline
+        # When the red team regression CI workflow runs
+        # Then the workflow should fail with a non-zero exit code
+        # And the PR should be blocked from merging
+
+        # Simulate a request to the gate endpoint with a detection rate drop of 2.1%
+        response = client.post(
+            "/v1/stronghold/gate",
+            json={
+                "content": "malicious input causing detection drop",
+                "mode": "persistent",
+                "detection_rate": {
+                    "baseline": 0.85,
+                    "current": 0.829,  # 2.1% drop
+                    "delta": -0.021
+                }
+            },
+            headers={"authorization": "Bearer test-token"}
+        )
+
+        # The endpoint should detect the regression and block the PR
+        assert response.status_code == 403
+
+        # Check that the response includes PR blocking information
+        data = response.json()
+        assert "blocked" in data
+        assert data["blocked"] is True
+        assert "ci_failed" in data
+        assert data["ci_failed"] is True
+
+        # Verify detection rate diff is shown in PR comment
+        assert "detection_rate" in data
+        assert data["detection_rate"]["delta"] == -0.021
+        assert "threshold" in data["message"].lower()
