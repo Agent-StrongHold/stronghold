@@ -1043,6 +1043,26 @@ class RuntimePipeline:
             check_passing = self._count_passing(check_output)
             check_failing = self._count_failing(check_output)
 
+            # Auto-format the source files Mason just wrote BEFORE committing.
+            # We can't rely on run_quality_gates running this — and even if it
+            # does, the format must be in the per-criterion commits so the
+            # branch we push has properly formatted code.
+            for fpath in (affected_files + [test_file]):
+                await self._td.execute(
+                    "shell",
+                    {
+                        "command": f"ruff check --fix --unsafe-fixes {fpath} 2>/dev/null || true",
+                        "workspace": ws,
+                    },
+                )
+                await self._td.execute(
+                    "shell",
+                    {
+                        "command": f"ruff format {fpath} 2>/dev/null || true",
+                        "workspace": ws,
+                    },
+                )
+
             # Commit this criterion
             await self._git_command("add -A", ws)
             await self._git_command(
@@ -1145,6 +1165,10 @@ class RuntimePipeline:
         diff_output = await self._git_command(
             "diff --name-only origin/main...HEAD", ws,
         )
+        logger.info(
+            "[QG] diff vs origin/main returned %d lines",
+            len(diff_output.strip().splitlines()),
+        )
         changed_src = [
             f for f in diff_output.strip().splitlines()
             if f.startswith("src/") and f.endswith(".py")
@@ -1158,6 +1182,7 @@ class RuntimePipeline:
                 f for f in diff_output.strip().splitlines()
                 if f.startswith("src/") and f.endswith(".py")
             ]
+        logger.info("[QG] changed_src: %s", changed_src)
         if not changed_src:
             return StageResult(
                 success=True,
@@ -1165,6 +1190,7 @@ class RuntimePipeline:
                 evidence={"gate_results": {}},
             )
         changed_src_str = " ".join(changed_src)
+        logger.info("[QG] running ruff format on: %s", changed_src_str)
 
         results: dict[str, str] = {}
 
