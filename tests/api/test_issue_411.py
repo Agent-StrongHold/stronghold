@@ -121,3 +121,9 @@ class TestAdminConfigEndpoint:
             assert "detail" in error_data
             assert isinstance(error_data["detail"], str)
             assert "permission denied" in error_data["detail"].lower()
+
+    def test_unauthorized_access_without_admin_credentials(self, app: FastAPI) -> None:
+        non_admin_header = {"Authorization": "Bearer sk-test"}
+        with TestClient(app) as client:
+            resp = client.get("/v1/stronghold/admin/config", headers=non_admin_header)
+            assert resp.status_code == 403
