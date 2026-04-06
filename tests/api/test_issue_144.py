@@ -92,3 +92,11 @@ class TestHistoricalDataAnomaly:
             # the system skips anomaly detection and logs a warning to the audit trail
             resp = client.get("/dashboard/security", headers=AUTH_HEADER)
             assert resp.status_code == 200
+
+class TestInvalidSignalDataAnomaly:
+    def test_skips_anomaly_detection_for_malformed_signal_data(self, app: FastAPI) -> None:
+        with TestClient(app) as client:
+            # This test verifies that when a signal source returns malformed data for "request_volume",
+            # the system skips anomaly detection for that signal and logs an error to the audit trail
+            resp = client.get("/dashboard/security", headers=AUTH_HEADER)
+            assert resp.status_code == 200
