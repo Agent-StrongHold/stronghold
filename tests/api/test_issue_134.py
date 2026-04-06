@@ -539,3 +539,43 @@ class TestRedTeamRegressionWorkflow:
         assert "error" in data
         assert "baseline" in data["error"].lower() or "missing" in data["error"].lower()
         assert "benchmark_baseline.json" in data["error"]
+
+    def test_red_team_regression_gate_passes_with_minimal_detection_rate_improvement(self, client: TestClient) -> None:
+        # Scenario: Red team regression gate passes with minimal detection rate improvement
+        # Given a PR is opened against the develop branch
+        # And the Warden's detection rate improves by 0.1% compared to the baseline
+        # When the red team regression CI job runs
+        # Then the PR should not be blocked
+        # And a PR comment should show the detection rate diff is within the allowed threshold
+
+        # Simulate a request to the gate endpoint with minimal detection rate improvement
+        response = client.post(
+            "/v1/stronghold/gate",
+            json={
+                "content": "safe input with minimal improvement",
+                "mode": "persistent",
+                "detection_rate": {
+                    "baseline": 0.85,
+                    "current": 0.851,
+                    "delta": 0.001
+                }
+            },
+            headers={"authorization": "Bearer test-token"}
+        )
+
+        # The endpoint should process the request and return success
+        assert response.status_code == 200
+
+        # Check that the response indicates the PR passed the gate
+        data = response.json()
+        assert "gate_status" in data
+        assert data["gate_status"] == "passed"
+
+        # Verify detection rate information is shown in PR comment
+        assert "detection_rate" in data
+        assert data["detection_rate"]["baseline"] == 0.85
+        assert data["detection_rate"]["current"] == 0.851
+        assert data["detection_rate"]["delta"] == 0.001
+
+        # Verify PR is not blocked
+        assert "blocked" not in data["message"].lower() or data["blocked"] is False
