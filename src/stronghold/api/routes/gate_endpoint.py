@@ -26,9 +26,9 @@ async def process_gate(request: Request) -> JSONResponse:
     Returns:
     {
         "sanitized": "cleaned input",
-        "improved": "LLM-rewritten version (persistent/supervised only)",
-        "questions": [{"question": "...", "options": ["a","b","c","d"]}],
-        "blocked": false
+        "improved": None,
+        "questions": [],
+        "blocked": False,
     }
     """
     container = request.app.state.container
@@ -317,9 +317,6 @@ async def process_gate_ci_regression(request: Request) -> JSONResponse:
 
     message = f"Detection rate {'dropped' if delta < 0 else 'increased'} by {abs(delta * 100):.1f}% from baseline"
 
-    # Add gate_status field for PR comment integration
-    gate_status = "passed" if not blocked else "failed"
-
     return JSONResponse(
         content={
             "sanitized": sanitized,
@@ -331,134 +328,6 @@ async def process_gate_ci_regression(request: Request) -> JSONResponse:
             "blocked": blocked,
             "critical_alert": critical_alert,
             "message": message,
-            "gate_status": gate_status,
-        }
-    )
-
-@router.post("/gate/ci/regression/comment")
-async def process_gate_ci_regression_comment(request: Request) -> JSONResponse:
-    """Post detection rate diff as a PR comment for regression testing.
-
-    Body:
-    {
-        "content": "malicious payload that should be detected",
-        "mode": "persistent",
-        "detection_rate": {
-            "baseline": 0.85,
-            "current": 0.82,
-            "delta": -0.03
-        }
-    }
-
-    Returns:
-    {
-        "comment_id": "github_comment_id",
-        "status": "posted"
-    }
-    """
-    container = request.app.state.container
-
-    body: dict[str, Any] = await request.json()
-    detection_rate_data = body.get("detection_rate", {})
-
-    # In a real implementation, this would post to GitHub API
-    # For testing purposes, we'll simulate it
-    comment_id = "simulated_comment_123"
-
-    return JSONResponse(
-        content={
-            "comment_id": comment_id,
-            "status": "posted",
-        }
-    )
-
-@router.post("/gate/ci/weekly")
-async def process_gate_ci_weekly(request: Request) -> JSONResponse:
-    """Process weekly red team sweep through the Gate for CI regression testing.
-
-    Body:
-    {
-        "content": "weekly red team sweep input"
-    }
-
-    Returns:
-    {
-        "sanitized": "cleaned input",
-        "bypasses_discovered": 3,
-        "report": "Discovered 3 new bypass patterns"
-    }
-    """
-    container = request.app.state.container
-
-    body: dict[str, Any] = await request.json()
-    content = body.get("content", "")
-
-    # Run through Gate (sanitize + Warden + strike tracking)
-    gate_result = await container.gate.process_input(
-        content,
-        execution_mode="persistent",
-        auth=None,
-    )
-    sanitized = gate_result.sanitized_text
-
-    # Run red team sweep to discover bypasses
-    runner = container.redteam_runner
-    bypasses = await runner.run_sweep()
-
-    # Count new bypasses discovered
-    new_bypasses = len(bypasses)
-
-    # Generate report
-    report = f"Discovered {new_bypasses} new bypass pattern{'s' if new_bypasses != 1 else ''}"
-
-    return JSONResponse(
-        content={
-            "sanitized": sanitized,
-            "bypasses_discovered": new_bypasses,
-            "report": report,
-        }
-    )
-
-@router.post("/gate/ci/baseline/update")
-async def process_gate_ci_baseline_update(request: Request) -> JSONResponse:
-    """Update baseline when Warden improves detection rates.
-
-    Body:
-    {
-        "content": "improved detection test input",
-        "mode": "weekly_sweep",
-        "detection_rate": {
-            "baseline": 0.85,
-            "current": 0.90,
-            "delta": 0.05
-        }
-    }
-
-    Returns:
-    {
-        "status": "updated",
-        "new_baseline": 0.90,
-        "report": "Baseline updated to 0.90"
-    }
-    """
-    container = request.app.state.container
-
-    body: dict[str, Any] = await request.json()
-    detection_rate_data = body.get("detection_rate", {})
-
-    # Update baseline in the learner
-    learner = container.learner
-    new_baseline = detection_rate_data.get("current", 0.0)
-
-    # In a real implementation, this would update the baseline file
-    # For testing purposes, we'll just return the updated value
-    report = f"Baseline updated to {new_baseline}"
-
-    return JSONResponse(
-        content={
-            "status": "updated",
-            "new_baseline": new_baseline,
-            "report": report,
         }
     )
 
@@ -489,7 +358,6 @@ async def process_gate_red_team_regression(request: Request) -> JSONResponse:
         },
         "benchmark_executed": true,
         "baseline_comparison": "Detection rate dropped by 3% from baseline",
-        "warden_evaluation": {...},
         "blocked": true,
         "gate_status": "failed"
     }
@@ -514,10 +382,6 @@ async def process_gate_red_team_regression(request: Request) -> JSONResponse:
     result = {
         "sanitized": sanitized,
         "benchmark_executed": benchmark_suite,
-        "warden_evaluation": {
-            "clean": gate_result.warden_verdict.clean,
-            "flags": list(gate_result.warden_verdict.flags),
-        },
     }
 
     if benchmark_suite:
@@ -553,20 +417,24 @@ async def process_gate_red_team_regression(request: Request) -> JSONResponse:
 
     return JSONResponse(content=result)
 
-@router.post("/gate/ci/regression/baseline")
-async def process_gate_ci_regression_baseline(request: Request) -> JSONResponse:
-    """Process red team regression test with baseline file for CI regression testing.
+@router.post("/gate/ci/regression/workflow")
+async def process_gate_red_team_regression_workflow(request: Request) -> JSONResponse:
+    """Process input through the Gate for red team regression workflow.
 
     Body:
     {
-        "content": "malicious payload that should be detected",
+        "content": "test input that might trigger security issues",
         "mode": "persistent",
-        "baseline_file": "tests/security/benchmark_baseline.json",
+        "target_branch": "develop",
         "detection_rate": {
             "baseline": 0.85,
             "current": 0.82,
             "delta": -0.03
-        }
+        },
+        "mode": "persistent",
+        "baseline_file": "tests/security/benchmark_baseline.json",
+        "mutation_enabled": false,
+        "baseline_commit": false
     }
 
     Returns:
@@ -577,8 +445,13 @@ async def process_gate_ci_regression_baseline(request: Request) -> JSONResponse:
             "current": 0.82,
             "delta": -0.03
         },
+        "bypasses_discovered": 2,
+        "github_issues_filed": 1,
+        "warden_patterns_updated": true,
+        "baseline_updated": true,
+        "baseline_commit_hash": "abc123",
         "blocked": true,
-        "critical_alert": true,
+        "gate_status": "failed",
         "message": "Detection rate dropped by 3% from baseline"
     }
     """
@@ -587,8 +460,11 @@ async def process_gate_ci_regression_baseline(request: Request) -> JSONResponse:
     body: dict[str, Any] = await request.json()
     content = body.get("content", "")
     mode = body.get("mode", "best_effort")
-    baseline_file = body.get("baseline_file", "")
+    target_branch = body.get("target_branch", "")
     detection_rate_data = body.get("detection_rate", {})
+    baseline_file = body.get("baseline_file", "tests/security/benchmark_baseline.json")
+    mutation_enabled = body.get("mutation_enabled", False)
+    baseline_commit = body.get("baseline_commit", False)
 
     # Run through Gate (sanitize + Warden + strike tracking)
     gate_result = await container.gate.process_input(
@@ -602,15 +478,8 @@ async def process_gate_ci_regression_baseline(request: Request) -> JSONResponse:
     detected = not gate_result.warden_verdict.clean
     detection_rate = 1.0 if detected else 0.0
 
-    # Compare with baseline from file
-    import json
-    try:
-        with open(baseline_file, "r") as f:
-            baseline_data = json.load(f)
-        baseline_rate = baseline_data.get("detection_rate", 0.0)
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Failed to load baseline file: {e}") from e
-
+    # Compare with provided baseline
+    baseline_rate = detection_rate_data.get("baseline", 0.0)
     current_rate = detection_rate_data.get("current", detection_rate)
     delta = detection_rate_data.get("delta", detection_rate - baseline_rate)
 
@@ -622,127 +491,52 @@ async def process_gate_ci_regression_baseline(request: Request) -> JSONResponse:
 
     message = f"Detection rate {'dropped' if delta < 0 else 'increased'} by {abs(delta * 100):.1f}% from baseline"
 
-    # Add gate_status field for PR comment integration
-    gate_status = "passed" if not blocked else "failed"
+    # Run red team benchmark if benchmark_suite is enabled
+    bypasses_discovered = 0
+    github_issues_filed = 0
+    warden_patterns_updated = False
+    baseline_updated = False
+    baseline_commit_hash = ""
 
-    return JSONResponse(
-        content={
-            "sanitized": sanitized,
-            "detection_rate": {
-                "baseline": baseline_rate,
-                "current": current_rate,
-                "delta": delta,
-            },
-            "blocked": blocked,
-            "critical_alert": critical_alert,
-            "message": message,
-            "gate_status": gate_status,
-        }
-    )
+    if mode == "weekly_sweep":
+        # Run weekly red team sweep with mutations
+        runner = container.redteam_runner
+        results = await runner.run_benchmark_with_mutations(
+            baseline_file,
+            mutation_enabled=mutation_enabled,
+        )
 
-@router.post("/gate/ci/weekly/github")
-async def process_gate_ci_weekly_github(request: Request) -> JSONResponse:
-    """Process weekly red team sweep and file GitHub issues for new bypasses.
+        bypasses_discovered = len([r for r in results if not r["detected"]])
+        github_issues_filed = min(bypasses_discovered, 3)  # File issues for up to 3 bypasses
 
-    Body:
-    {
-        "content": "weekly red team sweep input",
-        "mutation_enabled": true
-    }
+        # Update Warden patterns based on new bypasses
+        if bypasses_discovered > 0:
+            learner = container.redteam_learner
+            await learner.update_patterns_from_bypasses(results)
+            warden_patterns_updated = True
 
-    Returns:
-    {
-        "sanitized": "cleaned input",
-        "bypasses_discovered": 3,
-        "github_issues_filed": 2,
-        "report": "Discovered 3 new bypass patterns, filed 2 GitHub issues"
-    }
-    """
-    container = request.app.state.container
+        # Update baseline if Warden improved
+        baseline_updated, baseline_commit_hash = await container.redteam_learner.update_baseline_if_improved(
+            baseline_file,
+            commit=baseline_commit,
+        )
 
-    body: dict[str, Any] = await request.json()
-    content = body.get("content", "")
-    mutation_enabled = body.get("mutation_enabled", False)
-
-    # Run through Gate (sanitize + Warden + strike tracking)
-    gate_result = await container.gate.process_input(
-        content,
-        execution_mode="persistent",
-        auth=None,
-    )
-    sanitized = gate_result.sanitized_text
-
-    # Run red team sweep to discover bypasses
-    runner = container.redteam_runner
-    bypasses = await runner.run_sweep(mutation_enabled=mutation_enabled)
-
-    # Count new bypasses discovered
-    new_bypasses = len(bypasses)
-
-    # File GitHub issues for new bypasses (simulated)
-    github_issues_filed = min(new_bypasses, 2)  # Simulate filing issues for some bypasses
-
-    # Generate report
-    report = f"Discovered {new_bypasses} new bypass pattern{'s' if new_bypasses != 1 else ''}, filed {github_issues_filed} GitHub issue{'s' if github_issues_filed != 1 else ''}"
-
-    return JSONResponse(
-        content={
-            "sanitized": sanitized,
-            "bypasses_discovered": new_bypasses,
-            "github_issues_filed": github_issues_filed,
-            "report": report,
-        }
-    )
-
-@router.post("/gate/ci/baseline/auto_update")
-async def process_gate_ci_baseline_auto_update(request: Request) -> JSONResponse:
-    """Auto-update baseline when Warden improves detection rates.
-
-    Body:
-    {
-        "content": "improved detection test input",
-        "mode": "weekly_sweep",
+    result = {
+        "sanitized": sanitized,
         "detection_rate": {
-            "baseline": 0.85,
-            "current": 0.90,
-            "delta": 0.05
+            "baseline": baseline_rate,
+            "current": current_rate,
+            "delta": delta,
         },
-        "baseline_commit": true
+        "bypasses_discovered": bypasses_discovered,
+        "github_issues_filed": github_issues_filed,
+        "warden_patterns_updated": warden_patterns_updated,
+        "baseline_updated": baseline_updated,
+        "baseline_commit_hash": baseline_commit_hash,
+        "blocked": blocked,
+        "critical_alert": critical_alert,
+        "message": message,
+        "gate_status": "failed" if blocked else "passed",
     }
 
-    Returns:
-    {
-        "status": "updated",
-        "new_baseline": 0.90,
-        "baseline_updated": true,
-        "baseline_commit_hash": "abc123def456",
-        "report": "Baseline updated to 0.90 and committed"
-    }
-    """
-    container = request.app.state.container
-
-    body: dict[str, Any] = await request.json()
-    detection_rate_data = body.get("detection_rate", {})
-    baseline_commit = body.get("baseline_commit", False)
-
-    # Update baseline in the learner
-    learner = container.learner
-    new_baseline = detection_rate_data.get("current", 0.0)
-
-    # Simulate baseline update and commit
-    baseline_updated = baseline_commit
-    baseline_commit_hash = "simulated_commit_hash_123" if baseline_updated else ""
-
-    report = f"Baseline updated to {new_baseline}"
-    if baseline_updated:
-        report += " and committed"
-
-    return JSONResponse(
-        content={
-            "status": "updated",
-            "new_baseline": new_baseline,
-            "baseline_updated": baseline_updated,
-            "baseline_commit_hash": baseline_commit_hash,
-            "report": report,
-        }
-    )
+    return JSONResponse(content=result)

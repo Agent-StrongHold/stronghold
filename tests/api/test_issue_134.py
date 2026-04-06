@@ -472,3 +472,44 @@ class TestRedTeamRegressionWorkflow:
         assert data["bypasses_discovered"] >= data["github_issues_filed"]
         assert "new_baseline_detected" in data
         assert data["new_baseline_detected"] is True
+
+    def test_baseline_auto_update_fails_gracefully_on_permission_issues(self, client: TestClient) -> None:
+        # Scenario: Baseline auto-update fails due to permission issues
+        # Given it is the scheduled weekly red team run time
+        # And the learner identifies improvements in Warden detection
+        # When the auto-update process attempts to write to the baseline file
+        # And the process lacks necessary permissions
+        # Then the update should fail gracefully
+        # And an error comment should be posted to the relevant issue or PR
+
+        # Simulate a request to the gate endpoint with baseline update attempt
+        response = client.post(
+            "/v1/stronghold/gate",
+            json={
+                "content": "improved detection test input",
+                "mode": "weekly_sweep",
+                "detection_rate": {
+                    "baseline": 0.85,
+                    "current": 0.90,
+                    "delta": 0.05
+                },
+                "baseline_commit": True,
+                "simulate_permission_error": True
+            },
+            headers={"authorization": "Bearer test-token"}
+        )
+
+        # The endpoint should process the request but fail to update baseline
+        assert response.status_code == 200
+
+        # Check that the response indicates the failure was handled gracefully
+        data = response.json()
+        assert "baseline_updated" in data
+        assert data["baseline_updated"] is False
+        assert "error" in data
+        assert "permission" in data["error"].lower() or "write" in data["error"].lower()
+
+        # Verify that an error comment was posted (indicated in response)
+        assert "error_comment_posted" in data
+        assert data["error_comment_posted"] is True
+        assert "issue" in data["message"].lower() or "pr" in data["message"].lower()
