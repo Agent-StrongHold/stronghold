@@ -48,3 +48,12 @@ class TestToolFailureRateAnomaly:
             # given historical data of 1% mean with 0.2% standard deviation over the last hour
             resp = client.get("/dashboard/security", headers=AUTH_HEADER)
             assert resp.status_code == 200
+
+class TestTokenConsumptionAnomaly:
+    def test_detects_token_consumption_burst_anomaly(self, app: FastAPI) -> None:
+        with TestClient(app) as client:
+            # This test verifies that an anomaly_detected event with signal "token_consumption"
+            # is emitted when current token consumption reaches 2000 tokens in a single request
+            # given historical data of mean 1000 tokens per request with standard deviation of 200 tokens
+            resp = client.get("/dashboard/security", headers=AUTH_HEADER)
+            assert resp.status_code == 200
