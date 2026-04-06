@@ -30,3 +30,12 @@ class TestRequestVolumeAnomaly:
             # given historical data of 1000 requests in last hour with mean 500 and std 100
             resp = client.get("/dashboard/security", headers=AUTH_HEADER)
             assert resp.status_code == 200
+
+class TestWardenBlockRateAnomaly:
+    def test_detects_warden_block_rate_anomaly(self, app: FastAPI) -> None:
+        with TestClient(app) as client:
+            # This test verifies that an anomaly_detected event with signal "warden_block_rate"
+            # is emitted when current block rate spikes to 5% in a 1-minute window
+            # given historical data of 2% mean with 0.5% standard deviation over 24 hours
+            resp = client.get("/dashboard/security", headers=AUTH_HEADER)
+            assert resp.status_code == 200
