@@ -487,6 +487,56 @@ class RuntimePipeline:
             "git", {"command": command, "workspace": workspace},
         )
 
+    async def _fetch_prior_runs(
+        self,
+        owner: str,
+        repo: str,
+        issue_number: int,
+        *,
+        exclude_run_id: str = "",
+    ) -> list[dict[str, str]]:
+        """Fetch prior Builders Run comments from the issue.
+
+        Returns list of dicts with run_id and summary for each prior run.
+        Filters to only comments starting with '## Builders Run'.
+        Excludes the current run if exclude_run_id is set.
+        """
+        import json as _json
+        import re as _re
+
+        result = await self._td.execute(
+            "github",
+            {
+                "action": "list_issue_comments",
+                "owner": owner,
+                "repo": repo,
+                "issue_number": issue_number,
+            },
+        )
+        if result.startswith("Error:"):
+            return []
+
+        try:
+            comments = _json.loads(result)
+        except Exception:
+            return []
+        if not isinstance(comments, list):
+            return []
+
+        prior_runs = []
+        run_id_pattern = _re.compile(r"##\s*Builders Run\s*`?(run-[a-f0-9]+)`?")
+        for comment in comments:
+            body = comment.get("body", "") if isinstance(comment, dict) else ""
+            match = run_id_pattern.search(body)
+            if not match:
+                continue
+            run_id = match.group(1)
+            if run_id == exclude_run_id:
+                continue
+            prior_runs.append({"run_id": run_id, "summary": body})
+
+        return prior_runs
+
     async def _post_to_issue(
         self,
         owner: str,
@@ -570,9 +620,23 @@ class RuntimePipeline:
         run._file_listing = file_listing
         run._dashboard_listing = dashboard_listing
 
+        # Read prior run history from issue comments
+        prior_runs = await self._fetch_prior_runs(
+            owner, repo, run.issue_number, exclude_run_id=run.run_id,
+        )
+
         feedback_block = ""
         if feedback:
             feedback_block = f"Previous analysis rejected. Fix:\n{feedback}"
+
+        if prior_runs:
+            feedback_block += (
+                f"\n\n## Prior Run History\n\n"
+                f"This issue has been attempted {len(prior_runs)} time(s) before. "
+                f"Learn from prior failures:\n\n"
+            )
+            for pr in prior_runs[-5:]:  # Last 5 runs
+                feedback_block += f"### {pr['run_id']}\n{pr['summary'][:500]}\n\n"
 
         template = await self._get_prompt("builders.frank.analyze_issue")
         prompt = self._render(
@@ -1291,11 +1355,25 @@ class RuntimePipeline:
                     f" ---\n{content}\n"
                 )
 
+        # Read prior run history from issue comments
+        prior_runs = await self._fetch_prior_runs(
+            owner, repo, run.issue_number, exclude_run_id=run.run_id,
+        )
+        prior_history = ""
+        if prior_runs:
+            prior_history = (
+                f"\n\n## Prior Run History\n\n"
+                f"This issue has been attempted {len(prior_runs)} time(s) before. "
+                f"Learn from prior failures:\n\n"
+            )
+            for pr in prior_runs[-5:]:
+                prior_history += f"### {pr['run_id']}\n{pr['summary'][:500]}\n\n"
+
         prompt = self._render(
             template,
             issue_number=str(run.issue_number),
             issue_title=issue_title,
-            issue_content=issue_content,
+            issue_content=issue_content + prior_history,
             source_context=source_context[:8000],
         )
         prompt = self._prepend_onboarding(prompt, run)
