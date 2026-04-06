@@ -190,3 +190,32 @@ class TestRedTeamRegressionWorkflow:
         assert "critical_alert" in data
         assert data["critical_alert"] is True
         assert "detection rate drop" in data["message"].lower()
+
+    def test_red_team_benchmark_suite_executes_on_target_branches(self, client: TestClient) -> None:
+        # Given a PR is opened targeting the develop or main branch
+        # When the CI pipeline executes the red team regression workflow
+        # Then the red team benchmark suite runs against the Warden
+        # And the detection rate is compared against the baseline
+
+        # Simulate a request to the gate endpoint with target branch information
+        response = client.post(
+            "/v1/stronghold/gate",
+            json={
+                "content": "benchmark test input",
+                "mode": "persistent",
+                "target_branch": "develop",
+                "benchmark_suite": True
+            },
+            headers={"authorization": "Bearer test-token"}
+        )
+
+        # The endpoint should process the request and return benchmark results
+        assert response.status_code == 200
+
+        # Check that the response includes benchmark execution information
+        data = response.json()
+        assert "benchmark_executed" in data
+        assert data["benchmark_executed"] is True
+        assert "detection_rate" in data
+        assert "baseline_comparison" in data
+        assert "warden_evaluation" in data
