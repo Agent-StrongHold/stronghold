@@ -219,3 +219,33 @@ class TestRedTeamRegressionWorkflow:
         assert "detection_rate" in data
         assert "baseline_comparison" in data
         assert "warden_evaluation" in data
+
+    def test_detection_rate_drop_over_2_percent_fails_ci(self, client: TestClient) -> None:
+        # Given a PR to develop/main has a detection rate drop of >2% compared to baseline
+        # When the CI pipeline completes the red team regression check
+        # Then the workflow exits with a non-zero status code
+        # And the PR is blocked from merging
+
+        # Simulate a request to the gate endpoint with a >2% detection rate drop
+        response = client.post(
+            "/v1/stronghold/gate",
+            json={
+                "content": "regression test input",
+                "mode": "persistent",
+                "detection_rate": {
+                    "baseline": 0.85,
+                    "current": 0.82,
+                    "delta": -0.03  # 3% drop which is >2%
+                }
+            },
+            headers={"authorization": "Bearer test-token"}
+        )
+
+        # The endpoint should detect the regression and fail the CI
+        assert response.status_code == 403
+
+        # Check that the response indicates a failed CI check
+        data = response.json()
+        assert "ci_failed" in data
+        assert data["ci_failed"] is True
+        assert "blocked" in data["message"].lower() or "merge" in data["message"].lower()
