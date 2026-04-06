@@ -1694,6 +1694,163 @@ class RuntimePipeline:
             return stripped
         raise ExtractionError("Could not extract HTML from response")
 
+    # ── Quartermaster: Issue Decomposition ────────────────────────────
+
+    async def decompose_issue(self, run: Any) -> StageResult:
+        """Quartermaster: decompose a parent issue into sub-issues with dependencies.
+
+        1. Read parent issue + repo context
+        2. LLM produces JSON with steps + depends_on (local indices)
+        3. For each step: create_issue, then create_sub_issue(parent, child)
+        4. After all created: add_blocked_by edges per the depends_on map
+        5. Post a summary comment on the parent issue
+        """
+        import json as _json
+
+        owner, repo = run.repo.split("/")
+        ws = getattr(run, "_workspace_path", "")
+        issue_content = getattr(run, "_issue_content", "")
+        issue_title = getattr(run, "_issue_title", "")
+
+        # Gather repo context for the decomposer
+        file_listing = await self._list_files("src/", ws)
+
+        # Read any files the issue explicitly mentions
+        relevant_files = ""
+        import re as _re
+        mentioned_paths = _re.findall(
+            r"(src/stronghold/[\w/]+\.py)", issue_content,
+        )
+        for path in mentioned_paths[:5]:
+            content = await self._read_file(path, ws)
+            if content:
+                relevant_files += f"\n# --- {path} ---\n{content[:2000]}\n"
+
+        template = await self._get_prompt("builders.quartermaster.decompose")
+        if not template:
+            from stronghold.builders.prompts import QUARTERMASTER_DECOMPOSE
+            template = QUARTERMASTER_DECOMPOSE
+
+        prompt = self._render(
+            template,
+            issue_number=str(run.issue_number),
+            issue_title=issue_title,
+            issue_content=issue_content,
+            file_listing=file_listing[:4000],
+            relevant_files=relevant_files[:6000],
+        )
+
+        plan = await self._llm_extract(
+            prompt, self._frank_model, extract_json, "decomposition plan",
+        )
+
+        steps = plan.get("steps", [])
+        if not steps:
+            return StageResult(
+                success=False, summary="No steps in decomposition plan",
+            )
+        if len(steps) > 10:
+            return StageResult(
+                success=False,
+                summary=f"Too many steps ({len(steps)}) — parent is too broad",
+            )
+
+        # Create all child issues first, recording step index → issue number
+        created: list[dict[str, Any]] = []
+        for i, step in enumerate(steps):
+            title = step.get("title", f"sub-issue {i + 1}")
+            body = step.get("body", "")
+            body += f"\n\n---\n_Sub-issue of #{run.issue_number}, step {i + 1} of {len(steps)}_"
+
+            result = await self._td.execute(
+                "github",
+                {
+                    "action": "create_issue",
+                    "owner": owner, "repo": repo,
+                    "title": title, "body": body,
+                    "labels": ["builders", "quartermaster"],
+                },
+            )
+            if result.startswith("Error:"):
+                logger.error("Failed to create sub-issue %d: %s", i, result)
+                return StageResult(
+                    success=False,
+                    summary=f"Failed to create sub-issue {i + 1}: {result[:200]}",
+                )
+            try:
+                data = _json.loads(result)
+            except Exception:
+                return StageResult(
+                    success=False, summary=f"Bad create_issue response: {result[:200]}",
+                )
+            created.append({
+                "index": i,
+                "number": data["number"],
+                "title": title,
+                "depends_on": step.get("depends_on", []),
+            })
+
+        # Link each child as a sub-issue of the parent
+        for c in created:
+            await self._td.execute(
+                "github",
+                {
+                    "action": "create_sub_issue",
+                    "owner": owner, "repo": repo,
+                    "issue_number": run.issue_number,
+                    "sub_issue_number": c["number"],
+                },
+            )
+
+        # Add blocked_by edges per depends_on (local index → issue number)
+        for c in created:
+            for dep_idx in c["depends_on"]:
+                if not isinstance(dep_idx, int) or dep_idx >= len(created):
+                    continue
+                blocker = created[dep_idx]
+                await self._td.execute(
+                    "github",
+                    {
+                        "action": "add_blocked_by",
+                        "owner": owner, "repo": repo,
+                        "issue_number": c["number"],
+                        "blocker_issue_number": blocker["number"],
+                    },
+                )
+
+        # Post summary comment to the parent
+        lines = [f"## Quartermaster Decomposition\n"]
+        lines.append(f"{plan.get('summary', '')}\n")
+        lines.append(f"**{len(created)} sub-issues created:**\n")
+        for c in created:
+            deps = c["depends_on"]
+            dep_str = ""
+            if deps:
+                dep_numbers = [f"#{created[d]['number']}" for d in deps if d < len(created)]
+                dep_str = f" _(blocked by {', '.join(dep_numbers)})_"
+            lines.append(f"- #{c['number']} {c['title']}{dep_str}")
+        summary_text = "\n".join(lines)
+
+        await self._td.execute(
+            "github",
+            {
+                "action": "post_pr_comment",
+                "owner": owner, "repo": repo,
+                "issue_number": run.issue_number,
+                "body": summary_text,
+            },
+        )
+
+        return StageResult(
+            success=True,
+            summary=summary_text,
+            evidence={
+                "parent": run.issue_number,
+                "created": [{"number": c["number"], "title": c["title"]} for c in created],
+                "dependency_count": sum(len(c["depends_on"]) for c in created),
+            },
+        )
+
     # ── Auditor Review ───────────────────────────────────────────────
 
     async def auditor_review(

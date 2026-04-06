@@ -30,14 +30,22 @@ GITHUB_TOOL_DEF = ToolDefinition(
                 "enum": [
                     "list_issues",
                     "get_issue",
+                    "create_issue",
                     "create_branch",
                     "create_pr",
                     "get_pr_diff",
                     "post_pr_comment",
+                    "edit_comment",
                     "list_pr_comments",
                     "list_issue_comments",
                     "search_issues",
                     "get_linked_issues",
+                    "create_sub_issue",
+                    "list_sub_issues",
+                    "get_parent_issue",
+                    "add_blocked_by",
+                    "list_blocked_by",
+                    "list_blocking",
                 ],
                 "description": "The GitHub operation to perform.",
             },
@@ -59,6 +67,18 @@ GITHUB_TOOL_DEF = ToolDefinition(
                 "description": "Issue state filter.",
             },
             "query": {"type": "string", "description": "Search query for search_issues action."},
+            "sub_issue_id": {
+                "type": "integer",
+                "description": "Issue ID (not number) to add as a sub-issue.",
+            },
+            "blocker_issue_id": {
+                "type": "integer",
+                "description": "Issue ID (not number) that is blocking this one.",
+            },
+            "comment_id": {
+                "type": "integer",
+                "description": "Comment ID for edit_comment action.",
+            },
         },
         "required": ["action", "owner", "repo"],
     },
@@ -397,6 +417,163 @@ class GitHubToolExecutor:
                 )
             return linked
 
+    def _v3_headers(self) -> dict[str, str]:
+        """Headers for the 2026-03-10 API version (sub-issues, dependencies)."""
+        h = self._headers()
+        h["X-GitHub-Api-Version"] = "2026-03-10"
+        return h
+
+    async def _create_sub_issue(self, args: dict[str, Any]) -> dict[str, Any]:
+        """Add an existing issue as a sub-issue of a parent.
+
+        Requires the GitHub-internal issue ID of the child (not the issue
+        number). Pass child issue_number — we'll look up the ID first.
+        """
+        import httpx
+
+        owner, repo = args["owner"], args["repo"]
+        parent = args["issue_number"]
+        child_number = args.get("sub_issue_number")
+        sub_issue_id = args.get("sub_issue_id")
+
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            # Resolve child issue_number → internal ID if needed
+            if sub_issue_id is None and child_number is not None:
+                lookup = await client.get(
+                    f"{self._base_url}/repos/{owner}/{repo}/issues/{child_number}",
+                    headers=self._headers(),
+                )
+                lookup.raise_for_status()
+                sub_issue_id = lookup.json()["id"]
+
+            if sub_issue_id is None:
+                raise ValueError("sub_issue_id or sub_issue_number required")
+
+            resp = await client.post(
+                f"{self._base_url}/repos/{owner}/{repo}/issues/{parent}/sub_issues",
+                headers=self._v3_headers(),
+                json={"sub_issue_id": int(sub_issue_id)},
+            )
+            resp.raise_for_status()
+            return {"parent": parent, "child_id": sub_issue_id, "status": "linked"}
+
+    async def _list_sub_issues(self, args: dict[str, Any]) -> list[dict[str, Any]]:
+        import httpx
+
+        owner, repo = args["owner"], args["repo"]
+        number = args["issue_number"]
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            resp = await client.get(
+                f"{self._base_url}/repos/{owner}/{repo}/issues/{number}/sub_issues",
+                headers=self._v3_headers(),
+            )
+            resp.raise_for_status()
+            return [
+                {
+                    "number": i["number"],
+                    "title": i["title"],
+                    "state": i["state"],
+                    "html_url": i.get("html_url", ""),
+                }
+                for i in resp.json()
+            ]
+
+    async def _get_parent_issue(self, args: dict[str, Any]) -> dict[str, Any]:
+        import httpx
+
+        owner, repo = args["owner"], args["repo"]
+        number = args["issue_number"]
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            resp = await client.get(
+                f"{self._base_url}/repos/{owner}/{repo}/issues/{number}/parent",
+                headers=self._v3_headers(),
+            )
+            if resp.status_code == 404:
+                return {"parent": None}
+            resp.raise_for_status()
+            parent = resp.json()
+            return {
+                "parent": {
+                    "number": parent["number"],
+                    "title": parent.get("title", ""),
+                    "state": parent.get("state", ""),
+                    "html_url": parent.get("html_url", ""),
+                },
+            }
+
+    async def _add_blocked_by(self, args: dict[str, Any]) -> dict[str, Any]:
+        """Mark issue {issue_number} as blocked by another issue.
+
+        Accepts blocker_issue_id (internal ID) OR blocker_issue_number
+        (we'll look up the ID).
+        """
+        import httpx
+
+        owner, repo = args["owner"], args["repo"]
+        number = args["issue_number"]
+        blocker_id = args.get("blocker_issue_id")
+        blocker_number = args.get("blocker_issue_number")
+
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            if blocker_id is None and blocker_number is not None:
+                lookup = await client.get(
+                    f"{self._base_url}/repos/{owner}/{repo}/issues/{blocker_number}",
+                    headers=self._headers(),
+                )
+                lookup.raise_for_status()
+                blocker_id = lookup.json()["id"]
+
+            if blocker_id is None:
+                raise ValueError("blocker_issue_id or blocker_issue_number required")
+
+            resp = await client.post(
+                f"{self._base_url}/repos/{owner}/{repo}/issues/{number}/dependencies/blocked_by",
+                headers=self._v3_headers(),
+                json={"issue_id": int(blocker_id)},
+            )
+            resp.raise_for_status()
+            return {"issue": number, "blocker_id": blocker_id, "status": "linked"}
+
+    async def _list_blocked_by(self, args: dict[str, Any]) -> list[dict[str, Any]]:
+        import httpx
+
+        owner, repo = args["owner"], args["repo"]
+        number = args["issue_number"]
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            resp = await client.get(
+                f"{self._base_url}/repos/{owner}/{repo}/issues/{number}/dependencies/blocked_by",
+                headers=self._v3_headers(),
+            )
+            resp.raise_for_status()
+            return [
+                {
+                    "number": i["number"],
+                    "title": i.get("title", ""),
+                    "state": i.get("state", ""),
+                }
+                for i in resp.json()
+            ]
+
+    async def _list_blocking(self, args: dict[str, Any]) -> list[dict[str, Any]]:
+        import httpx
+
+        owner, repo = args["owner"], args["repo"]
+        number = args["issue_number"]
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            resp = await client.get(
+                f"{self._base_url}/repos/{owner}/{repo}/issues/{number}/dependencies/blocking",
+                headers=self._v3_headers(),
+            )
+            resp.raise_for_status()
+            return [
+                {
+                    "number": i["number"],
+                    "title": i.get("title", ""),
+                    "state": i.get("state", ""),
+                }
+                for i in resp.json()
+            ]
+
     _handlers: dict[str, Any] = {
         "list_issues": _list_issues,
         "get_issue": _get_issue,
@@ -407,6 +584,12 @@ class GitHubToolExecutor:
         "post_pr_comment": _post_pr_comment,
         "edit_comment": _edit_comment,
         "list_pr_comments": _list_pr_comments,
+        "create_sub_issue": _create_sub_issue,
+        "list_sub_issues": _list_sub_issues,
+        "get_parent_issue": _get_parent_issue,
+        "add_blocked_by": _add_blocked_by,
+        "list_blocked_by": _list_blocked_by,
+        "list_blocking": _list_blocking,
         "list_issue_comments": _list_issue_comments,
         "search_issues": _search_issues,
         "get_linked_issues": _get_linked_issues,

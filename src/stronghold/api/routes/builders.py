@@ -239,6 +239,90 @@ async def list_runs(request: Request) -> JSONResponse:
     return JSONResponse(content={"runs": runs})
 
 
+@router.post("/decompose")
+async def decompose(request: Request) -> JSONResponse:
+    """Quartermaster endpoint: decompose a parent issue into sub-issues.
+
+    Body:
+    {
+        "repo_url": "https://github.com/owner/repo",
+        "issue_number": 397
+    }
+    """
+    from types import SimpleNamespace
+
+    await _require_auth(request)
+    container = request.app.state.container
+    body = await request.json()
+
+    repo_url = body.get("repo_url", "")
+    issue_number = body.get("issue_number")
+    if not repo_url or not issue_number:
+        raise HTTPException(
+            status_code=400,
+            detail="'repo_url' and 'issue_number' are required",
+        )
+
+    parts = repo_url.rstrip("/").replace("https://github.com/", "").split("/")
+    if len(parts) < 2:
+        raise HTTPException(status_code=400, detail="Invalid repo_url format")
+    owner, repo = parts[0], parts[1]
+
+    # Fetch issue details
+    td = container.tool_dispatcher
+    issue_result = await td.execute(
+        "github",
+        {
+            "action": "get_issue",
+            "owner": owner, "repo": repo,
+            "issue_number": issue_number,
+        },
+    )
+    if issue_result.startswith("Error:"):
+        raise HTTPException(
+            status_code=404,
+            detail=f"Cannot fetch issue #{issue_number}: {issue_result}",
+        )
+
+    import json as _json
+    issue_data = _json.loads(issue_result)
+
+    # Build a minimal workspace for file reads
+    ws_result = await td.execute(
+        "workspace",
+        {
+            "action": "create",
+            "issue_number": issue_number,
+            "owner": owner,
+            "repo": repo,
+        },
+    )
+    ws_path = ""
+    if not ws_result.startswith("Error:"):
+        ws_data = _json.loads(ws_result)
+        ws_path = ws_data.get("path", "")
+
+    # Build a minimal run-like namespace for the pipeline method
+    run = SimpleNamespace(
+        run_id=f"decompose-{uuid.uuid4().hex[:8]}",
+        issue_number=issue_number,
+        repo=f"{owner}/{repo}",
+        _issue_title=issue_data.get("title", ""),
+        _issue_content=issue_data.get("body", ""),
+        _workspace_path=ws_path,
+    )
+
+    pipeline = _build_pipeline(container)
+    result = await pipeline.decompose_issue(run)
+
+    return JSONResponse(content={
+        "parent": issue_number,
+        "success": result.success,
+        "summary": result.summary,
+        "evidence": result.evidence,
+    })
+
+
 MAX_STAGE_RETRIES = 3
 
 

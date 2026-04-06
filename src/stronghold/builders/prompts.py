@@ -333,6 +333,45 @@ checklist:
 rejection_format: State WHICH check failed, quoting the evidence
 """
 
+# ── Quartermaster prompts ────────────────────────────────────────────
+
+QUARTERMASTER_DECOMPOSE = """\
+Decompose this issue into atomic single-file work orders.
+
+Issue #{{issue_number}}: {{issue_title}}
+
+{{issue_content}}
+
+## Repository Context
+
+{{file_listing}}
+
+## Existing Code Patterns
+
+{{relevant_files}}
+
+## Rules
+- Each sub-issue must touch ONE source file (tests for that file are part of the same sub-issue)
+- Sub-issues that import from other sub-issues MUST list them in depends_on
+- Order: persistence/data layer first, business logic second, API/routes last
+- Each sub-issue needs a clear single acceptance criterion
+- Maximum 10 sub-issues — if you need more, the parent is too broad
+- depends_on uses the LOCAL step index (0-based) not a GitHub issue number
+
+Output ONLY a JSON object with this exact schema:
+{
+  "summary": "1-2 sentence overview of the decomposition",
+  "steps": [
+    {
+      "title": "feat: <short clear title>",
+      "body": "## Description\\n...\\n\\n## Acceptance Criteria\\n- [ ] ...\\n\\n## Files\\n- src/stronghold/...",
+      "file": "src/stronghold/...",
+      "depends_on": []
+    }
+  ]
+}
+"""
+
 # ── Registry ─────────────────────────────────────────────────────────
 
 BUILDER_PROMPT_DEFAULTS: dict[str, str] = {
@@ -355,6 +394,8 @@ BUILDER_PROMPT_DEFAULTS: dict[str, str] = {
     "builders.auditor.stage.implementation_started": AUDITOR_STAGE_IMPLEMENTATION_STARTED,
     "builders.auditor.stage.implementation_ready": AUDITOR_STAGE_IMPLEMENTATION_READY,
     "builders.auditor.stage.quality_checks_passed": AUDITOR_STAGE_QUALITY_CHECKS_PASSED,
+    # Quartermaster
+    "builders.quartermaster.decompose": QUARTERMASTER_DECOMPOSE,
 }
 
 # Merge UI prompts (Piper + Glazier)
