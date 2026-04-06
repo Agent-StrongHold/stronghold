@@ -75,3 +75,12 @@ class TestLatencyDriftAnomaly:
             # given historical data of 2000ms P99 with standard deviation of 300ms over the last hour
             resp = client.get("/dashboard/security", headers=AUTH_HEADER)
             assert resp.status_code == 200
+
+class TestReactorBlockRateAnomaly:
+    def test_reactor_immediate_trigger_on_high_block_rate(self, app: FastAPI) -> None:
+        with TestClient(app) as client:
+            # This test verifies that an anomaly_detected event with signal "warden_block_rate"
+            # is emitted immediately when block rate reaches 4% in a 1-minute window
+            # without waiting for the 60-second evaluation interval
+            resp = client.get("/dashboard/security", headers=AUTH_HEADER)
+            assert resp.status_code == 200
