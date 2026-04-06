@@ -1696,14 +1696,61 @@ class RuntimePipeline:
 
     # ── Quartermaster: Issue Decomposition ────────────────────────────
 
-    async def decompose_issue(self, run: Any) -> StageResult:
+    @staticmethod
+    def _needs_further_decomposition(title: str, body: str) -> bool:
+        """Heuristic: is this sub-issue still too broad for Mason to solve?
+
+        Signals:
+        - Mentions multiple distinct directories under src/stronghold/
+        - Mentions "across repo", "whole repo", "all files"
+        - Has more than 3 acceptance criteria touching different files
+        - Title prefixed with "cleanup", "refactor all", "fix all"
+        """
+        import re as _re
+
+        text = f"{title}\n{body}".lower()
+
+        # Broad-scope keywords
+        broad_keywords = [
+            "across repo", "across the repo", "whole repo",
+            "all files", "every file", "entire codebase",
+        ]
+        if any(kw in text for kw in broad_keywords):
+            return True
+
+        # Title prefixes indicating wide scope
+        broad_prefixes = ("cleanup", "refactor all", "fix all", "migrate all")
+        if any(title.lower().strip().startswith(p) for p in broad_prefixes):
+            return True
+
+        # Count distinct directories mentioned
+        paths = _re.findall(r"src/stronghold/([\w]+(?:/[\w]+)*)", text)
+        directories: set[str] = set()
+        for p in paths:
+            # Take first 2 path segments as "directory"
+            parts = p.split("/")
+            directories.add("/".join(parts[:2]))
+        if len(directories) > 2:
+            return True
+
+        return False
+
+    async def decompose_issue(
+        self, run: Any, *, depth: int = 0, max_depth: int = 3,
+    ) -> StageResult:
         """Quartermaster: decompose a parent issue into sub-issues with dependencies.
+
+        If depth < max_depth, children that are still too broad will be
+        recursively decomposed. Parent issues get an 'epic' label so the
+        scheduler skips them and works the leaves instead.
 
         1. Read parent issue + repo context
         2. LLM produces JSON with steps + depends_on (local indices)
         3. For each step: create_issue, then create_sub_issue(parent, child)
         4. After all created: add_blocked_by edges per the depends_on map
-        5. Post a summary comment on the parent issue
+        5. For each child still too broad: recurse (up to max_depth)
+        6. Label parent as 'epic' so the scheduler skips it
+        7. Post a summary comment on the parent issue
         """
         import json as _json
 
@@ -1818,8 +1865,61 @@ class RuntimePipeline:
                     },
                 )
 
+        # Recurse on children that are still too broad
+        recursive_depth = depth + 1
+        recurse_counts: list[dict[str, Any]] = []
+        if recursive_depth <= max_depth:
+            from types import SimpleNamespace
+
+            for c in created:
+                # Get the step body that was used to create this child
+                step_body = ""
+                for i, step in enumerate(steps):
+                    if i == c["index"]:
+                        step_body = step.get("body", "")
+                        break
+
+                if not self._needs_further_decomposition(c["title"], step_body):
+                    continue
+
+                logger.info(
+                    "Quartermaster recursing on #%d (depth %d)",
+                    c["number"], recursive_depth,
+                )
+                child_run = SimpleNamespace(
+                    run_id=f"qm-{recursive_depth}-{c['number']}",
+                    issue_number=c["number"],
+                    repo=run.repo,
+                    _issue_title=c["title"],
+                    _issue_content=step_body,
+                    _workspace_path=ws,
+                )
+                child_result = await self.decompose_issue(
+                    child_run, depth=recursive_depth, max_depth=max_depth,
+                )
+                recurse_counts.append({
+                    "parent": c["number"],
+                    "success": child_result.success,
+                    "sub_created": (
+                        child_result.evidence.get("created", [])
+                        if child_result.success
+                        else []
+                    ),
+                })
+
+        # Label this parent as 'epic' so the scheduler skips it
+        await self._td.execute(
+            "github",
+            {
+                "action": "add_labels",
+                "owner": owner, "repo": repo,
+                "issue_number": run.issue_number,
+                "labels": ["epic"],
+            },
+        )
+
         # Post summary comment to the parent
-        lines = [f"## Quartermaster Decomposition\n"]
+        lines = [f"## Quartermaster Decomposition (depth {depth})\n"]
         lines.append(f"{plan.get('summary', '')}\n")
         lines.append(f"**{len(created)} sub-issues created:**\n")
         for c in created:
@@ -1828,7 +1928,18 @@ class RuntimePipeline:
             if deps:
                 dep_numbers = [f"#{created[d]['number']}" for d in deps if d < len(created)]
                 dep_str = f" _(blocked by {', '.join(dep_numbers)})_"
-            lines.append(f"- #{c['number']} {c['title']}{dep_str}")
+            # Mark recursed children
+            recursed = any(r["parent"] == c["number"] for r in recurse_counts)
+            marker = " 🔻 _(further decomposed)_" if recursed else ""
+            lines.append(f"- #{c['number']} {c['title']}{dep_str}{marker}")
+
+        if recurse_counts:
+            total_leaves = sum(len(r["sub_created"]) for r in recurse_counts)
+            lines.append(
+                f"\n_Recursed on {len(recurse_counts)} children, "
+                f"created {total_leaves} leaf sub-issues._"
+            )
+
         summary_text = "\n".join(lines)
 
         await self._td.execute(
@@ -1846,8 +1957,10 @@ class RuntimePipeline:
             summary=summary_text,
             evidence={
                 "parent": run.issue_number,
+                "depth": depth,
                 "created": [{"number": c["number"], "title": c["title"]} for c in created],
                 "dependency_count": sum(len(c["depends_on"]) for c in created),
+                "recursed": recurse_counts,
             },
         )
 

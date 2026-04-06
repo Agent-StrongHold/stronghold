@@ -51,6 +51,7 @@ GITHUB_TOOL_DEF = ToolDefinition(
                     "list_pr_files",
                     "get_check_runs",
                     "get_pr",
+                    "add_labels",
                 ],
                 "description": "The GitHub operation to perform.",
             },
@@ -727,6 +728,22 @@ class GitHubToolExecutor:
                 "message": result.get("message", ""),
             }
 
+    async def _add_labels(self, args: dict[str, Any]) -> list[str]:
+        """Add labels to an issue (does not replace existing labels)."""
+        import httpx
+
+        owner, repo = args["owner"], args["repo"]
+        number = args["issue_number"]
+        labels = args.get("labels", [])
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            resp = await client.post(
+                f"{self._base_url}/repos/{owner}/{repo}/issues/{number}/labels",
+                headers=self._headers(),
+                json={"labels": labels},
+            )
+            resp.raise_for_status()
+            return [lb["name"] for lb in resp.json()]
+
     async def _get_check_runs(self, args: dict[str, Any]) -> dict[str, Any]:
         """Get check runs for a commit SHA."""
         import httpx
@@ -767,6 +784,7 @@ class GitHubToolExecutor:
         "review_pr": _review_pr,
         "merge_pr": _merge_pr,
         "get_check_runs": _get_check_runs,
+        "add_labels": _add_labels,
         "create_sub_issue": _create_sub_issue,
         "list_sub_issues": _list_sub_issues,
         "get_parent_issue": _get_parent_issue,

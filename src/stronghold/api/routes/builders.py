@@ -459,6 +459,11 @@ def _score_issue(issue: dict[str, Any]) -> int:
     labels = [lb.lower() for lb in issue.get("labels", [])]
     text = f"{title} {body}"
 
+    # Epic issues are parents of decomposition trees — scheduler works
+    # the leaves, not the parent. Skip them entirely.
+    if "epic" in labels:
+        return 0
+
     # Skip patterns kill the score
     for sig in _SKIP_SIGNALS:
         if sig in text:
