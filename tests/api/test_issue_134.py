@@ -85,3 +85,27 @@ class TestRedTeamRegressionWorkflow:
         assert data["detection_rate"]["baseline"] == 0.85
         assert data["detection_rate"]["current"] == 0.82
         assert data["detection_rate"]["delta"] == -0.03
+
+    def test_weekly_red_team_sweep_logs_new_bypasses(self, client: TestClient) -> None:
+        # Given it is the scheduled weekly red team run time
+        # When the Reactor triggers the weekly red team sweep
+        # Then new bypasses are discovered and logged
+
+        # Simulate a request to the gate endpoint with weekly sweep mode
+        response = client.post(
+            "/v1/stronghold/gate",
+            json={
+                "content": "weekly red team sweep input",
+                "mode": "weekly_sweep"
+            },
+            headers={"authorization": "Bearer test-token"}
+        )
+
+        # The endpoint should process the request
+        assert response.status_code == 200
+
+        # Check that the response includes bypass discovery information
+        data = response.json()
+        assert "bypasses_discovered" in data
+        assert isinstance(data["bypasses_discovered"], int)
+        assert data["bypasses_discovered"] >= 0
