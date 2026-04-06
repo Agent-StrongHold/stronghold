@@ -249,3 +249,46 @@ class TestRedTeamRegressionWorkflow:
         assert "ci_failed" in data
         assert data["ci_failed"] is True
         assert "blocked" in data["message"].lower() or "merge" in data["message"].lower()
+
+    def test_pr_comment_includes_pass_fail_status_for_gate(self, client: TestClient) -> None:
+        # Given a PR comment shows detection rate diff
+        # When the PR to develop/main has completed the red team regression check
+        # Then the comment includes whether the PR passed or failed the gate
+
+        # Test scenario where PR passes the gate
+        response_pass = client.post(
+            "/v1/stronghold/gate",
+            json={
+                "content": "safe input that passes all checks",
+                "mode": "persistent",
+                "detection_rate": {
+                    "baseline": 0.85,
+                    "current": 0.87,
+                    "delta": 0.02
+                }
+            },
+            headers={"authorization": "Bearer test-token"}
+        )
+        assert response_pass.status_code == 200
+        data_pass = response_pass.json()
+        assert "gate_status" in data_pass
+        assert data_pass["gate_status"] == "passed"
+
+        # Test scenario where PR fails the gate
+        response_fail = client.post(
+            "/v1/stronghold/gate",
+            json={
+                "content": "unsafe input that fails checks",
+                "mode": "persistent",
+                "detection_rate": {
+                    "baseline": 0.85,
+                    "current": 0.80,
+                    "delta": -0.05
+                }
+            },
+            headers={"authorization": "Bearer test-token"}
+        )
+        assert response_fail.status_code == 403
+        data_fail = response_fail.json()
+        assert "gate_status" in data_fail
+        assert data_fail["gate_status"] == "failed"
