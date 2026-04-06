@@ -43,3 +43,9 @@ class TestVersionEndpoint:
             data = client.get("/v1/stronghold/version").json()
             import sys
             assert data["python_version"] == sys.version
+
+    def test_python_version_format_matches_sys_version(self, app: FastAPI) -> None:
+        with TestClient(app) as client:
+            data = client.get("/v1/stronghold/version").json()
+            import sys
+            assert data["python_version"] == sys.version
