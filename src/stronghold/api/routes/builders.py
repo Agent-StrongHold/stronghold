@@ -323,6 +323,317 @@ async def decompose(request: Request) -> JSONResponse:
     })
 
 
+# ── Priority Scheduler ───────────────────────────────────────────────
+
+_LABEL_PRIORITIES: dict[str, int] = {
+    "critical": 1000,
+    "high": 500,
+    "v1.0": 300,
+    "follow-on": 200,
+    "good first issue": 100,
+    "builders": 75,
+    "ui": 75,
+}
+
+# Patterns the pipeline can currently solve (extend as capabilities grow)
+_SOLVABLE_SIGNALS: tuple[str, ...] = (
+    "endpoint", "route", "dashboard", ".html", "sidebar",
+    "button", "tooltip", "scroll", "animate", "css",
+    "test:", "fix:", "feat:",
+)
+
+# Patterns the pipeline cannot solve yet — skip these
+_SKIP_SIGNALS: tuple[str, ...] = (
+    ".sql", "migration", "schema", "postgres table",
+    "k8s", "kubernetes", "helm",
+    "multi-file", "refactor: rename",
+)
+
+
+def _score_issue(issue: dict[str, Any]) -> int:
+    """Score an issue by labels and signals. Higher = higher priority.
+
+    Returns 0 if the issue should be skipped entirely.
+    """
+    title = issue.get("title", "").lower()
+    body = (issue.get("body") or "").lower()
+    labels = [lb.lower() for lb in issue.get("labels", [])]
+    text = f"{title} {body}"
+
+    # Skip patterns kill the score
+    for sig in _SKIP_SIGNALS:
+        if sig in text:
+            return 0
+
+    # Must match at least one solvable signal
+    if not any(sig in text for sig in _SOLVABLE_SIGNALS):
+        return 0
+
+    score = 0
+    for lb in labels:
+        score += _LABEL_PRIORITIES.get(lb, 0)
+
+    # Base score for matched solvable patterns
+    score += 50
+    return score
+
+
+async def _rank_candidate_issues(
+    container: Any, owner: str, repo: str,
+) -> list[dict[str, Any]]:
+    """Fetch open issues, score them, filter blocked, sort by (-score, number).
+
+    Lower issue number = older, wins tiebreakers.
+    """
+    import json as _json
+
+    td = container.tool_dispatcher
+
+    # Fetch open issues with builders-relevant labels
+    issues_result = await td.execute(
+        "github",
+        {
+            "action": "list_issues",
+            "owner": owner, "repo": repo,
+            "state": "open", "per_page": 100, "max_pages": 3,
+        },
+    )
+    if issues_result.startswith("Error:"):
+        logger.warning("Scheduler: list_issues failed: %s", issues_result[:200])
+        return []
+
+    try:
+        issues = _json.loads(issues_result)
+    except Exception:
+        return []
+
+    # Filter out PRs (list_issues returns both)
+    issues = [i for i in issues if not i.get("is_pr", False)]
+
+    # Score and filter
+    scored: list[tuple[int, int, dict[str, Any]]] = []
+    for issue in issues:
+        score = _score_issue(issue)
+        if score <= 0:
+            continue
+        scored.append((score, issue["number"], issue))
+
+    if not scored:
+        return []
+
+    # Sort: highest score first, then lowest issue number (older = first)
+    scored.sort(key=lambda x: (-x[0], x[1]))
+
+    # Check blocked_by for top candidates (expensive — only top 20)
+    ready: list[dict[str, Any]] = []
+    for score, number, issue in scored[:20]:
+        blockers_result = await td.execute(
+            "github",
+            {
+                "action": "list_blocked_by",
+                "owner": owner, "repo": repo,
+                "issue_number": number,
+            },
+        )
+        if blockers_result.startswith("Error:"):
+            # If the endpoint isn't available, treat as unblocked
+            issue["_score"] = score
+            ready.append(issue)
+            continue
+        try:
+            blockers = _json.loads(blockers_result)
+        except Exception:
+            blockers = []
+        open_blockers = [b for b in blockers if b.get("state") == "open"]
+        if open_blockers:
+            continue
+        issue["_score"] = score
+        ready.append(issue)
+
+    return ready
+
+
+# Scheduler runtime state
+_scheduler_state: dict[str, Any] = {
+    "enabled": False,
+    "interval_seconds": 300,  # 5 min default — learning rate T
+    "max_concurrent": 2,
+    "task": None,
+    "last_run": None,
+    "last_dispatched": [],
+    "stats": {"dispatched": 0, "skipped_blocked": 0, "skipped_inflight": 0},
+}
+
+
+async def _scheduler_loop(container: Any, owner: str, repo: str) -> None:
+    """Background loop: fetch ranked issues and dispatch runs."""
+    import asyncio as _asyncio
+    import datetime as _datetime
+
+    logger.info("Scheduler loop started: %s/%s", owner, repo)
+
+    while _scheduler_state.get("enabled"):
+        try:
+            orch = _get_orchestrator()
+            # Count in-flight runs (not yet terminal)
+            inflight = sum(
+                1 for r in orch._runs.values()
+                if r.status.value not in ("passed", "failed", "blocked")
+            )
+            slots = max(0, _scheduler_state["max_concurrent"] - inflight)
+
+            _scheduler_state["last_run"] = _datetime.datetime.now(
+                _datetime.timezone.utc,
+            ).isoformat()
+
+            if slots > 0:
+                candidates = await _rank_candidate_issues(container, owner, repo)
+                dispatched: list[int] = []
+                for issue in candidates[:slots]:
+                    # Avoid re-dispatching an issue that already has a run
+                    number = issue["number"]
+                    already_running = any(
+                        r.issue_number == number
+                        and r.status.value not in ("passed", "failed", "blocked")
+                        for r in orch._runs.values()
+                    )
+                    if already_running:
+                        _scheduler_state["stats"]["skipped_inflight"] += 1
+                        continue
+
+                    await _dispatch_scheduler_run(
+                        container, owner, repo, issue,
+                    )
+                    dispatched.append(number)
+                    _scheduler_state["stats"]["dispatched"] += 1
+
+                _scheduler_state["last_dispatched"] = dispatched
+                if dispatched:
+                    logger.info(
+                        "Scheduler dispatched %d runs: %s",
+                        len(dispatched), dispatched,
+                    )
+
+        except Exception as e:
+            logger.exception("Scheduler loop error: %s", e)
+
+        await _asyncio.sleep(_scheduler_state["interval_seconds"])
+
+    logger.info("Scheduler loop stopped")
+
+
+async def _dispatch_scheduler_run(
+    container: Any, owner: str, repo: str, issue: dict[str, Any],
+) -> None:
+    """Dispatch a single scheduled run. Fire and forget."""
+    import asyncio as _asyncio
+
+    from stronghold.builders import WorkerName
+
+    number = issue["number"]
+    title = issue.get("title", "")
+    body = issue.get("body", "") or ""
+
+    # Detect UI issue like create_run does
+    ui_signals = [
+        "dashboard/", ".html", "sidebar", "button", "scroll",
+        "css", "tailwind", "overlap", "animate", "tooltip",
+    ]
+    search_text = f"{title} {body}".lower()
+    is_ui = any(s in search_text for s in ui_signals)
+
+    if is_ui:
+        initial_stage = "ui_analyzed"
+        initial_worker = WorkerName("piper")
+    else:
+        initial_stage = "issue_analyzed"
+        initial_worker = WorkerName.FRANK
+
+    run_id = f"sched-{uuid.uuid4().hex[:8]}"
+    orch = _get_orchestrator()
+    orch.create_run(
+        run_id=run_id,
+        repo=f"{owner}/{repo}",
+        issue_number=number,
+        branch=f"builders/{number}-{run_id}",
+        workspace_ref=f"ws_{run_id}",
+        initial_stage=initial_stage,
+        initial_worker=initial_worker,
+    )
+
+    service_auth = _build_service_auth(container)
+    _asyncio.create_task(
+        _execute_full_workflow(run_id, orch, container, service_auth),
+    )
+
+
+@router.post("/scheduler/start")
+async def scheduler_start(request: Request) -> JSONResponse:
+    """Start the priority scheduler loop."""
+    import asyncio as _asyncio
+
+    await _require_auth(request)
+    body = await request.json()
+
+    repo_url = body.get("repo_url", "")
+    parts = repo_url.rstrip("/").replace("https://github.com/", "").split("/")
+    if len(parts) < 2:
+        raise HTTPException(status_code=400, detail="Invalid repo_url")
+    owner, repo = parts[0], parts[1]
+
+    interval = int(body.get("interval_seconds", 300))
+    max_concurrent = int(body.get("max_concurrent", 2))
+
+    if _scheduler_state.get("enabled"):
+        return JSONResponse({"status": "already_running", "state": _scheduler_snapshot()})
+
+    _scheduler_state["enabled"] = True
+    _scheduler_state["interval_seconds"] = interval
+    _scheduler_state["max_concurrent"] = max_concurrent
+    _scheduler_state["owner"] = owner
+    _scheduler_state["repo"] = repo
+
+    container = request.app.state.container
+    task = _asyncio.create_task(_scheduler_loop(container, owner, repo))
+    _scheduler_state["task"] = task
+
+    return JSONResponse({"status": "started", "state": _scheduler_snapshot()})
+
+
+@router.post("/scheduler/stop")
+async def scheduler_stop(request: Request) -> JSONResponse:
+    """Stop the scheduler loop."""
+    await _require_auth(request)
+
+    _scheduler_state["enabled"] = False
+    task = _scheduler_state.get("task")
+    if task is not None:
+        task.cancel()
+        _scheduler_state["task"] = None
+
+    return JSONResponse({"status": "stopped", "state": _scheduler_snapshot()})
+
+
+@router.get("/scheduler")
+async def scheduler_status(request: Request) -> JSONResponse:
+    """Get scheduler status."""
+    await _require_auth(request)
+    return JSONResponse(_scheduler_snapshot())
+
+
+def _scheduler_snapshot() -> dict[str, Any]:
+    return {
+        "enabled": _scheduler_state.get("enabled", False),
+        "interval_seconds": _scheduler_state.get("interval_seconds", 300),
+        "max_concurrent": _scheduler_state.get("max_concurrent", 2),
+        "last_run": _scheduler_state.get("last_run"),
+        "last_dispatched": _scheduler_state.get("last_dispatched", []),
+        "stats": _scheduler_state.get("stats", {}),
+        "owner": _scheduler_state.get("owner"),
+        "repo": _scheduler_state.get("repo"),
+    }
+
+
 MAX_STAGE_RETRIES = 3
 
 
