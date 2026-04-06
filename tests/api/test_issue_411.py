@@ -36,7 +36,7 @@ class TestAdminConfigEndpoint:
             assert "cors_origins" in data
 
     def test_admin_config_response_has_no_secrets(self, app: FastAPI) -> None:
-        with TestClient(app) as client:
+        with TestClient(app) -> None:
             resp = client.get("/v1/stronghold/admin/config", headers=AUTH_HEADER)
             data = resp.json()
 
@@ -111,3 +111,13 @@ class TestAdminConfigEndpoint:
             assert isinstance(error_data["detail"], str)
             assert "authentication" in error_data["detail"].lower()
             assert "required" in error_data["detail"].lower() or "credentials" in error_data["detail"].lower()
+
+    def test_non_admin_user_gets_403_with_permission_denied_message(self, app: FastAPI) -> None:
+        non_admin_header = {"Authorization": "Bearer sk-test"}
+        with TestClient(app) as client:
+            resp = client.get("/v1/stronghold/admin/config", headers=non_admin_header)
+            assert resp.status_code == 403
+            error_data = resp.json()
+            assert "detail" in error_data
+            assert isinstance(error_data["detail"], str)
+            assert "permission denied" in error_data["detail"].lower()

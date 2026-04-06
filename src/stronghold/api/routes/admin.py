@@ -63,13 +63,13 @@ async def get_config(request: Request) -> JSONResponse:
 
     # Build response, excluding any secret-like field
     response: dict[str, object] = {}
-    if hasattr(cfg, "litellm_url") and cfg.litellm_url:
-        response["litellm_url"] = cfg.litellm_url
-    if hasattr(cfg, "auth_method") and cfg.auth_method:
-        response["auth_method"] = cfg.auth_method
-    if hasattr(cfg, "rate_limit") and cfg.rate_limit:
-        response["rate_limit"] = str(cfg.rate_limit)
-    if hasattr(cfg, "cors_origins") and cfg.cors_origins:
-        response["cors_origins"] = cfg.cors_origins
+    for key, value in cfg.__dict__.items():
+        if any(secret in key.lower() for secret in ("key", "secret", "password", "token")):
+            continue
+        if value is not None:
+            if key == "rate_limit":
+                response[key] = str(value)
+            else:
+                response[key] = value
 
     return JSONResponse(content=response)
