@@ -810,3 +810,44 @@ class TestRedTeamRegressionWorkflow:
         assert data["detection_rate"]["delta"] == -0.03
         assert "threshold" in data["message"].lower()
         assert "2%" in data["message"] or "0.02" in str(data["detection_rate"]["delta"])
+
+    def test_pr_comment_shows_detection_rate_diff_after_red_team_run(self, client: TestClient) -> None:
+        # Scenario: PR comment shows detection rate diff after red team run
+        # Given a PR is opened targeting main or develop branch
+        # When the CI workflow executes the red team regression test
+        # Then a PR comment is posted showing the detection rate difference from baseline
+
+        # Simulate a request to the gate endpoint with detection rate data
+        response = client.post(
+            "/v1/stronghold/gate",
+            json={
+                "content": "red team run completed",
+                "mode": "persistent",
+                "detection_rate": {
+                    "baseline": 0.92,
+                    "current": 0.89,
+                    "delta": -0.03
+                },
+                "pr_comment_required": True
+            },
+            headers={"authorization": "Bearer test-token"}
+        )
+
+        # The endpoint should process the request
+        assert response.status_code == 200
+
+        # Check that the response includes PR comment information with detection rates
+        data = response.json()
+        assert "pr_comment_posted" in data
+        assert data["pr_comment_posted"] is True
+        assert "detection_rate" in data
+        assert data["detection_rate"]["baseline"] == 0.92
+        assert data["detection_rate"]["current"] == 0.89
+        assert data["detection_rate"]["delta"] == -0.03
+
+        # Verify PR comment includes the required information
+        assert "baseline" in data["pr_comment_message"]
+        assert "current" in data["pr_comment_message"]
+        assert "0.92" in data["pr_comment_message"]
+        assert "0.89" in data["pr_comment_message"]
+        assert "delta" in data["pr_comment_message"] or "difference" in data["pr_comment_message"]
