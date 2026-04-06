@@ -88,3 +88,11 @@ class TestVersionFormat:
             import re
 
             assert re.match(r"^\d+\.\d+\.\d+$", version)
+
+
+class TestPythonVersionField:
+    def test_python_version_field_is_not_empty(self, app: FastAPI) -> None:
+        with TestClient(app) as client:
+            data = client.get("/v1/stronghold/version").json()
+            assert "python_version" in data
+            assert data["python_version"] != ""
