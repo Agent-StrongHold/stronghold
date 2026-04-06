@@ -31,3 +31,9 @@ class TestVersionEndpoint:
             assert "python_version" in data
             assert "service" in data
             assert data["service"] == "stronghold"
+
+    def test_version_matches_package_version(self, app: FastAPI) -> None:
+        with TestClient(app) as client:
+            data = client.get("/v1/stronghold/version").json()
+            import stronghold
+            assert data["version"] == stronghold.__version__
