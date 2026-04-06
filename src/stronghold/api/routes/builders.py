@@ -656,10 +656,22 @@ async def _scheduler_loop(container: Any, owner: str, repo: str) -> None:
 
         await _asyncio.sleep(_scheduler_state["interval_seconds"])
 
+    logger.info("Scheduler loop stopped")
+
 
 async def _review_pass(container: Any, owner: str, repo: str) -> None:
-    """Find open PRs created by builders and run Gatekeeper on each."""
+    """Find open PRs created by builders and run Gatekeeper on each.
+
+    When Gatekeeper requests changes, the parent issue is removed from
+    completed_issues so the scheduler re-dispatches it. Mason's next run
+    reads the Gatekeeper verdict from the issue comments (via prior_runs
+    history) and fixes the specific blockers.
+
+    reviewed_prs tracks (pr_number, head_sha) — a new push to the PR
+    branch changes head_sha, triggering a fresh review.
+    """
     import json as _json
+    import re as _re
 
     td = container.tool_dispatcher
 
@@ -682,6 +694,7 @@ async def _review_pass(container: Any, owner: str, repo: str) -> None:
 
     prs = [i for i in items if i.get("is_pr", False)]
     reviewed_set = _scheduler_state["reviewed_prs"]
+    completed_set = _scheduler_state["completed_issues"]
 
     # Review at most 2 PRs per loop
     pipeline = _build_pipeline(container)
@@ -690,8 +703,6 @@ async def _review_pass(container: Any, owner: str, repo: str) -> None:
         if review_slots <= 0:
             break
         pr_number = pr_item["number"]
-        if pr_number in reviewed_set:
-            continue
 
         # Only review PRs with branch name matching our conventions
         title = pr_item.get("title", "")
@@ -700,6 +711,31 @@ async def _review_pass(container: Any, owner: str, repo: str) -> None:
             for prefix in ("feat:", "fix:", "refactor:", "test:")
         ):
             continue
+
+        # Get head SHA so we re-review when new commits land
+        pr_detail_raw = await td.execute(
+            "github",
+            {
+                "action": "get_pr",
+                "owner": owner, "repo": repo,
+                "issue_number": pr_number,
+            },
+        )
+        head_sha = ""
+        if not pr_detail_raw.startswith("Error:"):
+            try:
+                pr_detail = _json.loads(pr_detail_raw)
+                head_sha = pr_detail.get("head", {}).get("sha", "")[:12]
+            except Exception:
+                pass
+
+        review_key = f"{pr_number}:{head_sha}"
+        if review_key in reviewed_set:
+            continue
+
+        # Extract parent issue number from PR title
+        issue_match = _re.search(r"#(\d+)", title)
+        parent_issue = int(issue_match.group(1)) if issue_match else None
 
         try:
             result = await pipeline.review_pr(
@@ -711,18 +747,26 @@ async def _review_pass(container: Any, owner: str, repo: str) -> None:
                 coverage_tolerance_pct=_gatekeeper_config["coverage_tolerance_pct"],
                 protected_branches=_gatekeeper_config["protected_branches"],
             )
-            reviewed_set.add(pr_number)
+            reviewed_set.add(review_key)
             _scheduler_state["stats"]["reviewed"] += 1
+
             if result.success:
                 if result.evidence.get("merged"):
                     _scheduler_state["stats"]["merged"] += 1
             else:
+                # REQUEST_CHANGES — unblock the parent issue for re-dispatch
                 _scheduler_state["stats"]["review_changes_requested"] += 1
+                if parent_issue and parent_issue in completed_set:
+                    completed_set.discard(parent_issue)
+                    logger.info(
+                        "Gatekeeper requested changes on PR #%d — "
+                        "re-opening issue #%d for scheduler",
+                        pr_number, parent_issue,
+                    )
+
             review_slots -= 1
         except Exception as e:
             logger.warning("Review of PR #%d failed: %s", pr_number, e)
-
-    logger.info("Scheduler loop stopped")
 
 
 async def _dispatch_scheduler_run(
