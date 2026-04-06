@@ -76,3 +76,15 @@ class TestResponseValidity:
             assert resp.status_code == 200
             data = resp.json()
             assert isinstance(data, dict)
+
+
+class TestVersionFormat:
+    def test_version_matches_semver_pattern(self, app: FastAPI) -> None:
+        with TestClient(app) as client:
+            data = client.get("/v1/stronghold/version").json()
+            version = data["version"]
+            assert isinstance(version, str)
+            assert version != ""
+            import re
+
+            assert re.match(r"^\d+\.\d+\.\d+$", version)
