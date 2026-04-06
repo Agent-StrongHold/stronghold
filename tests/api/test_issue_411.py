@@ -45,7 +45,7 @@ class TestAdminConfigEndpoint:
             assert "key" not in data
 
     def test_admin_config_returns_401_without_auth(self, app: FastAPI) -> None:
-        with TestClient(app) -> None:
+        with TestClient(app) as client:
             resp = client.get("/v1/stronghold/admin/config")
             assert resp.status_code == 401
             error_data = resp.json()
