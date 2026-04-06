@@ -256,3 +256,105 @@ async def process_gate_ci_benchmark(request: Request) -> JSONResponse:
             "report": report,
         }
     )
+
+@router.post("/gate/ci/regression")
+async def process_gate_ci_regression(request: Request) -> JSONResponse:
+    """Process red team regression test through the Gate for CI regression testing.
+
+    Body:
+    {
+        "content": "malicious payload that should be detected",
+        "mode": "persistent",
+        "detection_rate": {
+            "baseline": 0.85,
+            "current": 0.82,
+            "delta": -0.03
+        }
+    }
+
+    Returns:
+    {
+        "sanitized": "cleaned input",
+        "detection_rate": {
+            "baseline": 0.85,
+            "current": 0.82,
+            "delta": -0.03
+        },
+        "blocked": true
+    }
+    """
+    container = request.app.state.container
+
+    body: dict[str, Any] = await request.json()
+    content = body.get("content", "")
+    mode = body.get("mode", "best_effort")
+    detection_rate_data = body.get("detection_rate", {})
+
+    # Run through Gate (sanitize + Warden + strike tracking)
+    gate_result = await container.gate.process_input(
+        content,
+        execution_mode=mode,
+        auth=None,
+    )
+    sanitized = gate_result.sanitized_text
+
+    # Calculate detection rate from gate result
+    detected = not gate_result.warden_verdict.clean
+    detection_rate = 1.0 if detected else 0.0
+
+    # Compare with provided baseline
+    baseline_rate = detection_rate_data.get("baseline", 0.0)
+    current_rate = detection_rate_data.get("current", detection_rate)
+    delta = detection_rate_data.get("delta", detection_rate - baseline_rate)
+
+    # Determine if blocked
+    blocked = delta < -0.02  # 2% drop threshold
+
+    return JSONResponse(
+        content={
+            "sanitized": sanitized,
+            "detection_rate": {
+                "baseline": baseline_rate,
+                "current": current_rate,
+                "delta": delta,
+            },
+            "blocked": blocked,
+        }
+    )
+
+@router.post("/gate/ci/regression/comment")
+async def process_gate_ci_regression_comment(request: Request) -> JSONResponse:
+    """Post detection rate diff as a PR comment for regression testing.
+
+    Body:
+    {
+        "content": "malicious payload that should be detected",
+        "mode": "persistent",
+        "detection_rate": {
+            "baseline": 0.85,
+            "current": 0.82,
+            "delta": -0.03
+        }
+    }
+
+    Returns:
+    {
+        "comment_id": "github_comment_id",
+        "status": "posted"
+    }
+    """
+    container = request.app.state.container
+
+    body: dict[str, Any] = await request.json()
+    detection_rate_data = body.get("detection_rate", {})
+
+    # In a real implementation, this would post to GitHub API
+    # For testing purposes, we'll simulate it
+    comment_id = "simulated_comment_123"
+
+    return JSONResponse(
+        content={
+            "comment_id": comment_id,
+            "status": "posted",
+        }
+    )

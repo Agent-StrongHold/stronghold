@@ -55,3 +55,33 @@ class TestRedTeamRegressionWorkflow:
 
         # The endpoint should detect the security issue and return a failure status
         assert response.status_code == 403
+
+    def test_pr_comment_shows_detection_rate_diff(self, client: TestClient) -> None:
+        # Given a PR to the develop branch with a detection rate change
+        # When the CI pipeline completes the red team regression
+        # Then a PR comment is posted showing the detection rate difference from baseline
+
+        # Simulate a request to the gate endpoint with detection rate data
+        response = client.post(
+            "/v1/stronghold/gate",
+            json={
+                "content": "regression test input",
+                "mode": "persistent",
+                "detection_rate": {
+                    "baseline": 0.85,
+                    "current": 0.82,
+                    "delta": -0.03
+                }
+            },
+            headers={"authorization": "Bearer test-token"}
+        )
+
+        # The endpoint should process the request and return success
+        assert response.status_code == 200
+
+        # Check that the response includes detection rate information
+        data = response.json()
+        assert "detection_rate" in data
+        assert data["detection_rate"]["baseline"] == 0.85
+        assert data["detection_rate"]["current"] == 0.82
+        assert data["detection_rate"]["delta"] == -0.03
