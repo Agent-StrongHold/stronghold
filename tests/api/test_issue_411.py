@@ -36,7 +36,7 @@ class TestAdminConfigEndpoint:
             assert "cors_origins" in data
 
     def test_admin_config_response_has_no_secrets(self, app: FastAPI) -> None:
-        with TestClient(app) -> None:
+        with TestClient(app) as client:
             resp = client.get("/v1/stronghold/admin/config", headers=AUTH_HEADER)
             data = resp.json()
 
