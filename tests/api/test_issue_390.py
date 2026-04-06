@@ -11,6 +11,7 @@ from tests.fakes import make_test_container
 
 AUTH_HEADER = {"Authorization": "Bearer sk-test"}
 
+
 @pytest.fixture
 def app() -> FastAPI:
     """Create a FastAPI app with test container."""
@@ -19,6 +20,7 @@ def app() -> FastAPI:
     container = make_test_container()
     app.state.container = container
     return app
+
 
 class TestVersionEndpoint:
     def test_get_version_success(self, app: FastAPI) -> None:
@@ -46,6 +48,7 @@ class TestVersionEndpoint:
             assert "." in python_version
             assert len(python_version.split(".")) >= 2
 
+
 class TestInvalidEndpoint:
     def test_invalid_endpoint_returns_404(self, app: FastAPI) -> None:
         with TestClient(app) as client:
@@ -58,8 +61,18 @@ class TestInvalidEndpoint:
             # FastAPI's default 404 shape is {"detail": "Not Found"}
             assert "detail" in data
 
+
 class TestServiceName:
     def test_service_field_is_stronghold(self, app: FastAPI) -> None:
         with TestClient(app) as client:
             data = client.get("/v1/stronghold/version").json()
             assert data["service"] == "stronghold"
+
+
+class TestResponseValidity:
+    def test_response_is_valid_json(self, app: FastAPI) -> None:
+        with TestClient(app) as client:
+            resp = client.get("/v1/stronghold/version")
+            assert resp.status_code == 200
+            data = resp.json()
+            assert isinstance(data, dict)
