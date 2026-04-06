@@ -34,6 +34,8 @@ async def _require_admin(request: Request) -> Any:
     """Authenticate, require admin, then check CSRF on mutations."""
     container = request.app.state.container
     auth_header = request.headers.get("authorization")
+    if not auth_header:
+        raise HTTPException(status_code=401, detail="Missing Authorization header")
     try:
         auth = await container.auth_provider.authenticate(
             auth_header, headers=dict(request.headers)
@@ -41,7 +43,7 @@ async def _require_admin(request: Request) -> Any:
     except ValueError as e:
         raise HTTPException(status_code=401, detail=str(e)) from e
     if not auth.has_role("admin"):
-        raise HTTPException(status_code=403, detail="Admin role required")
+        raise HTTPException(status_code=403, detail="Permission denied: admin role required")
     _check_csrf(request)
     return auth
 
@@ -55,7 +57,7 @@ async def get_config(request: Request) -> JSONResponse:
       - rate_limit: requests per minute setting
       - cors_origins: list of allowed origins
     """
-    await _require_admin(request)
+    auth = await _require_admin(request)
     container = request.app.state.container
     cfg = container.config
 

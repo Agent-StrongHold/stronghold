@@ -5,6 +5,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from stronghold.api.routes.admin import router as admin_router
+from tests.fakes import make_test_container
 
 AUTH_HEADER = {"Authorization": "Bearer sk-test-admin"}
 
@@ -100,3 +101,13 @@ class TestAdminConfigEndpoint:
             assert "cors_origins" in data
             assert all(isinstance(v, (str, list)) for k, v in data.items() if k != "cors_origins")
             assert isinstance(data["cors_origins"], list)
+
+    def test_unauthenticated_user_gets_401_with_authentication_error_message(self, app: FastAPI) -> None:
+        with TestClient(app) as client:
+            resp = client.get("/v1/stronghold/admin/config")
+            assert resp.status_code == 401
+            error_data = resp.json()
+            assert "detail" in error_data
+            assert isinstance(error_data["detail"], str)
+            assert "authentication" in error_data["detail"].lower()
+            assert "required" in error_data["detail"].lower() or "credentials" in error_data["detail"].lower()
