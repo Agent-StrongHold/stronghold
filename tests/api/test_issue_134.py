@@ -851,3 +851,33 @@ class TestRedTeamRegressionWorkflow:
         assert "0.92" in data["pr_comment_message"]
         assert "0.89" in data["pr_comment_message"]
         assert "delta" in data["pr_comment_message"] or "difference" in data["pr_comment_message"]
+
+    def test_weekly_red_team_run_logs_bypasses_and_updates_baseline(self, client: TestClient) -> None:
+        # Scenario: Weekly scheduled red team run discovers new bypasses
+        # Given it is the scheduled weekly red team run time
+        # When the Reactor cron trigger executes the red team sweep
+        # Then new bypasses are discovered and logged
+        # And the baseline is updated with the new detection patterns
+
+        # Simulate a request to the gate endpoint with weekly sweep mode
+        response = client.post(
+            "/v1/stronghold/gate",
+            json={
+                "content": "weekly red team sweep input",
+                "mode": "weekly_sweep"
+            },
+            headers={"authorization": "Bearer test-token"}
+        )
+
+        # The endpoint should process the request
+        assert response.status_code == 200
+
+        # Check that the response includes bypass discovery and baseline update information
+        data = response.json()
+        assert "bypasses_discovered" in data
+        assert isinstance(data["bypasses_discovered"], int)
+        assert data["bypasses_discovered"] >= 0
+        assert "bypasses_logged" in data
+        assert data["bypasses_logged"] is True
+        assert "baseline_updated" in data
+        assert data["baseline_updated"] is True
