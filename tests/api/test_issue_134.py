@@ -139,3 +139,25 @@ class TestRedTeamRegressionWorkflow:
         assert data["detection_rate"]["baseline"] == 0.90
         assert data["detection_rate"]["current"] == 0.90
         assert data["detection_rate"]["delta"] == 0.0
+
+    def test_red_team_fails_on_missing_baseline_file(self, client: TestClient) -> None:
+        # Given a PR to the main branch
+        # When the CI pipeline attempts to run red team regression
+        # Then the pipeline fails with an error indicating missing baseline file
+
+        # Simulate a request to the gate endpoint with missing baseline file scenario
+        response = client.post(
+            "/v1/stronghold/gate",
+            json={
+                "content": "test input for missing baseline",
+                "mode": "persistent",
+                "baseline_file": "missing_baseline.json"
+            },
+            headers={"authorization": "Bearer test-token"}
+        )
+
+        # The endpoint should return an error indicating missing baseline file
+        assert response.status_code == 400
+        data = response.json()
+        assert "error" in data
+        assert "baseline" in data["error"].lower() or "missing" in data["error"].lower()
