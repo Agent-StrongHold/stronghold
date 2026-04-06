@@ -161,3 +161,32 @@ class TestRedTeamRegressionWorkflow:
         data = response.json()
         assert "error" in data
         assert "baseline" in data["error"].lower() or "missing" in data["error"].lower()
+
+    def test_critical_security_regression_fails_pipeline(self, client: TestClient) -> None:
+        # Given a PR to the develop branch with a detection rate drop of 5%
+        # When the CI pipeline evaluates the red team results
+        # Then the pipeline fails and posts a critical alert in the PR comment
+
+        # Simulate a request to the gate endpoint with a critical regression scenario
+        response = client.post(
+            "/v1/stronghold/gate",
+            json={
+                "content": "critical security regression test",
+                "mode": "persistent",
+                "detection_rate": {
+                    "baseline": 0.95,
+                    "current": 0.90,
+                    "delta": -0.05
+                }
+            },
+            headers={"authorization": "Bearer test-token"}
+        )
+
+        # The endpoint should detect the critical regression and return a failure status
+        assert response.status_code == 403
+
+        # Check that the response includes critical alert information
+        data = response.json()
+        assert "critical_alert" in data
+        assert data["critical_alert"] is True
+        assert "detection rate drop" in data["message"].lower()

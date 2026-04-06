@@ -280,7 +280,9 @@ async def process_gate_ci_regression(request: Request) -> JSONResponse:
             "current": 0.82,
             "delta": -0.03
         },
-        "blocked": true
+        "blocked": true,
+        "critical_alert": true,
+        "message": "Detection rate dropped by 3% from baseline"
     }
     """
     container = request.app.state.container
@@ -310,6 +312,11 @@ async def process_gate_ci_regression(request: Request) -> JSONResponse:
     # Determine if blocked
     blocked = delta < -0.02  # 2% drop threshold
 
+    # Check for critical regression (5% drop)
+    critical_alert = delta < -0.05
+
+    message = f"Detection rate {'dropped' if delta < 0 else 'increased'} by {abs(delta * 100):.1f}% from baseline"
+
     return JSONResponse(
         content={
             "sanitized": sanitized,
@@ -319,6 +326,8 @@ async def process_gate_ci_regression(request: Request) -> JSONResponse:
                 "delta": delta,
             },
             "blocked": blocked,
+            "critical_alert": critical_alert,
+            "message": message,
         }
     )
 
