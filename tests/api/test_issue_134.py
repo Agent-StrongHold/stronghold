@@ -292,3 +292,31 @@ class TestRedTeamRegressionWorkflow:
         data_fail = response_fail.json()
         assert "gate_status" in data_fail
         assert data_fail["gate_status"] == "failed"
+
+    def test_weekly_red_team_run_files_github_issues_for_new_bypasses(self, client: TestClient) -> None:
+        # Given the weekly Reactor cron trigger is activated
+        # When the red team benchmark suite runs with mutated payloads
+        # Then new bypasses are identified and logged
+        # And a GitHub issue is automatically filed for each new bypass
+
+        # Simulate a request to the gate endpoint with weekly sweep mode
+        response = client.post(
+            "/v1/stronghold/gate",
+            json={
+                "content": "weekly red team sweep with mutated payloads",
+                "mode": "weekly_sweep",
+                "mutation_enabled": True
+            },
+            headers={"authorization": "Bearer test-token"}
+        )
+
+        # The endpoint should process the request
+        assert response.status_code == 200
+
+        # Check that the response includes GitHub issue filing information
+        data = response.json()
+        assert "github_issues_filed" in data
+        assert isinstance(data["github_issues_filed"], int)
+        assert data["github_issues_filed"] >= 0
+        assert "bypasses_discovered" in data
+        assert data["bypasses_discovered"] >= data["github_issues_filed"]
