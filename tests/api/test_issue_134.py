@@ -438,3 +438,37 @@ class TestRedTeamRegressionWorkflow:
         assert data["detection_rate"]["delta"] == -0.03
         assert "threshold" in data["message"].lower()
         assert "2%" in data["message"] or "0.02" in str(data["detection_rate"]["delta"])
+
+    def test_weekly_red_team_bypass_updates_warden_patterns_and_files_github_issues(self, client: TestClient) -> None:
+        # Scenario: Weekly scheduled red team run discovers new bypasses and updates baseline
+        # Given it is the scheduled weekly red team run time
+        # And the red team runner executes with mutation enabled
+        # When the learner identifies new bypass patterns
+        # Then the Warden patterns should be auto-updated
+        # And a GitHub issue should be filed for each new bypass discovered
+
+        # Simulate a weekly red team run with mutation enabled
+        response = client.post(
+            "/v1/stronghold/gate",
+            json={
+                "content": "weekly red team sweep with mutation",
+                "mode": "weekly_sweep",
+                "mutation_enabled": True
+            },
+            headers={"authorization": "Bearer test-token"}
+        )
+
+        # The endpoint should process the request
+        assert response.status_code == 200
+
+        # Check that the response includes Warden pattern updates and GitHub issues
+        data = response.json()
+        assert "warden_patterns_updated" in data
+        assert data["warden_patterns_updated"] is True
+        assert "github_issues_filed" in data
+        assert isinstance(data["github_issues_filed"], int)
+        assert data["github_issues_filed"] >= 0
+        assert "bypasses_discovered" in data
+        assert data["bypasses_discovered"] >= data["github_issues_filed"]
+        assert "new_baseline_detected" in data
+        assert data["new_baseline_detected"] is True
