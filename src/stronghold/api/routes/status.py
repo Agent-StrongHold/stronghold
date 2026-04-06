@@ -74,3 +74,27 @@ async def reactor_status(request: Request) -> dict[str, Any]:
         "triggers": status.triggers,
         "recent_events": status.recent_events,
     }
+
+
+@router.get("/version")
+async def version() -> dict[str, Any]:
+    """Version endpoint — returns current Stronghold version and Python version."""
+    import sys  # noqa: PLC0415
+
+    return {
+        "version": __version__,
+        "python_version": sys.version,
+        "service": "stronghold",
+    }
+
+
+@router.get("/v1/stronghold/version")
+async def version_v1() -> dict[str, Any]:
+    """Version endpoint — returns current Stronghold version and Python version."""
+    import sys  # noqa: PLC0415
+
+    return {
+        "version": __version__,
+        "python_version": sys.version,
+        "service": "stronghold",
+    }
