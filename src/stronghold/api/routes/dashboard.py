@@ -264,6 +264,20 @@ def _aggregate_team_costs(outcomes_store, quota_tracker, team_id: str, period: s
     # Get trends
     daily_trend, weekly_trend = outcomes_store.get_team_cost_trends(team_id, period)
 
+    # Get budget alerts
+    alerts = []
+    team_quota = quota_tracker.get_team_quota(team_id)
+    if team_quota:
+        current_spend = sum(outcome.cost for outcome in outcomes)
+        if current_spend >= team_quota * 0.8:
+            alerts.append({
+                "type": "budget_threshold",
+                "message": "Team has used 80% of monthly allocation",
+                "current": current_spend,
+                "quota": team_quota,
+                "threshold": 0.8,
+            })
+
     return {
         "by_model": [{"model": k, **v} for k, v in by_model.items()],
         "by_provider": [{"provider": k, **v} for k, v in by_provider.items()],
@@ -272,6 +286,7 @@ def _aggregate_team_costs(outcomes_store, quota_tracker, team_id: str, period: s
             "daily": [{"date": d["date"], "cost": d["cost"]} for d in daily_trend],
             "weekly": [{"week": w["week"], "cost": w["cost"]} for w in weekly_trend],
         },
+        "alerts": alerts,
     }
 
 def _aggregate_user_costs(outcomes_store, quota_tracker, user_id: str, period: str) -> dict:
@@ -327,7 +342,7 @@ def _aggregate_org_costs(outcomes_store, quota_tracker, org_id: str, period: str
         provider_key = outcome.provider
         by_provider[provider_key] = by_provider.get(provider_key, {"cost": 0.0, "count": 0})
         by_provider[provider_key]["cost"] += outcome.cost
-        by_provider[key]["count"] += 1
+        by_provider[provider_key]["count"] += 1
 
         task_type_key = outcome.task_type
         by_task_type[task_type_key] = by_task_type.get(task_type_key, {"cost": 0.0, "count": 0})

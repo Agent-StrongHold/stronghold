@@ -97,3 +97,20 @@ class TestCostAggregationDashboard:
             assert "provider" in resp.text
             assert "task_type" in resp.text
             assert "cost" in resp.text
+
+    def test_trigger_budget_alert_at_80_percent_threshold(self, app: FastAPI) -> None:
+        with TestClient(app) as client:
+            resp = client.get(
+                "/dashboard/outcomes",
+                headers=AUTH_HEADER,
+                params={"group_by": "team", "period": "monthly"},
+            )
+            data = resp.json()
+            for team in data["teams"]:
+                costs = team["costs"]
+                assert "alerts" in costs
+                assert any(
+                    alert.get("type") == "budget_threshold"
+                    and alert.get("message") == "Team has used 80% of monthly allocation"
+                    for alert in costs["alerts"]
+                )
