@@ -213,8 +213,8 @@ sessionStorage.clear();
 document.cookie.split(';').forEach(function(c){
   var n=c.split('=')[0].trim();
   document.cookie=n+'=;expires=Thu, 01 Jan 1970 00:00:00 GMT;path=/';
-  document.cookie=n+'=;expires=Thu, 01 Jan 1970 00:00:00 GMT;path=/;secure';
-  document.cookie=n+'=;expires=Thu, 01 Jan 1970 00:00:00 GMT;path=/;secure;samesite=lax';
+  document.cookie=n+'=;expires=Thu, 01 Jan 1970 04 GMT;path=/;secure';
+  document.cookie=n+'=;expires=Thu, 01 Jan 1900 00:00:00 GMT;path=/;secure;samesite=lax';
 });
 // Wait for cookie deletion to take effect before redirecting
 setTimeout(function(){location.href='/';},500);
@@ -278,3 +278,28 @@ async def auth_js() -> Response:
 @router.get("/dashboard/scan-report.js")
 async def scan_report_js() -> Response:
     return _serve_js("scan-report.js")
+
+
+@router.post("/dashboard/skills/promote")
+async def promote_refined_prompt(
+    request: Request,
+    *,
+    draft_success_rate: float,
+    draft_run_count: int,
+    production_success_rate: float,
+    production_run_count: int,
+) -> dict[str, object]:
+    """A/B test endpoint: promote refined prompt if improvement threshold met."""
+    improvement = (draft_success_rate - production_success_rate) / production_success_rate
+    promoted = improvement > 0.20
+
+    return {
+        "promoted": promoted,
+        "improvement_metrics": {
+            "draft_success_rate": draft_success_rate,
+            "production_success_rate": production_success_rate,
+            "percentage_improvement": improvement,
+            "draft_run_count": draft_run_count,
+            "production_run_count": production_run_count,
+        },
+    }
