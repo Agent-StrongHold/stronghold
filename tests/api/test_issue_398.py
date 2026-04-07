@@ -48,3 +48,53 @@ class TestPromptRefinementABTesting:
             assert data["promoted"] is True
             assert "improvement_metrics" in data
             assert data["improvement_metrics"]["percentage_improvement"] > 0.20
+
+    def test_auto_rolls_back_refined_prompt_below_80pct_success(self, app: FastAPI) -> None:
+        with TestClient(app) as client:
+            # Simulate the scenario where draft prompt has 40% success rate
+            # and production prompt has 60% success rate
+            resp = client.post(
+                "/dashboard/skills/promote",
+                headers=AUTH_HEADER,
+                json={
+                    "draft_success_rate": 0.40,
+                    "draft_run_count": 5,
+                    "production_success_rate": 0.60,
+                    "production_run_count": 5,
+                },
+            )
+            assert resp.status_code == 200
+            data = resp.json()
+            assert data["promoted"] is False
+            assert data["rolled_back"] is True
+            assert "performance_metrics" in data
+            assert data["performance_metrics"]["draft_success_rate"] == 0.40
+            assert data["performance_metrics"]["production_success_rate"] == 0.60
+            assert "audit_log_id" in data
+
+    def test_no_refinement_triggered_when_error_pattern_below_threshold(self, app: FastAPI) -> None:
+        with TestClient(app) as client:
+            # Simulate scenario where prompt failed 2 times with same error pattern
+            resp = client.post(
+                "/dashboard/skills/check-failures",
+                headers=AUTH_HEADER,
+                json={
+                    "failures": [
+                        {
+                            "stage": "parsing",
+                            "error_type": "syntax_error",
+                            "prompt_version": "v1.1",
+                        },
+                        {
+                            "stage": "parsing",
+                            "error_type": "syntax_error",
+                            "prompt_version": "v1.1",
+                        },
+                    ],
+                },
+            )
+            assert resp.status_code == 200
+            data = resp.json()
+            assert data["refinement_triggered"] is False
+            assert data["action_taken"] == "none"
+            assert "audit_log_id" in data

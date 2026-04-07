@@ -6,6 +6,7 @@ Login/logout/callback pages and static JS assets are public.
 
 from __future__ import annotations
 
+import uuid
 from pathlib import Path
 
 from fastapi import APIRouter, Request
@@ -213,7 +214,8 @@ sessionStorage.clear();
 document.cookie.split(';').forEach(function(c){
   var n=c.split('=')[0].trim();
   document.cookie=n+'=;expires=Thu, 01 Jan 1970 00:00:00 GMT;path=/';
-  document.cookie=n+'=;expires=Thu, 01 Jan 1970 04 GMT;path=/;secure';
+  document.cookie=n+'=;expires=Thu, 01 Jan 1900 4 GMT;path=/;secure';
+  document.cookie=n+'=;expires=Thu, 01 Jan 1900 00:00:00 GMT;path=/;secure;samesite=la
   document.cookie=n+'=;expires=Thu, 01 Jan 1900 00:00:00 GMT;path=/;secure;samesite=lax';
 });
 // Wait for cookie deletion to take effect before redirecting
@@ -292,9 +294,31 @@ async def promote_refined_prompt(
     """A/B test endpoint: promote refined prompt if improvement threshold met."""
     improvement = (draft_success_rate - production_success_rate) / production_success_rate
     promoted = improvement > 0.20
+    rolled_back = False
+    if not promoted and draft_success_rate < production_success_rate:
+        rolled_back = True
+
+    audit_log_id = str(uuid.uuid4())
+
+    container = getattr(getattr(request.app, "state", None), "container", None)
+    if container:
+        await container.audit_log.add_entry(
+            audit_id=audit_log_id,
+            action="prompt_promotion_decision",
+            details={
+                "draft_success_rate": draft_success_rate,
+                "production_success_rate": production_success_rate,
+                "improvement": improvement,
+                "draft_run_count": draft_run_count,
+                "production_run_count": production_run_count,
+                "promoted": promoted,
+                "rolled_back": rolled_back,
+            },
+        )
 
     return {
         "promoted": promoted,
+        "rolled_back": rolled_back,
         "improvement_metrics": {
             "draft_success_rate": draft_success_rate,
             "production_success_rate": production_success_rate,
@@ -302,4 +326,54 @@ async def promote_refined_prompt(
             "draft_run_count": draft_run_count,
             "production_run_count": production_run_count,
         },
+        "performance_metrics": {
+            "draft_success_rate": draft_success_rate,
+            "production_success_rate": production_success_rate,
+        },
+        "audit_log_id": audit_log_id,
+    }
+
+
+@router.post("/dashboard/skills/check-failures")
+async def check_failures(
+    request: Request,
+    *,
+    failures: list[dict[str, str]],
+) -> dict[str, object]:
+    """Check failure patterns and trigger prompt refinement if threshold met."""
+    audit_log_id = str(uuid.uuid4())
+
+    # Group failures by pattern {stage, error_type, prompt_version}
+    pattern_counts = {}
+    for failure in failures:
+        key = (failure.get("stage"), failure.get("error_type"), failure.get("prompt_version"))
+        pattern_counts[key] = pattern_counts.get(key, 0) + 1
+
+    refinement_triggered = False
+    action_taken = "none"
+
+    # Check if any pattern exceeds threshold (3 failures)
+    for key, count in pattern_counts.items():
+        if count >= 3:
+            refinement_triggered = True
+            action_taken = "refinement_triggered"
+            break
+
+    container = getattr(getattr(request.app, "state", None), "container", None)
+    if container:
+        await container.audit_log.add_entry(
+            audit_id=audit_log_id,
+            action="failure_pattern_check",
+            details={
+                "failures": failures,
+                "pattern_counts": dict(pattern_counts),
+                "refinement_triggered": refinement_triggered,
+                "action_taken": action_taken,
+            },
+        )
+
+    return {
+        "refinement_triggered": refinement_triggered,
+        "action_taken": action_taken,
+        "audit_log_id": audit_log_id,
     }
