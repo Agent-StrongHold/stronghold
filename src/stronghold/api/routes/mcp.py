@@ -10,6 +10,7 @@ Endpoints for the full MCP lifecycle:
 from __future__ import annotations
 
 import logging
+import re
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Request
@@ -360,3 +361,93 @@ async def remove_server(name: str, request: Request) -> JSONResponse:
 
     container.mcp_registry.remove(name)
     return JSONResponse(content={"message": f"Removed {name}", "status": "removed"})
+
+
+@router.get("/catalog")
+async def get_catalog(request: Request) -> JSONResponse:
+    """Get MCP catalog."""
+    container = request.app.state.container
+    auth_header = request.headers.get("authorization")
+    try:
+        await container.auth_provider.authenticate(auth_header, headers=dict(request.headers))
+    except ValueError as e:
+        raise HTTPException(status_code=401, detail=str(e)) from e
+
+    return JSONResponse(content={"servers": container.mcp_registry.catalog()})
+
+
+@router.post("/lookup")
+async def lookup_library_docs(request: Request) -> JSONResponse:
+    """Lookup library documentation from error message."""
+    container = request.app.state.container
+    body: dict[str, Any] = await request.json()
+    error = body.get("error", "")
+
+    # Extract library name from error message
+    library_name = _extract_library_name(error)
+
+    # Try to get cached docs
+    docs = None
+    if library_name:
+        docs = container.library_docs_cache.get(library_name)
+        if docs:
+            pass
+
+    # If not cached, fetch from Context7 MCP
+    if not docs and library_name:
+        try:
+            docs = await _fetch_library_docs(library_name, container)
+            if docs:
+                container.library_docs_cache[library_name] = docs
+        except Exception as e:
+            logger.warning("Failed to fetch library docs for %s: %s", library_name, e)
+
+    if not docs:
+        docs = {
+            "library_name": library_name,
+            "documentation": "No documentation found",
+            "cached": False,
+        }
+
+    return JSONResponse(content=docs)
+
+
+def _extract_library_name(error: str) -> str | None:
+    """Extract library name from error message."""
+    # Pattern for ImportError: "No module named 'redis.asyncio'"
+    import_pattern = r"No module named '([^']+)'"
+    import_match = re.search(import_pattern, error)
+    if import_match:
+        return import_match.group(1)
+
+    # Pattern for AttributeError: "'FastAPI' object has no attribute 'is_json'"
+    attr_pattern = r"'([^']+)' object has no attribute '([^']+)'"
+    attr_match = re.search(attr_pattern, error)
+    if attr_match:
+        return attr_match.group(1)
+
+    # Pattern for ImportError: "cannot import name 'X' from 'Y'"
+    import_name_pattern = r"cannot import name '[^']+' from '([^']+)'"
+    import_name_match = re.search(import_name_pattern, error)
+    if import_name_match:
+        return import_name_match.group(1)
+
+    return None
+
+
+async def _fetch_library_docs(library_name: str, container) -> dict[str, Any] | None:
+    """Fetch library documentation from Context7 MCP."""
+    try:
+        # Resolve library ID
+        resolve_result = await container.mcp_client.call_tool(
+            "resolve-library-id", {"query": library_name}
+        )
+        library_id = resolve_result.get("library_id")
+        if not library_id:
+            return None
+
+        # Query documentation
+        docs_result = await container.mcp_client.call_tool("query-docs", {"library_id": library_id})
+        return docs_result
+    except Exception:
+        return None

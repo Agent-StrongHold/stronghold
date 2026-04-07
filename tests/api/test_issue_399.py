@@ -28,3 +28,21 @@ class TestImportErrorLibraryLookup:
             # This test should fail initially as the implementation doesn't exist yet
             resp = client.get("/mcp/catalog", headers=AUTH_HEADER)
             assert resp.status_code == 200
+
+
+class TestAttributeErrorLibraryLookup:
+    def test_library_docs_lookup_on_attribute_error(self, app: FastAPI) -> None:
+        with TestClient(app) as client:
+            error_msg = "'FastAPI' object has no attribute 'is_json'"
+            resp = client.post(
+                "/mcp/lookup",
+                headers=AUTH_HEADER,
+                json={"error": error_msg},
+            )
+            assert resp.status_code == 200
+            data = resp.json()
+            assert "library_name" in data
+            assert data["library_name"] == "FastAPI"
+            assert "documentation" in data
+            assert "cached" in data
+            assert data["cached"] is True
