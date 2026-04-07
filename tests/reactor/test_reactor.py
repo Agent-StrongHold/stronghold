@@ -47,6 +47,12 @@ async def run_reactor_briefly(reactor: Reactor, ticks: int = 50) -> None:
     stop_task = asyncio.create_task(_stop_after())
     await reactor.start()
     await stop_task
+    # Drain any in-flight action tasks dispatched during ticks. Without this
+    # the reactor stops the loop but background _run_action tasks may not have
+    # had a chance to run, causing flaky failures on slow CI.
+    pending = [t for t in getattr(reactor, "_active_tasks", set()) if not t.done()]
+    if pending:
+        await asyncio.gather(*pending, return_exceptions=True)
 
 
 # ── Event triggers ───────────────────────────────────────────────
