@@ -19,6 +19,7 @@ import asyncio
 import logging
 from typing import TYPE_CHECKING, Any
 
+from stronghold.router.explainer import explain_selection
 from stronghold.types.model import ModelConfig, ProviderConfig
 from stronghold.types.reactor import Event
 
@@ -616,6 +617,11 @@ class Conduit:
             )
         )
 
+        # Build routing explanation
+        explanation = (
+            explain_selection(selection, intent) if selection else "Fallback routing used."
+        )
+
         return self._build_response(
             response_id=f"stronghold-{intent.task_type}",
             model=model_to_use,
@@ -630,6 +636,7 @@ class Conduit:
                 "model": model_to_use,
                 "agent": agent.identity.name,
                 "reason": selection.reason if selection else "default",
+                "explanation": explanation,
             },
             include_usage=True,
         )
