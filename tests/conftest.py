@@ -20,7 +20,19 @@ Run a tier:
 
 from __future__ import annotations
 
+import os
+
 import pytest
+
+
+# ── Session-wide env hygiene ─────────────────────────────────────────
+# CI sets ROUTER_API_KEY=sk-ci-test-key-minimum-32-characters which
+# overrides any yaml-loaded key. Integration tests hardcode the
+# Authorization header to "sk-example-stronghold" (the example.yaml
+# value), so without forcing this env var the tests would 401 in CI.
+# Using a session-scoped autouse fixture avoids requiring every
+# integration test to know about CI's env layer.
+os.environ["ROUTER_API_KEY"] = "sk-example-stronghold"
 
 from stronghold.types.config import (
     RoutingConfig,
