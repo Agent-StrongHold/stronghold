@@ -48,10 +48,14 @@ class TestLoadConfig:
         config = load_config("/nonexistent/path.yaml")
         assert config.auth.jwks_url == "https://sso.example.com/.well-known/jwks.json"
 
-    def test_valid_yaml_loaded(self, tmp_path: object) -> None:
+    def test_valid_yaml_loaded(
+        self, tmp_path: object, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         """Valid YAML file is parsed and values are applied."""
         import pathlib
 
+        # Ensure env var override does not shadow yaml-provided value
+        monkeypatch.delenv("ROUTER_API_KEY", raising=False)
         good_yaml = pathlib.Path(str(tmp_path)) / "good.yaml"
         good_yaml.write_text("router_api_key: sk-test-from-yaml\n")
         config = load_config(good_yaml)
