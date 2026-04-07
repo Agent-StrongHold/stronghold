@@ -168,7 +168,7 @@ async def org_dashboard(request: Request) -> HTMLResponse:
         return _LOGIN_REDIRECT
     return _serve_page("org.html")
 
-# ── Cost Aggregation API (public — no auth required for GET) ──
+# -- Cost Aggregation API (public — no auth required for GET) --
 
 @router.get("/v1/stronghold/costs")
 async def get_costs(
@@ -327,7 +327,7 @@ def _aggregate_org_costs(outcomes_store, quota_tracker, org_id: str, period: str
         provider_key = outcome.provider
         by_provider[provider_key] = by_provider.get(provider_key, {"cost": 0.0, "count": 0})
         by_provider[provider_key]["cost"] += outcome.cost
-        by_provider[provider_key]["count"] += 1
+        by_provider[key]["count"] += 1
 
         task_type_key = outcome.task_type
         by_task_type[task_type_key] = by_task_type.get(task_type_key, {"cost": 0.0, "count": 0})
@@ -346,7 +346,7 @@ def _aggregate_org_costs(outcomes_store, quota_tracker, org_id: str, period: str
         },
     }
 
-# ── Login & Auth (public — no auth required) ──
+# -- Login & Auth (public — no auth required) --
 
 @router.get("/logout")
 async def logout_redirect() -> HTMLResponse:
@@ -375,7 +375,7 @@ sessionStorage.clear();
 document.cookie.split(';').forEach(function(c){
   var n=c.split('=')[0].trim();
   document.cookie=n+'=;expires=Thu, 01 Jan 1970 00:00:00 GMT;path=/';
-  document.cookie=n+'=;expires=Thu, 01 Jan 1970 00:00:0Id="sidebar-overlay" class="sidebar-overlay"></div>\n<script>\nfunction closeSidebar() { document.getElementById(\\'sidebar\\').classList.remove(\\'open\\'); document.getElementById(\\'sidebar-overlay\\').classList.remove(\\'open\\'); }\n</script>\n</body>\n</html>\n"
+  document.cookie=n+'=;expires=Thu, 01 Jan 1970 0Id="sidebar-overlay" class="sidebar-overlay"></div>\n<script>\nfunction closeSidebar() { document.getElementById(\\'sidebar\\').classList.remove(\\'open\\'); document.getElementById(\\'sidebar-overlay\\').classList.remove(\\'open\\'); }\n</script>\n</body>\n</html>\n"
     )
 
     response = HTMLResponse(content=html)
@@ -428,3 +428,174 @@ async def auth_js() -> Response:
 @router.get("/dashboard/scan-report.js")
 async def scan_report_js() -> Response:
     return _serve_js("scan-report.js")
+
+@router.get("/dashboard/outcomes")
+async def outcomes_dashboard(request: Request) -> HTMLResponse:
+    """The Treasury — outcomes and analytics dashboard."""
+    if not await _check_auth(request):
+        return _LOGIN_REDIRECT
+    return _serve_page("outcomes.html")
+
+@router.get("/v1/stronghold/costs/export")
+async def export_costs(
+    request: Request,
+    group_by: str = "team",
+    period: str = "weekly",
+    format: str = "json",
+) -> Response:
+    """Export cost aggregation data as CSV.
+
+    Returns aggregated cost data grouped by team, user, or org.
+    """
+    container = getattr(getattr(request.app, "state", None), "container", None)
+    if not container:
+        return Response(content="Service unavailable", status_code=503)
+
+    outcomes_store = container.outcomes_store
+    quota_tracker = container.quota_tracker
+
+    if group_by == "team":
+        teams = outcomes_store.list_teams()
+        rows = []
+        for team in teams:
+            costs = _aggregate_team_costs(outcomes_store, quota_tracker, team.id, period)
+            for model in costs["by_model"]:
+                rows.append({
+                    "team_id": team.id,
+                    "team_name": team.name,
+                    "user": None,
+                    "model": model["model"],
+                    "provider": None,
+                    "task_type": None,
+                    "cost": model["cost"],
+                    "count": model["count"],
+                })
+            for provider in costs["by_provider"]:
+                rows.append({
+                    "team_id": team.id,
+                    "team_name": team.name,
+                    "user": None,
+                    "model": None,
+                    "provider": provider["provider"],
+                    "task_type": None,
+                    "cost": provider["cost"],
+                    "count": provider["count"],
+                })
+            for task_type in costs["by_task_type"]:
+                rows.append({
+                    "team_id": team.id,
+                    "team_name": team.name,
+                    "user": None,
+                    "model": None,
+                    "provider": None,
+                    "task_type": task_type["task_type"],
+                    "cost": task_type["cost"],
+                    "count": task_type["count"],
+                })
+    elif group_by == "user":
+        users = outcomes_store.list_users()
+        rows = []
+        for user in users:
+            costs = _aggregate_user_costs(outcomes_store, quota_tracker, user.id, period)
+            for model in costs["by_model"]:
+                rows.append({
+                    "user_id": user.id,
+                    "user_name": user.name,
+                    "team_id": None,
+                    "team_name": None,
+                    "model": model["model"],
+                    "provider": None,
+                    "task_type": None,
+                    "cost": model["cost"],
+                    "count": model["count"],
+                })
+            for provider in costs["by_provider"]:
+                rows.append({
+                    "user_id": user.id,
+                    "user_name": user.name,
+                    "team_id": None,
+                    "team_name": None,
+                    "model": None,
+                    "provider": provider["provider"],
+                    "task_type": None,
+                    "cost": provider["cost"],
+                    "count": provider["count"],
+                })
+            for task_type in costs["by_task_type"]:
+                rows.append({
+                    "user_id": user.id,
+                    "user_name": user.name,
+                    "team_id": None,
+                    "team_name": None,
+                    "model": None,
+                    "provider": None,
+                    "task_type": task_type["task_type"],
+                    "cost": task_type["cost"],
+                    "count": task_type["count"],
+                })
+    elif group_by == "org":
+        orgs = outcomes_store.list_orgs()
+        rows = []
+        for org in orgs:
+            costs = _aggregate_org_costs(outcomes_store, quota_tracker, org.id, period)
+            for model in costs["by_model"]:
+                rows.append({
+                    "org_id": org.id,
+                    "org_name": org.name,
+                    "team_id": None,
+                    "team_name": None,
+                    "user_id": None,
+                    "user_name": None,
+                    "model": model["model"],
+                    "provider": None,
+                    "task_type": None,
+                    "cost": model["cost"],
+                    "count": model["count"],
+                })
+            for provider in costs["by_provider"]:
+                rows.append({
+                    "org_id": org.id,
+                    "org_name": org.name,
+                    "team_id": None,
+                    "team_name": None,
+                    "user_id": None,
+                    "user_name": None,
+                    "model": None,
+                    "provider": provider["provider"],
+                    "task_type": None,
+                    "cost": provider["cost"],
+                    "count": provider["count"],
+                })
+            for task_type in costs["by_task_type"]:
+                rows.append({
+                    "org_id": org.id,
+                    "org_name": org.name,
+                    "team_id": None,
+                    "team_name": None,
+                    "user_id": None,
+                    "user_name": None,
+                    "model": None,
+                    "provider": None,
+                    "task_type": task_type["task_type"],
+                    "cost": task_type["cost"],
+                    "count": task_type["count"],
+                })
+    else:
+        return Response(content="Invalid group_by parameter", status_code=400)
+
+    if format == "csv":
+        import csv
+        from io import StringIO
+
+        output = StringIO()
+        writer = csv.DictWriter(output, fieldnames=["team_id", "team_name", "user_id", "user_name", "org_id", "org_name", "model", "provider", "task_type", "cost", "count"])
+        writer.writeheader()
+        for row in rows:
+            writer.writerow(row)
+        csv_content = output.getvalue()
+        return Response(
+            content=csv_content,
+            media_type="text/csv; charset=utf-8",
+        )
+    else:
+        return Response(content='{"error": "Only CSV format supported"}', status_code=400)

@@ -81,3 +81,19 @@ class TestCostAggregationDashboard:
                     isinstance(week, dict) and "week" in week and "cost" in week
                     for week in costs["trends"]["weekly"]
                 )
+
+    def test_export_team_costs_as_csv(self, app: FastAPI) -> None:
+        with TestClient(app) as client:
+            resp = client.get(
+                "/dashboard/outcomes",
+                headers=AUTH_HEADER,
+                params={"group_by": "team", "period": "weekly", "format": "csv"},
+            )
+            assert resp.status_code == 200
+            assert resp.headers["content-type"] == "text/csv; charset=utf-8"
+            assert "team_id" in resp.text
+            assert "user" in resp.text
+            assert "model" in resp.text
+            assert "provider" in resp.text
+            assert "task_type" in resp.text
+            assert "cost" in resp.text
