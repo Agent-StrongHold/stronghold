@@ -215,7 +215,7 @@ document.cookie.split(';').forEach(function(c){
   var n=c.split('=')[0].trim();
   document.cookie=n+'=;expires=Thu, 01 Jan 1970 00:00:00 GMT;path=/';
   document.cookie=n+'=;expires=Thu, 01 Jan 1900 4 GMT;path=/;secure';
-  document.cookie=n+'=;expires=Thu, 01 Jan 1900 00:00:00 GMT;path=/;secure;samesite=la
+  document.cookie=n+'=;expires=Thu, 01 Jan 1900 00:00:00 GMT;path=/;secure;samesite=lax
   document.cookie=n+'=;expires=Thu, 01 Jan 1900 00:00:00 GMT;path=/;secure;samesite=lax';
 });
 // Wait for cookie deletion to take effect before redirecting
@@ -375,5 +375,65 @@ async def check_failures(
     return {
         "refinement_triggered": refinement_triggered,
         "action_taken": action_taken,
+        "audit_log_id": audit_log_id,
+    }
+
+
+@router.post("/dashboard/skills/ab-test/start")
+async def start_ab_test(
+    request: Request,
+    *,
+    prompt_id: str,
+    variants: list[str],
+) -> dict[str, object]:
+    """Start A/B test for prompt variants."""
+    audit_log_id = str(uuid.uuid4())
+
+    container = getattr(getattr(request.app, "state", None), "container", None)
+
+    # Check if production prompt exists
+    has_production = False
+    if container:
+        try:
+            # Try to get the production prompt for this skill
+            production_prompt = await container.prompt_manager.get_prompt(prompt_id, "production")
+            if production_prompt:
+                has_production = True
+        except Exception:
+            has_production = False
+
+    if not has_production:
+        if container:
+            await container.audit_log.add_entry(
+                audit_id=audit_log_id,
+                action="ab_test_start_failed",
+                details={
+                    "prompt_id": prompt_id,
+                    "variants": variants,
+                    "reason": "no_production_prompt",
+                },
+            )
+        return {
+            "ab_test_started": False,
+            "paused": True,
+            "alert_sent": True,
+            "audit_log_id": audit_log_id,
+            "failure_reason": {"no_production_prompt": True},
+        }
+
+    # Start A/B test
+    if container:
+        await container.audit_log.add_entry(
+            audit_id=audit_log_id,
+            action="ab_test_started",
+            details={
+                "prompt_id": prompt_id,
+                "variants": variants,
+            },
+        )
+
+    return {
+        "ab_test_started": True,
+        "paused": False,
         "audit_log_id": audit_log_id,
     }

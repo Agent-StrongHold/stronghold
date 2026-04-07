@@ -98,3 +98,24 @@ class TestPromptRefinementABTesting:
             assert data["refinement_triggered"] is False
             assert data["action_taken"] == "none"
             assert "audit_log_id" in data
+
+    def test_ab_testing_paused_when_no_production_prompt_available(self, app: FastAPI) -> None:
+        with TestClient(app) as client:
+            # Simulate scenario where no production prompt exists for A/B testing
+            resp = client.post(
+                "/dashboard/skills/ab-test/start",
+                headers=AUTH_HEADER,
+                json={
+                    "prompt_id": "new_feature_prompt",
+                    "variants": ["variant_a", "variant_b"],
+                },
+            )
+            assert resp.status_code == 200
+            data = resp.json()
+            assert data["ab_test_started"] is False
+            assert data["paused"] is True
+            assert "alert_sent" in data
+            assert data["alert_sent"] is True
+            assert "audit_log_id" in data
+            assert "failure_reason" in data
+            assert "no_production_prompt" in data["failure_reason"]
