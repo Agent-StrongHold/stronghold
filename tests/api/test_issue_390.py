@@ -96,3 +96,24 @@ class TestPythonVersionField:
             data = client.get("/v1/stronghold/version").json()
             assert "python_version" in data
             assert data["python_version"] != ""
+
+
+class TestVersionEndpointSuccess:
+    def test_version_endpoint_success_criteria(self, app: FastAPI) -> None:
+        with TestClient(app) as client:
+            resp = client.get("/v1/stronghold/version")
+
+            # Status code should be 200
+            assert resp.status_code == 200
+
+            # Response should be valid JSON
+            data = resp.json()
+            assert isinstance(data, dict)
+
+            # Response should contain required fields
+            assert "version" in data
+            assert "python_version" in data
+            assert "service" in data
+
+            # Service field should be set to "stronghold"
+            assert data["service"] == "stronghold"
