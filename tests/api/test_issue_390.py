@@ -128,3 +128,16 @@ class TestVersionFieldFormat:
             import re
 
             assert re.match(r"^\d+\.\d+\.\d+$", version)
+
+
+class TestPythonVersionFormat:
+    def test_python_version_matches_pep440_pattern(self, app: FastAPI) -> None:
+        import re
+
+        with TestClient(app) as client:
+            data = client.get("/v1/stronghold/version").json()
+            python_version = data["python_version"]
+
+            # PEP 440 compliant version format: major.minor.patch[extra]
+            # e.g., 3.9.7, 3.10.0rc1, 3.11.0a1
+            assert re.match(r"^3\.\d+\.\d+([a-z]\d+)?$", python_version)
