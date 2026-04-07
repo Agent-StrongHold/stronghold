@@ -27,3 +27,57 @@ class TestCostAggregationDashboard:
         with TestClient(app) as client:
             resp = client.get("/dashboard/outcomes", headers=AUTH_HEADER)
             assert resp.status_code == 200
+
+    def test_returns_team_weekly_cost_breakdown(self, app: FastAPI) -> None:
+        with TestClient(app) as client:
+            resp = client.get(
+                "/dashboard/outcomes",
+                headers=AUTH_HEADER,
+                params={"group_by": "team", "period": "weekly"},
+            )
+            assert resp.status_code == 200
+            data = resp.json()
+            assert "teams" in data
+            assert len(data["teams"]) > 0
+            assert all("team_id" in team and "costs" in team for team in data["teams"])
+
+    def test_response_includes_model_provider_task_type_breakdown(self, app: FastAPI) -> None:
+        with TestClient(app) as client:
+            resp = client.get(
+                "/dashboard/outcomes",
+                headers=AUTH_HEADER,
+                params={"group_by": "team", "period": "weekly"},
+            )
+            data = resp.json()
+            for team in data["teams"]:
+                costs = team["costs"]
+                assert "by_model" in costs
+                assert "by_provider" in costs
+                assert "by_task_type" in costs
+                assert all(
+                    isinstance(item, dict) and "cost" in item and "count" in item
+                    for category in [costs["by_model"], costs["by_provider"], costs["by_task_type"]]
+                    for item in category
+                )
+
+    def test_response_includes_cost_trend_data(self, app: FastAPI) -> None:
+        with TestClient(app) as client:
+            resp = client.get(
+                "/dashboard/outcomes",
+                headers=AUTH_HEADER,
+                params={"group_by": "team", "period": "weekly"},
+            )
+            data = resp.json()
+            for team in data["teams"]:
+                costs = team["costs"]
+                assert "trends" in costs
+                assert "daily" in costs["trends"]
+                assert "weekly" in costs["trends"]
+                assert all(
+                    isinstance(day, dict) and "date" in day and "cost" in day
+                    for day in costs["trends"]["daily"]
+                )
+                assert all(
+                    isinstance(week, dict) and "week" in week and "cost" in week
+                    for week in costs["trends"]["weekly"]
+                )
