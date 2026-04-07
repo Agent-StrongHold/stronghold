@@ -131,3 +131,57 @@ class TestCostAggregationDashboard:
                     and alert.get("message") == "Team has used 100% of monthly allocation"
                     for alert in costs["alerts"]
                 )
+
+    def test_cost_optimization_suggestions_include_model_switching_recommendations(
+        self, app: FastAPI
+    ) -> None:
+        with TestClient(app) as client:
+            resp = client.get(
+                "/dashboard/outcomes",
+                headers=AUTH_HEADER,
+                params={"group_by": "team", "period": "weekly", "include_suggestions": "true"},
+            )
+            data = resp.json()
+            for team in data["teams"]:
+                costs = team["costs"]
+                assert "optimization_suggestions" in costs
+                suggestions = costs["optimization_suggestions"]
+                assert any(
+                    suggestion.get("type") == "model_switching" and "cost_savings" in suggestion
+                    for suggestion in suggestions
+                )
+
+    def test_cost_optimization_suggestions_include_model_comparison(self, app: FastAPI) -> None:
+        with TestClient(app) as client:
+            resp = client.get(
+                "/dashboard/outcomes",
+                headers=AUTH_HEADER,
+                params={"group_by": "team", "period": "weekly", "include_suggestions": "true"},
+            )
+            data = resp.json()
+            for team in data["teams"]:
+                costs = team["costs"]
+                suggestions = costs["optimization_suggestions"]
+                assert any(
+                    suggestion.get("type") == "model_comparison" and "task_types" in suggestion
+                    for suggestion in suggestions
+                )
+
+    def test_cost_optimization_suggestions_include_quality_impact_estimates(
+        self, app: FastAPI
+    ) -> None:
+        with TestClient(app) as client:
+            resp = client.get(
+                "/dashboard/outcomes",
+                headers=AUTH_HEADER,
+                params={"group_by": "team", "period": "weekly", "include_suggestions": "true"},
+            )
+            data = resp.json()
+            for team in data["teams"]:
+                costs = team["costs"]
+                suggestions = costs["optimization_suggestions"]
+                assert all(
+                    "quality_impact" in suggestion
+                    for suggestion in suggestions
+                    if suggestion.get("type") in ["model_switching", "model_comparison"]
+                )
