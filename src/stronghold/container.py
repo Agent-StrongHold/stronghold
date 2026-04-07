@@ -88,6 +88,7 @@ class Container:
     mcp_registry: Any = None  # MCPRegistry
     schedule_store: InMemoryScheduleStore = field(default_factory=InMemoryScheduleStore)
     mcp_deployer: Any = None  # K8sDeployer
+    health_monitor: Any = None  # HealthMonitor (monitoring.health)
     conduit: Any = None  # Conduit — wired in __post_init__ or create_container
 
     def __post_init__(self) -> None:
@@ -430,6 +431,11 @@ async def create_container(config: StrongholdConfig) -> Container:
         approval_gate=approval_gate,
     )
 
+    # Health monitor (rolling-window provider/model metrics)
+    from stronghold.monitoring.health import HealthMonitor  # noqa: PLC0415
+
+    health_monitor = HealthMonitor()
+
     # MCP server registry + K8s deployer
     from stronghold.mcp.registry import MCPRegistry  # noqa: PLC0415
 
@@ -481,6 +487,7 @@ async def create_container(config: StrongholdConfig) -> Container:
         prompt_cache=prompt_cache,
         mcp_registry=mcp_registry,
         mcp_deployer=mcp_deployer,
+        health_monitor=health_monitor,
     )
 
     # Conduit pipeline is auto-wired via __post_init__
