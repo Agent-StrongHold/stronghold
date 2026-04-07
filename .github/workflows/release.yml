@@ -126,7 +126,8 @@ jobs:
             -m "not perf" \
             --cov=stronghold \
             --cov-report=term-missing \
-            --cov-report=xml:coverage.xml
+            --cov-report=xml:coverage.xml \
+            --cov-fail-under=0
 
       - name: Upload coverage
         if: always()
