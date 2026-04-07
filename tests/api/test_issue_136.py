@@ -260,3 +260,25 @@ class TestCostAggregationDashboard:
                         alert.get("type") == "budget_threshold" and alert.get("threshold") == 100
                         for alert in costs.get("alerts", [])
                     )
+
+    def test_cost_optimization_suggestions_include_estimated_savings_and_quality_impact(
+        self, app: FastAPI
+    ) -> None:
+        with TestClient(app) as client:
+            resp = client.get(
+                "/dashboard/outcomes",
+                headers=AUTH_HEADER,
+                params={"group_by": "team", "period": "weekly", "include_suggestions": "true"},
+            )
+            data = resp.json()
+            for team in data["teams"]:
+                costs = team["costs"]
+                suggestions = costs.get("optimization_suggestions", [])
+                assert len(suggestions) > 0
+                for suggestion in suggestions:
+                    assert "estimated_savings" in suggestion
+                    assert isinstance(suggestion["estimated_savings"], float)
+                    assert suggestion["estimated_savings"] >= 0
+                    assert "quality_impact" in suggestion
+                    assert isinstance(suggestion["quality_impact"], str)
+                    assert suggestion["quality_impact"] in ["improved", "neutral", "degraded"]
