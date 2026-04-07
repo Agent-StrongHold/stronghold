@@ -199,3 +199,28 @@ class TestCostAggregationDashboard:
                 assert "total_spend" in costs
                 assert isinstance(costs["total_spend"], float)
                 assert costs["total_spend"] >= 0
+
+    def test_exported_csv_has_proper_headers_and_data_formatting(self, app: FastAPI) -> None:
+        with TestClient(app) as client:
+            resp = client.get(
+                "/dashboard/outcomes",
+                headers=AUTH_HEADER,
+                params={"group_by": "team", "period": "weekly", "format": "csv"},
+            )
+            assert resp.status_code == 200
+            lines = resp.text.strip().split("\n")
+            headers = lines[0].split(",")
+            assert headers == [
+                "team_id",
+                "user",
+                "model",
+                "provider",
+                "task_type",
+                "cost",
+                "timestamp",
+            ]
+            assert len(lines) > 1
+            data_line = lines[1].split(",")
+            assert len(data_line) == 7
+            assert all(field.strip() for field in data_line)
+            assert data_line[5].replace(".", "").replace("-", "").isdigit()

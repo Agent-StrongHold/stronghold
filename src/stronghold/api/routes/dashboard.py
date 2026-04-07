@@ -164,11 +164,11 @@ async def mason_dashboard(request: Request) -> HTMLResponse:
 @router.get("/dashboard/org")
 async def org_dashboard(request: Request) -> HTMLResponse:
     """The Throne Room — organization administration dashboard."""
-    if not await _check_auth(request):
+    if not await _check_auth(request:
         return _LOGIN_REDIRECT
     return _serve_page("org.html")
 
-# -- Cost Aggregation API (public — no auth required for GET) --
+# -- Cost Aggregation API (public -- no auth required for GET) --
 
 @router.get("/v1/stronghold/costs")
 @router.get("/v1/stronghold/costs/export")
@@ -251,7 +251,7 @@ def _costs_to_csv(data: dict) -> str:
     writer = csv.writer(output)
 
     if "teams" in data:
-        writer.writerow(["team_id", "team_name", "model", "provider", "task_type", "cost", "count"])
+        writer.writerow(["team_id", "team_name", "user", "model", "provider", "task_type", "cost", "timestamp"])
         for team in data["teams"]:
             costs = team["costs"]
             for category in [costs["by_model"], costs["by_provider"], costs["by_task_type"]]:
@@ -259,14 +259,15 @@ def _costs_to_csv(data: dict) -> str:
                     writer.writerow([
                         team["team_id"],
                         team["team_name"],
+                        "",  # user
                         item.get("model", ""),
                         item.get("provider", ""),
                         item.get("task_type", ""),
                         item.get("cost", 0),
-                        item.get("count", 0),
+                        "",  # timestamp
                     ])
     elif "users" in data:
-        writer.writerow(["user_id", "user_name", "model", "provider", "task_type", "cost", "count"])
+        writer.writerow(["user_id", "user_name", "team", "model", "provider", "task_type", "cost", "timestamp"])
         for user in data["users"]:
             costs = user["costs"]
             for category in [costs["by_model"], costs["by_provider"], costs["by_task_type"]]:
@@ -274,14 +275,15 @@ def _costs_to_csv(data: dict) -> str:
                     writer.writerow([
                         user["user_id"],
                         user["user_name"],
+                        "",  # team
                         item.get("model", ""),
                         item.get("provider", ""),
                         item.get("task_type", ""),
                         item.get("cost", 0),
-                        item.get("count", 0),
+                        "",  # timestamp
                     ])
     elif "orgs" in data:
-        writer.writerow(["org_id", "org_name", "model", "provider", "task_type", "cost", "count"])
+        writer.writerow(["org_id", "org_name", "team", "model", "provider", "task_type", "cost", "timestamp"])
         for org in data["orgs"]:
             costs = org["costs"]
             for category in [costs["by_model"], costs["by_provider"], costs["by_task_type"]]:
@@ -289,11 +291,12 @@ def _costs_to_csv(data: dict) -> str:
                     writer.writerow([
                         org["org_id"],
                         org["org_name"],
+                        "",  # team
                         item.get("model", ""),
                         item.get("provider", ""),
                         item.get("task_type", ""),
                         item.get("cost", 0),
-                        item.get("count", 0),
+                        "",  # timestamp
                     ])
 
     return output.getvalue()
@@ -398,8 +401,8 @@ def _aggregate_user_costs(outcomes_store, quota_tracker, user_id: str, period: s
 
         task_type_key = outcome.task_type
         by_task_type[task_type_key] = by_task_type.get(task_type_key, {"cost": 0.0, "count": 0})
-        by_task_type[task_key]["cost"] += outcome.cost
-        by_task_type[task_key]["count"] += 1
+        by_task_type[task_type_key]["cost"] += outcome.cost
+        by_task_type[task_type_key]["count"] += 1
 
     daily_trend, weekly_trend = outcomes_store.get_user_cost_trends(user_id, period)
 
@@ -507,11 +510,11 @@ def _generate_team_optimization_suggestions(outcomes_store, team_id: str) -> lis
 
     return suggestions
 
-# -- Login & Auth (public — no auth required) --
+# -- Login & Auth (public -- no auth required) --
 
 @router.get("/logout")
 async def logout_redirect() -> HTMLResponse:
-    """Logout — full nuclear option.
+    """Logout -- full nuclear option.
 
     Returns a page that:
     1. Server Set-Cookie headers delete HttpOnly cookies
@@ -563,7 +566,7 @@ async def login_page() -> HTMLResponse:
 
 @router.get("/login/callback")
 async def login_callback() -> HTMLResponse:
-    """OIDC callback — login page JS handles the code exchange."""
+    """OIDC callback -- login page JS handles the code exchange."""
     return _serve_page("login.html")
 
 _NO_CACHE = {
