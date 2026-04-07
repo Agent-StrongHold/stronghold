@@ -352,6 +352,18 @@ def _aggregate_team_costs(outcomes_store, quota_tracker, team_id: str, period: s
                 "threshold": 1.0,
             })
 
+    # Calculate total spend
+    total_spend = sum(outcome.cost for outcome in outcomes)
+
+    # Get optimization suggestions if include_suggestions flag is set
+    optimization_suggestions = []
+    include_suggestions = False
+    if hasattr(outcomes_store, "_include_suggestions"):
+        include_suggestions = outcomes_store._include_suggestions
+
+    if include_suggestions:
+        optimization_suggestions = _generate_team_optimization_suggestions(outcomes_store, team_id)
+
     return {
         "by_model": [{"model": k, **v} for k, v in by_model.items()],
         "by_provider": [{"provider": k, **v} for k, v in by_provider.items()],
@@ -361,6 +373,8 @@ def _aggregate_team_costs(outcomes_store, quota_tracker, team_id: str, period: s
             "weekly": [{"week": w["week"], "cost": w["cost"]} for w in weekly_trend],
         },
         "alerts": alerts,
+        "total_spend": total_spend,
+        "optimization_suggestions": optimization_suggestions,
     }
 
 def _aggregate_user_costs(outcomes_store, quota_tracker, user_id: str, period: str) -> dict:
@@ -384,8 +398,8 @@ def _aggregate_user_costs(outcomes_store, quota_tracker, user_id: str, period: s
 
         task_type_key = outcome.task_type
         by_task_type[task_type_key] = by_task_type.get(task_type_key, {"cost": 0.0, "count": 0})
-        by_task_type[task_type_key]["cost"] += outcome.cost
-        by_task_type[task_type_key]["count"] += 1
+        by_task_type[task_key]["cost"] += outcome.cost
+        by_task_type[task_key]["count"] += 1
 
     daily_trend, weekly_trend = outcomes_store.get_user_cost_trends(user_id, period)
 
@@ -434,6 +448,64 @@ def _aggregate_org_costs(outcomes_store, quota_tracker, org_id: str, period: str
             "weekly": [{"week": w["week"], "cost": w["cost"]} for w in weekly_trend],
         },
     }
+
+def _generate_team_optimization_suggestions(outcomes_store, team_id: str) -> list[dict]:
+    """Generate cost optimization suggestions for a team."""
+    suggestions = []
+
+    # Model switching recommendations
+    outcomes = outcomes_store.get_team_outcomes(team_id)
+    if outcomes:
+        # Group outcomes by task_type and model
+        by_task_model = {}
+        for outcome in outcomes:
+            key = (outcome.task_type, outcome.model)
+            by_task_model[key] = by_task_model.get(key, [])
+            by_task_model[key].append(outcome)
+
+        # Find potential savings by comparing models within task types
+        for (task_type, current_model), model_outcomes in by_task_model.items():
+            total_cost = sum(o.cost for o in model_outcomes)
+            total_count = len(model_outcomes)
+
+            # Simple heuristic: look for cheaper alternatives
+            # In a real implementation, this would use outcome data to compare quality
+            cheaper_models = {
+                "mistral-large": "gemini-flash",
+                "gpt-4": "gpt-3.5-turbo",
+                "claude-3-opus": "claude-3-sonnet",
+            }
+
+            if current_model in cheaper_models:
+                suggested_model = cheaper_models[current_model]
+                estimated_savings = total_cost * 0.3  # 30% savings heuristic
+                quality_impact = "low"  # Default assumption
+
+                suggestions.append({
+                    "type": "model_switching",
+                    "current_model": current_model,
+                    "suggested_model": suggested_model,
+                    "task_type": task_type,
+                    "current_cost": total_cost,
+                    "estimated_savings": estimated_savings,
+                    "cost_savings": estimated_savings,
+                    "quality_impact": quality_impact,
+                    "message": f"Switching from {current_model} to {suggested_model} for {task_type} tasks could save ~${estimated_savings:.2f}/month"
+                })
+
+        # Model comparison recommendations
+        if len(by_task_model) > 1:
+            for task_type in set(k[0] for k in by_task_model.keys()):
+                models_in_task = [k[1] for k in by_task_model.keys() if k[0] == task_type]
+                if len(models_in_task) > 1:
+                    suggestions.append({
+                        "type": "model_comparison",
+                        "task_types": [task_type],
+                        "models": models_in_task,
+                        "message": f"Compare {', '.join(models_in_task)} for {task_type} tasks to find cost-performance balance"
+                    })
+
+    return suggestions
 
 # -- Login & Auth (public — no auth required) --
 

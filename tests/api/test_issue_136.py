@@ -185,3 +185,17 @@ class TestCostAggregationDashboard:
                     for suggestion in suggestions
                     if suggestion.get("type") in ["model_switching", "model_comparison"]
                 )
+
+    def test_team_cost_breakdown_includes_total_spend(self, app: FastAPI) -> None:
+        with TestClient(app) as client:
+            resp = client.get(
+                "/dashboard/outcomes",
+                headers=AUTH_HEADER,
+                params={"group_by": "team", "period": "weekly"},
+            )
+            data = resp.json()
+            for team in data["teams"]:
+                costs = team["costs"]
+                assert "total_spend" in costs
+                assert isinstance(costs["total_spend"], float)
+                assert costs["total_spend"] >= 0
