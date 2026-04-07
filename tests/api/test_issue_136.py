@@ -286,3 +286,19 @@ class TestCostAggregationDashboard:
             assert "teams" in data
             assert len(data["teams"]) == 0
             assert "total_spend" not in data or data.get("total_spend") == 0.0
+
+    def test_invalid_period_parameter_returns_error(self, app: FastAPI) -> None:
+        with TestClient(app) as client:
+            resp = client.get(
+                "/dashboard/outcomes",
+                headers=AUTH_HEADER,
+                params={"group_by": "team", "period": "yearly"},
+            )
+            assert resp.status_code == 422
+            data = resp.json()
+            assert "detail" in data
+            assert any(
+                error.get("loc") == ["query", "period"]
+                and "invalid" in error.get("msg", "").lower()
+                for error in data["detail"]
+            )
