@@ -117,3 +117,14 @@ class TestVersionEndpointSuccess:
 
             # Service field should be set to "stronghold"
             assert data["service"] == "stronghold"
+
+
+class TestVersionFieldFormat:
+    def test_version_field_matches_expected_pattern(self, app: FastAPI) -> None:
+        with TestClient(app) as client:
+            data = client.get("/v1/stronghold/version").json()
+            version = data["version"]
+            assert isinstance(version, str)
+            import re
+
+            assert re.match(r"^\d+\.\d+\.\d+$", version)
