@@ -516,8 +516,8 @@ def _aggregate_org_costs(outcomes_store, quota_tracker, org_id: str, period: str
 
         task_type_key = outcome.task_type
         by_task_type[task_type_key] = by_task_type.get(task_type_key, {"cost": 0.0, "count": 0})
-        by_task_type[task_type_key]["cost"] += outcome.cost
-        by_task_type[task_type_key]["count"] += 1
+        by_task_type[task_type]["cost"] += outcome.cost
+        by_task_type[task_type]["count"] += 1
 
     daily_trend, weekly_trend = outcomes_store.get_org_cost_trends(org_id, period)
 
@@ -618,7 +618,7 @@ sessionStorage.clear();
 document.cookie.split(';').forEach(function(c){
   var n=c.split('=')[0].trim();
   document.cookie=n+'=;expires=Thu, 01 Jan 1970 00:00:00 GMT;path=/';
-  document.cookie=n+'=;expires=Thu, 01 Jan 1970 0Id="sidebar-overlay" class="sidebar-overlay"></div>\n<script>\nfunction closeSidebar() { document.getElementById(\\'sidebar\\').classList.remove(\\'open\\'); document.getElementById(\\'sidebar-overlay\\').classList.remove(\\'open\\'); }\n</script>\n</body>\n</html>\n"
+  document.cookie=n+'=;expires=Thu, 0Id="sidebar-overlay" class="sidebar-overlay"></div>\n<script>\nfunction closeSidebar() { document.getElementById(\\'sidebar\\').classList.remove(\\'open\\'); document.getElementById(\\'sidebar-overlay\\').classList.remove(\\'open\\'); }\n</script>\n</body>\n</html>\n"
     )
 
     response = HTMLResponse(content=html)
