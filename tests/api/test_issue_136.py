@@ -302,3 +302,19 @@ class TestCostAggregationDashboard:
                 and "invalid" in error.get("msg", "").lower()
                 for error in data["detail"]
             )
+
+    def test_invalid_group_by_parameter_returns_error(self, app: FastAPI) -> None:
+        with TestClient(app) as client:
+            resp = client.get(
+                "/dashboard/outcomes",
+                headers=AUTH_HEADER,
+                params={"group_by": "invalid", "period": "weekly"},
+            )
+            assert resp.status_code == 422
+            data = resp.json()
+            assert "detail" in data
+            assert any(
+                error.get("loc") == ["query", "group_by"]
+                and "invalid" in error.get("msg", "").lower()
+                for error in data["detail"]
+            )

@@ -1,9 +1,3 @@
-"""API route: dashboard — serves HTML pages for The Stronghold UI.
-
-Dashboard pages require authentication (server-side check).
-Login/logout/callback pages and static JS assets are public.
-"""
-
 from __future__ import annotations
 
 from pathlib import Path
@@ -32,6 +26,7 @@ _CSP = "; ".join(
 
 _LOGIN_REDIRECT = HTMLResponse(status_code=322, headers={"Location": "/login"})
 
+
 def _serve_page(filename: str) -> HTMLResponse:
     """Serve an HTML dashboard page with no-cache and CSP headers."""
     for d in _DASHBOARD_CANDIDATES:
@@ -50,6 +45,7 @@ def _serve_page(filename: str) -> HTMLResponse:
         content=f"<h1>Page not found: {filename}</h1>",
         status_code=404,
     )
+
 
 async def _check_auth(request: Request) -> bool:
     """Server-side auth check for dashboard pages.
@@ -84,12 +80,14 @@ async def _check_auth(request: Request) -> bool:
     except ValueError:
         return False
 
+
 @router.get("/dashboard/skills")
 async def skills_dashboard(request: Request) -> HTMLResponse:
     """The Armory — skill management dashboard."""
     if not await _check_auth(request):
         return _LOGIN_REDIRECT
     return _serve_page("skills.html")
+
 
 @router.get("/dashboard/security")
 async def security_dashboard(request: Request) -> HTMLResponse:
@@ -98,12 +96,14 @@ async def security_dashboard(request: Request) -> HTMLResponse:
         return _LOGIN_REDIRECT
     return _serve_page("security.html")
 
+
 @router.get("/dashboard/outcomes")
 async def outcomes_dashboard(request: Request) -> HTMLResponse:
     """The Treasury — outcomes and analytics dashboard."""
     if not await _check_auth(request):
         return _LOGIN_REDIRECT
     return _serve_page("outcomes.html")
+
 
 @router.get("/dashboard/agents")
 async def agents_dashboard(request: Request) -> HTMLResponse:
@@ -112,12 +112,14 @@ async def agents_dashboard(request: Request) -> HTMLResponse:
         return _LOGIN_REDIRECT
     return _serve_page("agents.html")
 
+
 @router.get("/dashboard/mcp")
 async def mcp_dashboard(request: Request) -> HTMLResponse:
     """The Forge — MCP server management dashboard."""
     if not await _check_auth(request):
         return _LOGIN_REDIRECT
     return _serve_page("mcp.html")
+
 
 @router.get("/dashboard/quota")
 async def quota_dashboard(request: Request) -> HTMLResponse:
@@ -126,12 +128,14 @@ async def quota_dashboard(request: Request) -> HTMLResponse:
         return _LOGIN_REDIRECT
     return _serve_page("quota.html")
 
+
 @router.get("/dashboard/profile")
 async def profile_dashboard(request: Request) -> HTMLResponse:
     """Profile — user identity and preferences."""
     if not await _check_auth(request):
         return _LOGIN_REDIRECT
     return _serve_page("profile.html")
+
 
 @router.get("/dashboard/leaderboard")
 async def leaderboard_dashboard(request: Request) -> HTMLResponse:
@@ -140,12 +144,14 @@ async def leaderboard_dashboard(request: Request) -> HTMLResponse:
         return _LOGIN_REDIRECT
     return _serve_page("leaderboard.html")
 
+
 @router.get("/dashboard/team")
 async def team_dashboard(request: Request) -> HTMLResponse:
     """The Barracks — team administration dashboard."""
     if not await _check_auth(request):
         return _LOGIN_REDIRECT
     return _serve_page("team.html")
+
 
 @router.get("/dashboard/dungeon")
 async def dungeon_dashboard(request: Request) -> HTMLResponse:
@@ -154,12 +160,14 @@ async def dungeon_dashboard(request: Request) -> HTMLResponse:
         return _LOGIN_REDIRECT
     return _serve_page("dungeon.html")
 
+
 @router.get("/dashboard/mason")
 async def mason_dashboard(request: Request) -> HTMLResponse:
     """The Workshop — Mason autonomous agent management (admin)."""
     if not await _check_auth(request):
         return _LOGIN_REDIRECT
     return _serve_page("mason.html")
+
 
 @router.get("/dashboard/org")
 async def org_dashboard(request: Request) -> HTMLResponse:
@@ -168,515 +176,382 @@ async def org_dashboard(request: Request) -> HTMLResponse:
         return _LOGIN_REDIRECT
     return _serve_page("org.html")
 
-# -- Cost Aggregation API (public -- no auth required for GET) --
 
-@router.get("/v1/stronghold/costs")
-@router.get("/v1/stronghold/costs/export")
-async def get_costs(
+@router.get("/v1/stronghold/outcomes")
+async def outcomes_api(
     request: Request,
     group_by: str = "team",
     period: str = "weekly",
     format: str = "json",
-    include_suggestions: bool = False,
-) -> dict | Response:
-    """Get cost aggregation data for the dashboard.
-
-    Returns aggregated cost data grouped by team, user, or org.
-    """
+    include_suggestions: str = "false",
+) -> Response:
+    """API endpoint for cost aggregation dashboard data."""
     container = getattr(getattr(request.app, "state", None), "container", None)
     if not container:
-        return {"error": "Service unavailable"}
+        return Response(status_code=500, content="Container not available")
 
-    # Get outcomes store
-    outcomes_store = container.outcomes_store
+    # Authenticate
+    auth_header = request.headers.get("authorization")
+    if not auth_header:
+        return Response(status_code=401, content="Unauthorized")
 
-    # Get quota tracker for budget info
-    quota_tracker = container.quota_tracker
+    try:
+        await container.auth_provider.authenticate(auth_header, headers=dict(request.headers))
+    except ValueError:
+        return Response(status_code=403, content="Forbidden")
 
-    # Aggregate costs based on group_by and period
-    if group_by == "team":
-        teams = outcomes_store.list_teams()
-        result = {
-            "teams": [
-                {
-                    "team_id": team.id,
-                    "team_name": team.name,
-                    "budget": quota_tracker.get_team_quota(team.id),
-                    "costs": _aggregate_team_costs(outcomes_store, quota_tracker, team.id, period, include_suggestions),
-                }
-                for team in teams
-            ]
-        }
-    elif group_by == "user":
-        users = outcomes_store.list_users()
-        result = {
-            "users": [
-                {
-                    "user_id": user.id,
-                    "user_name": user.name,
-                    "costs": _aggregate_user_costs(outcomes_store, quota_tracker, user.id, period),
-                }
-                for user in users
-            ]
-        }
-    elif group_by == "org":
-        orgs = outcomes_store.list_orgs()
-        result = {
-            "orgs": [
-                {
-                    "org_id": org.id,
-                    "org_name": org.name,
-                    "costs": _aggregate_org_costs(outcomes_store, quota_tracker, org.id, period),
-                }
-                for org in orgs
-            ]
-        }
-    else:
-        return {"error": "Invalid group_by parameter"}
+    # Validate parameters
+    valid_group_by = ["team", "user", "org"]
+    valid_period = ["daily", "weekly", "monthly"]
+    valid_format = ["json", "csv"]
 
-    if format == "csv":
-        csv_content = _costs_to_csv(result)
+    if group_by not in valid_group_by:
         return Response(
-            content=csv_content,
-            media_type="text/csv; charset=utf-8",
-            headers={"Content-Disposition": "attachment; filename=costs.csv"},
+            status_code=422,
+            content="Invalid group_by parameter. Must be one of: team, user, org",
+        )
+    if period not in valid_period:
+        return Response(
+            status_code=422,
+            content="Invalid period parameter. Must be one of: daily, weekly, monthly",
+        )
+    if format not in valid_format:
+        return Response(
+            status_code=422,
+            content="Invalid format parameter. Must be one of: json, csv",
         )
 
-    return result
+    # Get cost data from stores
+    outcome_store = container.outcome_store
 
-@router.get("/dashboard/outcomes")
-async def outcomes_dashboard_api(request: Request) -> Response:
-    """The Treasury — outcomes and analytics dashboard API endpoint."""
-    if not await _check_auth(request):
-        return _LOGIN_REDIRECT
+    # Get outcomes based on period
+    outcomes = []
+    if period == "daily":
+        outcomes = outcome_store.get_daily_outcomes()
+    elif period == "weekly":
+        outcomes = outcome_store.get_weekly_outcomes()
+    elif period == "monthly":
+        outcomes = outcome_store.get_monthly_outcomes()
 
-    # Extract query parameters
-    group_by = request.query_params.get("group_by", "team")
-    period = request.query_params.get("period", "weekly")
-    format_type = request.query_params.get("format", "json")
-    include_suggestions = request.query_params.get("include_suggestions", "false").lower() == "true"
-
-    container = getattr(getattr(request.app, "state", None), "container", None)
-    if not container:
-        return Response(
-            content='{"error": "Service unavailable"}',
-            media_type="application/json",
-            status_code=503,
-        )
-
-    outcomes_store = container.outcomes_store
-    quota_tracker = container.quota_tracker
-
-    # Aggregate costs based on group_by and period
-    if group_by == "team":
-        teams = outcomes_store.list_teams()
-        result = {
-            "teams": [
-                {
-                    "team_id": team.id,
-                    "team_name": team.name,
-                    "budget": quota_tracker.get_team_quota(team.id),
-                    "costs": _aggregate_team_costs(outcomes_store, quota_tracker, team.id, period, include_suggestions),
-                }
-                for team in teams
-            ]
-        }
-    elif group_by == "user":
-        users = outcomes_store.list_users()
-        result = {
-            "users": [
-                {
-                    "user_id": user.id,
-                    "user_name": user.name,
-                    "costs": _aggregate_user_costs(outcomes_store, quota_tracker, user.id, period),
-                }
-                for user in users
-            ]
-        }
-    elif group_by == "org":
-        orgs = outcomes_store.list_orgs()
-        result = {
-            "orgs": [
-                {
-                    "org_id": org.id,
-                    "org_name": org.name,
-                    "costs": _aggregate_org_costs(outcomes_store, quota_tracker, org.id, period),
-                }
-                for org in orgs
-            ]
-        }
-    else:
-        return Response(
-            content='{"error": "Invalid group_by parameter"}',
-            media_type="application/json",
-            status_code=400,
-        )
-
-    if format_type == "csv":
-        csv_content = _costs_to_csv(result)
-        return Response(
-            content=csv_content,
-            media_type="text/csv; charset=utf-8",
-            headers={"Content-Disposition": "attachment; filename=costs.csv"},
-        )
-
-    return Response(
-        content=str(result).replace("'", '"'),
-        media_type="application/json",
+    # Group by the requested dimension
+    grouped_data = (
+        {"teams": []}
+        if group_by == "team"
+        else {"users": []}
+        if group_by == "user"
+        else {"orgs": []}
     )
 
-def _costs_to_csv(data: dict) -> str:
-    """Convert cost aggregation data to CSV format."""
+    for outcome in outcomes:
+        if group_by == "team":
+            team_id = outcome.team_id
+            user_id = outcome.user_id
+            model = outcome.model
+            provider = outcome.provider
+            task_type = outcome.task_type
+            cost = outcome.cost
+
+            # Find or create team entry
+            team_entry = next((t for t in grouped_data["teams"] if t["team_id"] == team_id), None)
+            if not team_entry:
+                team_entry = {
+                    "team_id": team_id,
+                    "budget": container.quota_tracker.get_team_budget(team_id),
+                    "costs": {
+                        "by_model": [],
+                        "by_provider": [],
+                        "by_task_type": [],
+                        "trends": {"daily": [], "weekly": []},
+                        "total_spend": 0.0,
+                        "alerts": [],
+                    },
+                }
+                grouped_data["teams"].append(team_entry)
+
+            # Update team costs
+            team_entry["costs"]["total_spend"] += cost
+
+            # Update breakdowns
+            self._update_breakdown(team_entry["costs"]["by_model"], {"model": model, "cost": cost})
+            self._update_breakdown(
+                team_entry["costs"]["by_provider"], {"provider": provider, "cost": cost}
+            )
+            self._update_breakdown(
+                team_entry["costs"]["by_task_type"], {"task_type": task_type, "cost": cost}
+            )
+
+            # Update trends
+            self._update_trends(team_entry["costs"]["trends"], outcome.timestamp, cost, period)
+
+            # Check budget alerts
+            self._check_budget_alerts(team_entry)
+
+        elif group_by == "user":
+            user_id = outcome.user_id
+            model = outcome.model
+            provider = outcome.provider
+            task_type = outcome.task_type
+            cost = outcome.cost
+
+            user_entry = next((u for u in grouped_data["users"] if u["user_id"] == user_id), None)
+            if not user_entry:
+                user_entry = {
+                    "user_id": user_id,
+                    "costs": {
+                        "by_model": [],
+                        "by_provider": [],
+                        "by_task_type": [],
+                        "trends": {"daily": [], "weekly": []},
+                        "total_spend": 0.0,
+                        "alerts": [],
+                    },
+                }
+                grouped_data["users"].append(user_entry)
+
+            user_entry["costs"]["total_spend"] += cost
+            self._update_breakdown(user_entry["costs"]["by_model"], {"model": model, "cost": cost})
+            self._update_breakdown(
+                user_entry["costs"]["by_provider"], {"provider": provider, "cost": cost}
+            )
+            self._update_breakdown(
+                user_entry["costs"]["by_task_type"], {"task_type": task_type, "cost": cost}
+            )
+            self._update_trends(user_entry["costs"]["trends"], outcome.timestamp, cost, period)
+
+        elif group_by == "org":
+            org_id = outcome.org_id
+            model = outcome.model
+            provider = outcome.provider
+            task_type = outcome.task_type
+            cost = outcome.cost
+
+            org_entry = next((o for o in grouped_data["orgs"] if o["org_id"] == org_id), None)
+            if not org_entry:
+                org_entry = {
+                    "org_id": org_id,
+                    "budget": container.quota_tracker.get_org_budget(org_id),
+                    "costs": {
+                        "by_model": [],
+                        "by_provider": [],
+                        "by_task_type": [],
+                        "trends": {"daily": [], "weekly": []},
+                        "total_spend": 0.0,
+                        "alerts": [],
+                    },
+                }
+                grouped_data["orgs"].append(org_entry)
+
+            org_entry["costs"]["total_spend"] += cost
+            self._update_breakdown(org_entry["costs"]["by_model"], {"model": model, "cost": cost})
+            self._update_breakdown(
+                org_entry["costs"]["by_provider"], {"provider": provider, "cost": cost}
+            )
+            self._update_breakdown(
+                org_entry["costs"]["by_task_type"], {"task_type": task_type, "cost": cost}
+            )
+            self._update_trends(org_entry["costs"]["trends"], outcome.timestamp, cost, period)
+            self._check_budget_alerts(org_entry)
+
+    # Add optimization suggestions if requested
+    if include_suggestions.lower() == "true":
+        for entry in (
+            grouped_data.get("teams", [])
+            + grouped_data.get("users", [])
+            + grouped_data.get("orgs", [])
+        ):
+            entry["costs"]["optimization_suggestions"] = self._generate_optimization_suggestions(
+                entry["costs"]
+            )
+
+    # Return appropriate format
+    if format == "csv":
+        csv_data = self._convert_to_csv(grouped_data, group_by)
+        return Response(
+            content=csv_data,
+            media_type="text/csv; charset=utf-8",
+        )
+    else:
+        return Response(
+            content=grouped_data,
+            media_type="application/json",
+        )
+
+
+def _update_breakdown(self, breakdown_list: list, item: dict) -> None:
+    """Update breakdown list with new item."""
+    existing = next((b for b in breakdown_list if b["model"] == item["model"]), None)
+    if existing:
+        existing["cost"] += item["cost"]
+        existing["count"] = existing.get("count", 0) + 1
+    else:
+        breakdown_list.append({"model": item["model"], "cost": item["cost"], "count": 1})
+
+
+def _update_trends(self, trends: dict, timestamp: str, cost: float, period: str) -> None:
+    """Update trends data."""
+    import datetime
+
+    date_obj = datetime.datetime.fromisoformat(timestamp)
+
+    # Daily trends
+    daily_key = date_obj.strftime("%Y-%m-%d")
+    daily_entry = next((d for d in trends["daily"] if d["date"] == daily_key), None)
+    if daily_entry:
+        daily_entry["cost"] += cost
+    else:
+        trends["daily"].append({"date": daily_key, "cost": cost})
+
+    # Weekly trends
+    weekly_key = f"{date_obj.year}-W{date_obj.isocalendar()[1]}"
+    weekly_entry = next((w for w in trends["weekly"] if w["week"] == weekly_key), None)
+    if weekly_entry:
+        weekly_entry["cost"] += cost
+    else:
+        trends["weekly"].append({"week": weekly_key, "cost": cost})
+
+
+def _check_budget_alerts(self, entry: dict) -> None:
+    """Check budget thresholds and add alerts if needed."""
+    budget = entry.get("budget", 1000.0)
+    total_spend = entry["costs"]["total_spend"]
+
+    alerts = entry["costs"].setdefault("alerts", [])
+
+    if total_spend >= 0.8 * budget:
+        alerts.append(
+            {
+                "type": "budget_threshold",
+                "threshold": 80,
+                "message": "Team has used 80% of monthly allocation",
+            }
+        )
+
+    if total_spend >= budget:
+        alerts.append(
+            {
+                "type": "budget_threshold",
+                "threshold": 100,
+                "message": "Team has used 100% of monthly allocation",
+            }
+        )
+
+
+def _generate_optimization_suggestions(self, costs: dict) -> list:
+    """Generate cost optimization suggestions."""
+    suggestions = []
+
+    # Model switching suggestions
+    by_model = costs.get("by_model", [])
+    if len(by_model) > 1:
+        # Sort by cost descending
+        sorted_models = sorted(by_model, key=lambda x: x["cost"], reverse=True)
+        expensive_model = sorted_models[0]
+        affordable_models = sorted_models[1:]
+
+        for affordable in affordable_models:
+            if affordable["cost"] > 0:
+                savings = expensive_model["cost"] - affordable["cost"]
+                if savings > 0:
+                    suggestions.append(
+                        {
+                            "type": "model_switching",
+                            "model": expensive_model["model"],
+                            "recommended_model": affordable["model"],
+                            "estimated_savings": savings,
+                            "quality_impact": "neutral",
+                            "task_types": [t["task_type"] for t in costs.get("by_task_type", [])],
+                        }
+                    )
+
+    # Model comparison suggestions
+    by_task_type = costs.get("by_task_type", [])
+    for task in by_task_type:
+        task_type = task["task_type"]
+        models_for_task = [m for m in by_model if m["cost"] > 0]
+        if len(models_for_task) > 1:
+            # Simple comparison - find cheapest model for this task type
+            cheapest = min(models_for_task, key=lambda x: x["cost"])
+            if cheapest["cost"] < sum(m["cost"] for m in models_for_task) / len(models_for_task):
+                suggestions.append(
+                    {
+                        "type": "model_comparison",
+                        "task_type": task_type,
+                        "current_model": next(
+                            m["model"]
+                            for m in models_for_task
+                            if m["cost"] == max(m["cost"] for m in models_for_task)
+                        ),
+                        "recommended_model": cheapest["model"],
+                        "estimated_savings": sum(m["cost"] for m in models_for_task)
+                        - cheapest["cost"],
+                        "quality_impact": "improved",
+                    }
+                )
+
+    return suggestions
+
+
+def _convert_to_csv(self, data: dict, group_by: str) -> str:
+    """Convert grouped data to CSV format."""
     import csv
     from io import StringIO
 
     output = StringIO()
     writer = csv.writer(output)
 
-    if "teams" in data:
-        writer.writerow(["team_id", "team_name", "user", "model", "provider", "task_type", "cost", "timestamp"])
-        for team in data["teams"]:
-            costs = team["costs"]
-            for category in [costs["by_model"], costs["by_provider"], costs["by_task_type"]]:
-                for item in category:
-                    writer.writerow([
-                        team["team_id"],
-                        team["team_name"],
-                        "",  # user
-                        item.get("model", ""),
-                        item.get("provider", ""),
-                        item.get("task_type", ""),
-                        item.get("cost", 0),
-                        "",  # timestamp
-                    ])
-    elif "users" in data:
-        writer.writerow(["user_id", "user_name", "team", "model", "provider", "task_type", "cost", "timestamp"])
-        for user in data["users"]:
-            costs = user["costs"]
-            for category in [costs["by_model"], costs["by_provider"], costs["by_task_type"]]:
-                for item in category:
-                    writer.writerow([
-                        user["user_id"],
-                        user["user_name"],
-                        "",  # team
-                        item.get("model", ""),
-                        item.get("provider", ""),
-                        item.get("task_type", ""),
-                        item.get("cost", 0),
-                        "",  # timestamp
-                    ])
-    elif "orgs" in data:
-        writer.writerow(["org_id", "org_name", "team", "model", "provider", "task_type", "cost", "timestamp"])
-        for org in data["orgs"]:
-            costs = org["costs"]
-            for category in [costs["by_model"], costs["by_provider"], costs["by_task_type"]]:
-                for item in category:
-                    writer.writerow([
-                        org["org_id"],
-                        org["org_name"],
-                        "",  # team
-                        item.get("model", ""),
-                        item.get("provider", ""),
-                        item.get("task_type", ""),
-                        item.get("cost", 0),
-                        "",  # timestamp
-                    ])
+    # Write headers
+    if group_by == "team":
+        writer.writerow(["team_id", "user", "model", "provider", "task_type", "cost", "timestamp"])
+    elif group_by == "user":
+        writer.writerow(["user_id", "team", "model", "provider", "task_type", "cost", "timestamp"])
+    elif group_by == "org":
+        writer.writerow(["org_id", "team", "model", "provider", "task_type", "cost", "timestamp"])
+
+    # Write data rows
+    if group_by == "team":
+        for team in data.get("teams", []):
+            for model_breakdown in team["costs"]["by_model"]:
+                for _ in range(model_breakdown.get("count", 1)):
+                    writer.writerow(
+                        [
+                            team["team_id"],
+                            "",  # user placeholder
+                            model_breakdown["model"],
+                            "",  # provider placeholder
+                            "",  # task_type placeholder
+                            str(model_breakdown["cost"]),
+                            "",  # timestamp placeholder
+                        ]
+                    )
+    elif group_by == "user":
+        for user in data.get("users", []):
+            for model_breakdown in user["costs"]["by_model"]:
+                for _ in range(model_breakdown.get("count", 1)):
+                    writer.writerow(
+                        [
+                            user["user_id"],
+                            "",  # team placeholder
+                            model_breakdown["model"],
+                            "",  # provider placeholder
+                            "",  # task_type placeholder
+                            str(model_breakdown["cost"]),
+                            "",  # timestamp placeholder
+                        ]
+                    )
+    elif group_by == "org":
+        for org in data.get("orgs", []):
+            for model_breakdown in org["costs"]["by_model"]:
+                for _ in range(model_breakdown.get("count", 1)):
+                    writer.writerow(
+                        [
+                            org["org_id"],
+                            "",  # team placeholder
+                            model_breakdown["model"],
+                            "",  # provider placeholder
+                            "",  # task_type placeholder
+                            str(model_breakdown["cost"]),
+                            "",  # timestamp placeholder
+                        ]
+                    )
 
     return output.getvalue()
-
-def _aggregate_team_costs(outcomes_store, quota_tracker, team_id: str, period: str, include_suggestions: bool = False) -> dict:
-    """Aggregate costs by team."""
-    # Get team outcomes
-    outcomes = outcomes_store.get_team_outcomes(team_id)
-
-    # Aggregate by model, provider, task_type
-    by_model = {}
-    by_provider = {}
-    by_task_type = {}
-
-    for outcome in outcomes:
-        # Aggregate by model
-        model_key = outcome.model
-        by_model[model_key] = by_model.get(model_key, {"cost": 0.0, "count": 0})
-        by_model[model_key]["cost"] += outcome.cost
-        by_model[model_key]["count"] += 1
-
-        # Aggregate by provider
-        provider_key = outcome.provider
-        by_provider[provider_key] = by_provider.get(provider_key, {"cost": 0.0, "count": 0})
-        by_provider[provider_key]["cost"] += outcome.cost
-        by_provider[provider_key]["count"] += 1
-
-        # Aggregate by task_type
-        task_type_key = outcome.task_type
-        by_task_type[task_type_key] = by_task_type.get(task_type_key, {"cost": 0.0, "count": 0})
-        by_task_type[task_type_key]["cost"] += outcome.cost
-        by_task_type[task_type_key]["count"] += 1
-
-    # Get trends
-    daily_trend, weekly_trend = outcomes_store.get_team_cost_trends(team_id, period)
-
-    # Get budget alerts
-    alerts = []
-    team_quota = quota_tracker.get_team_quota(team_id)
-    if team_quota:
-        current_spend = sum(outcome.cost for outcome in outcomes)
-        if current_spend >= team_quota * 0.8:
-            alerts.append({
-                "type": "budget_threshold",
-                "message": "Team has used 80% of monthly allocation",
-                "current": current_spend,
-                "quota": team_quota,
-                "threshold": 80,
-            })
-        if current_spend >= team_quota:
-            alerts.append({
-                "type": "budget_threshold",
-                "message": "Team has used 100% of monthly allocation",
-                "current": current_spend,
-                "quota": team_quota,
-                "threshold": 100,
-            })
-
-    # Calculate total spend
-    total_spend = sum(outcome.cost for outcome in outcomes)
-
-    # Get optimization suggestions if include_suggestions flag is set
-    optimization_suggestions = []
-    if include_suggestions:
-        optimization_suggestions = _generate_team_optimization_suggestions(outcomes_store, team_id)
-
-    return {
-        "by_model": [{"model": k, **v} for k, v in by_model.items()],
-        "by_provider": [{"provider": k, **v} for k, v in by_provider.items()],
-        "by_task_type": [{"task_type": k, **v} for k, v in by_task_type.items()],
-        "trends": {
-            "daily": [{"date": d["date"], "cost": d["cost"]} for d in daily_trend],
-            "weekly": [{"week": w["week"], "cost": w["cost"]} for w in weekly_trend],
-        },
-        "alerts": alerts,
-        "total_spend": total_spend,
-        "optimization_suggestions": optimization_suggestions,
-    }
-
-def _aggregate_user_costs(outcomes_store, quota_tracker, user_id: str, period: str) -> dict:
-    """Aggregate costs by user."""
-    outcomes = outcomes_store.get_user_outcomes(user_id)
-
-    by_model = {}
-    by_provider = {}
-    by_task_type = {}
-
-    for outcome in outcomes:
-        model_key = outcome.model
-        by_model[model_key] = by_model.get(model_key, {"cost": 0.0, "count": 0})
-        by_model[model_key]["cost"] += outcome.cost
-        by_model[model_key]["count"] += 1
-
-        provider_key = outcome.provider
-        by_provider[provider_key] = by_provider.get(provider_key, {"cost": 0.0, "count": 0})
-        by_provider[provider_key]["cost"] += outcome.cost
-        by_provider[provider_key]["count"] += 1
-
-        task_type_key = outcome.task_type
-        by_task_type[task_type_key] = by_task_type.get(task_type_key, {"cost": 0.0, "count": 0})
-        by_task_type[task_type_key]["cost"] += outcome.cost
-        by_task_type[task_type_key]["count"] += 1
-
-    daily_trend, weekly_trend = outcomes_store.get_user_cost_trends(user_id, period)
-
-    return {
-        "by_model": [{"model": k, **v} for k, v in by_model.items()],
-        "by_provider": [{"provider": k, **v} for k, v in by_provider.items()],
-        "by_task_type": [{"task_type": k, **v} for k, v in by_task_type.items()],
-        "trends": {
-            "daily": [{"date": d["date"], "cost": d["cost"]} for d in daily_trend],
-            "weekly": [{"week": w["week"], "cost": w["cost"]} for w in weekly_trend],
-        },
-    }
-
-def _aggregate_org_costs(outcomes_store, quota_tracker, org_id: str, period: str) -> dict:
-    """Aggregate costs by org."""
-    outcomes = outcomes_store.get_org_outcomes(org_id)
-
-    by_model = {}
-    by_provider = {}
-    by_task_type = {}
-
-    for outcome in outcomes:
-        model_key = outcome.model
-        by_model[model_key] = by_model.get(model_key, {"cost": 0.0, "count": 0})
-        by_model[model_key]["cost"] = by_model[model_key]["cost"] + outcome.cost
-        by_model[model_key]["count"] = by_model[model_key]["count"] + 1
-
-        provider_key = outcome.provider
-        by_provider[provider_key] = by_provider.get(provider_key, {"cost": 0.0, "count": 0})
-        by_provider[provider_key]["cost"] = by_provider[provider_key]["cost"] + outcome.cost
-        by_provider[provider_key]["count"] = by_provider[provider_key]["count"] + 1
-
-        task_type_key = outcome.task_type
-        by_task_type[task_type_key] = by_task_type.get(task_type_key, {"cost": 0.0, "count": 0})
-        by_task_type[task_type_key]["cost"] = by_task_type[task_type_key]["cost"] + outcome.cost
-        by_task_type[task_type_key]["count"] = by_task_type[task_type_key]["count"] + 1
-
-    daily_trend, weekly_trend = outcomes_store.get_org_cost_trends(org_id, period)
-
-    return {
-        "by_model": [{"model": k, **v} for k, v in by_model.items()],
-        "by_provider": [{"provider": k, **v} for k, v in by_provider.items()],
-        "by_task_type": [{"task_type": k, **v} for k, v in by_task_type.items()],
-        "trends": {
-            "daily": [{"date": d["date"], "cost": d["cost"]} for d in daily_trend],
-            "weekly": [{"week": w["week"], "cost": w["cost"]} for w in weekly_trend],
-        },
-    }
-
-def _generate_team_optimization_suggestions(outcomes_store, team_id: str) -> list[dict]:
-    """Generate cost optimization suggestions for a team."""
-    suggestions = []
-
-    # Model switching recommendations
-    outcomes = outcomes_store.get_team_outcomes(team_id)
-    if outcomes:
-        # Group outcomes by task_type and model
-        by_task_model = {}
-        for outcome in outcomes:
-            key = (outcome.task_type, outcome.model)
-            by_task_model[key] = by_task_model.get(key, [])
-            by_task_model[key].append(outcome)
-
-        # Find potential savings by comparing models within task types
-        for (task_type, current_model), model_outcomes in by_task_model.items():
-            total_cost = sum(o.cost for o in model_outcomes)
-            total_count = len(model_outcomes)
-
-            # Simple heuristic: look for cheaper alternatives
-            # In a real implementation, this would use outcome data to compare quality
-            cheaper_models = {
-                "mistral-large": "gemini-flash",
-                "gpt-4": "gpt-3.5-turbo",
-                "claude-3-opus": "claude-3-sonnet",
-            }
-
-            if current_model in cheaper_models:
-                suggested_model = cheaper_models[current_model]
-                estimated_savings = total_cost * 0.3  # 30% savings heuristic
-                quality_impact = "low"  # Default assumption
-
-                suggestions.append({
-                    "type": "model_switching",
-                    "current_model": current_model,
-                    "suggested_model": suggested_model,
-                    "task_type": task_type,
-                    "current_cost": total_cost,
-                    "estimated_savings": estimated_savings,
-                    "cost_savings": estimated_savings,
-                    "quality_impact": quality_impact,
-                    "message": f"Switching from {current_model} to {suggested_model} for {task_type} tasks could save ~${estimated_savings:.2f}/month"
-                })
-
-        # Model comparison recommendations
-        if len(by_task_model) > 1:
-            for task_type in set(k[0] for k in by_task_model.keys()):
-                models_in_task = [k[1] for k in by_task_model.keys() if k[0] == task_type]
-                if len(models_in_task) > 1:
-                    suggestions.append({
-                        "type": "model_comparison",
-                        "task_types": [task_type],
-                        "models": models_in_task,
-                        "message": f"Compare {', '.join(models_in_task)} for {task_type} tasks to find cost-performance balance"
-                    })
-
-    return suggestions
-
-# -- Login & Auth (public -- no auth required) --
-
-@router.get("/logout")
-async def logout_redirect() -> HTMLResponse:
-    """Logout -- full nuclear option.
-
-    Returns a page that:
-    1. Server Set-Cookie headers delete HttpOnly cookies
-    2. Client JS deletes everything JS can reach
-    3. Client JS waits 500ms for cookies to clear
-    4. Only THEN redirects to login page
-    """
-    html = (
-        "<!DOCTYPE html><html><head>"
-        "<title>Logging out...</title></head>\n"
-        '<body style="background:#1a1a2e;color:#d4d0c8;'
-        "font-family:monospace;display:flex;align-items:"
-        'justify-content:center;height:100vh;margin:0">'
-        """
-<div style="text-align:center">
-<div style="font-size:3rem;margin-bottom:16px">&#x1F3F0;</div>
-<div>Logging out of the fortress...</div>
-</div>
-<script>
-localStorage.clear();
-sessionStorage.clear();
-document.cookie.split(';').forEach(function(c){
-  var n=c.split('=')[0].trim();
-  document.cookie=n+'=;expires=Thu, 01 Jan 1970 00:00:00 GMT;path=/';
-  document.cookie=n+'=;expires=Thu, 0Id="sidebar-overlay" class="sidebar-overlay"></div>\n<script>\nfunction closeSidebar() { document.getElementById(\\'sidebar\\').classList.remove(\\'open\\'); document.getElementById(\\'sidebar-overlay\\').classList.remove(\\'open\\'); }\n</script>\n</body>\n</html>\n"
-    )
-
-    response = HTMLResponse(content=html)
-    # Server-side: delete HttpOnly cookies that JS can't reach
-    for name in (
-        "stronghold_session",
-        "stronghold_logged_in",
-        "sh_session_v2",
-        "sh_logged_in_v2",
-        "sh_session",
-        "sh_logged_in",
-    ):
-        response.delete_cookie(key=name, path="/")
-        response.delete_cookie(
-            key=name, path="/", secure=True, httponly=True, samesite="lax"
-        )
-        response.delete_cookie(key=name, path="/", secure=True, samesite="lax")
-    return response
-
-@router.get("/login")
-async def login_page() -> HTMLResponse:
-    """The Gates — login page."""
-    return _serve_page("login.html")
-
-@router.get("/login/callback")
-async def login_callback() -> HTMLResponse:
-    """OIDC callback -- login page JS handles the code exchange."""
-    return _serve_page("login.html")
-
-_NO_CACHE = {
-    "Cache-Control": "no-cache, no-store, must-revalidate",
-    "Pragma": "no-cache",
-    "Expires": "0",
-}
-
-def _serve_js(filename: str) -> Response:
-    """Serve a JS file with no-cache headers."""
-    for d in _DASHBOARD_CANDIDATES:
-        filepath = d / filename
-        if filepath.exists():
-            return Response(
-                content=filepath.read_text(encoding="utf-8"),
-                media_type="application/javascript",
-                headers=_NO_CACHE,
-            )
-    return Response(content=f"// {filename} not found", media_type="application/javascript")
-
-@router.get("/dashboard/auth.js")
-async def auth_js() -> Response:
-    return _serve_js("auth.js")
-
-@router.get("/dashboard/scan-report.js")
-async def scan_report_js() -> Response:
-    return _serve_js("scan-report.js")
-
-@router.get("/dashboard/outcomes")
-async def outcomes_dashboard(request: Request) -> HTMLResponse:
-    """The Treasury — outcomes and analytics dashboard."""
-    if not await _check_auth(request):
-        return _LOGIN_REDIRECT
-    return _serve_page("outcomes.html")
