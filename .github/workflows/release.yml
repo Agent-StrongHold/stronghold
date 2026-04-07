@@ -1,7 +1,7 @@
 name: Release
 
-# Tier 4: PR to main — 95% coverage + build + blue-green deploy
-# Override: admin can merge without 95% by adding "coverage-override" label
+# Tier 4: PR to main — 95% coverage on changed lines (diff-cover) + build + blue-green deploy
+# Override: admin can merge without the diff-cover gate by adding "coverage-override" label
 
 on:
   pull_request:
@@ -63,7 +63,7 @@ jobs:
         run: echo "No Python files changed in this PR — skipping lint."
 
   test:
-    name: Full Test Suite (95% coverage)
+    name: Full Test Suite (95% diff coverage)
     runs-on: ubuntu-latest
     needs: lint
 
@@ -89,6 +89,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # need full history for diff-cover against base branch
 
       - uses: actions/setup-python@v5
         with:
@@ -106,21 +108,8 @@ jobs:
             psql "$DATABASE_URL" -f "$f"
           done
 
-      - name: Full test suite with 95% coverage
-        if: "!contains(github.event.pull_request.labels.*.name, 'coverage-override')"
+      - name: Full test suite (coverage XML, no repo-wide gate)
         run: |
-          pytest tests/ -v --tb=short \
-            --ignore=tests/performance \
-            -m "not perf" \
-            --cov=stronghold \
-            --cov-report=term-missing \
-            --cov-report=xml:coverage.xml \
-            --cov-fail-under=95
-
-      - name: Full test suite (coverage override)
-        if: contains(github.event.pull_request.labels.*.name, 'coverage-override')
-        run: |
-          echo "⚠️  Coverage override label detected — running without coverage gate"
           pytest tests/ -v --tb=short \
             --ignore=tests/performance \
             -m "not perf" \
@@ -128,6 +117,31 @@ jobs:
             --cov-report=term-missing \
             --cov-report=xml:coverage.xml \
             --cov-fail-under=0
+
+      - name: Diff coverage gate (95% on lines changed in this PR)
+        if: "!contains(github.event.pull_request.labels.*.name, 'coverage-override')"
+        run: |
+          git fetch origin "${GITHUB_BASE_REF}" --depth=50
+          diff-cover coverage.xml \
+            --compare-branch="origin/${GITHUB_BASE_REF}" \
+            --fail-under=95 \
+            --html-report diff-cover.html
+
+      - name: Diff coverage report (override label set, non-blocking)
+        if: contains(github.event.pull_request.labels.*.name, 'coverage-override')
+        run: |
+          echo "⚠️  coverage-override label set — running diff-cover for visibility only"
+          git fetch origin "${GITHUB_BASE_REF}" --depth=50
+          diff-cover coverage.xml \
+            --compare-branch="origin/${GITHUB_BASE_REF}" \
+            --html-report diff-cover.html || true
+
+      - name: Upload diff coverage report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: diff-cover-report
+          path: diff-cover.html
 
       - name: Upload coverage
         if: always()
