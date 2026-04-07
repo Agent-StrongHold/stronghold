@@ -42,11 +42,9 @@ class Warden:
         *,
         llm: LLMClient | None = None,
         classifier_model: str = "auto",
-        semiformal: bool = False,
     ) -> None:
         self._llm = llm
         self._classifier_model = classifier_model
-        self._semiformal = semiformal
 
     async def scan(
         self,
@@ -120,39 +118,26 @@ class Warden:
         # Layer 3: LLM classification (optional, non-blocking)
         # Only runs on tool_result boundary when L1-L2.5 found nothing
         # and an LLM client is configured.
-        # Two modes: binary (single-word) or semi-formal (structured certificate).
         if boundary == "tool_result" and self._llm is not None:
             try:
-                if self._semiformal:
-                    from stronghold.security.warden.semiformal_classifier import (  # noqa: PLC0415
-                        classify_tool_result_semiformal,
-                    )
+                from stronghold.security.warden.llm_classifier import (  # noqa: PLC0415
+                    classify_tool_result,
+                )
 
-                    result = await classify_tool_result_semiformal(
-                        content,
-                        self._llm,
-                        self._classifier_model,
-                    )
-                else:
-                    from stronghold.security.warden.llm_classifier import (  # noqa: PLC0415
-                        classify_tool_result,
-                    )
-
-                    result = await classify_tool_result(
-                        content,
-                        self._llm,
-                        self._classifier_model,
-                    )
+                result = await classify_tool_result(
+                    content,
+                    self._llm,
+                    self._classifier_model,
+                )
 
                 if result.get("label") == "suspicious":
                     model = result.get("model", "?")
-                    mode = "semiformal" if self._semiformal else "binary"
-                    flags.append(f"llm_classification:suspicious (model={model}, mode={mode})")
+                    flags.append(f"llm_classification:suspicious (model={model}, mode=binary)")
                     return WardenVerdict(
                         clean=False,
                         blocked=False,  # L3 flags, never blocks
                         flags=tuple(flags),
-                        confidence=0.85 if self._semiformal else 0.8,
+                        confidence=0.8,
                         reasoning_trace=result.get("reasoning_trace"),
                     )
             except Exception:
