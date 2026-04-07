@@ -605,9 +605,15 @@ class TestCreateAgentsFilesystem:
 
     async def test_seeds_from_real_agents_directory(self) -> None:
         """Smoke test: seed from the actual agents/ directory in the repo."""
-        real_agents_dir = Path("/root/github/stronghold/agents")
-        if not real_agents_dir.is_dir():
-            pytest.skip("Real agents/ directory not available")
+        # Locate the repo's agents/ dir relative to this test file (works
+        # in dev, CI, and any other environment).
+        repo_root = Path(__file__).resolve().parents[2]
+        real_agents_dir = repo_root / "agents"
+        try:
+            if not real_agents_dir.is_dir():
+                pytest.skip("Real agents/ directory not available")
+        except PermissionError:
+            pytest.skip("Cannot access agents/ directory (permission denied)")
 
         prompts = FakePromptManager()
         result = await create_agents(

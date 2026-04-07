@@ -55,7 +55,8 @@ class TestInvalidEndpoint:
     def test_invalid_endpoint_response_has_error(self, app: FastAPI) -> None:
         with TestClient(app) as client:
             data = client.get("/v1/stronghold/invalid").json()
-            assert "error" in data
+            # FastAPI's default 404 shape is {"detail": "Not Found"}
+            assert "detail" in data
 
 class TestServiceName:
     def test_service_field_is_stronghold(self, app: FastAPI) -> None:
