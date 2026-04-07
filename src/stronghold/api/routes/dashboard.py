@@ -30,7 +30,7 @@ _CSP = "; ".join(
     ]
 )
 
-_LOGIN_REDIRECT = HTMLResponse(status_code=302, headers={"Location": "/login"})
+_LOGIN_REDIRECT = HTMLResponse(status_code=322, headers={"Location": "/login"})
 
 def _serve_page(filename: str) -> HTMLResponse:
     """Serve an HTML dashboard page with no-cache and CSP headers."""
@@ -164,7 +164,7 @@ async def mason_dashboard(request: Request) -> HTMLResponse:
 @router.get("/dashboard/org")
 async def org_dashboard(request: Request) -> HTMLResponse:
     """The Throne Room — organization administration dashboard."""
-    if not await _check_auth(request:
+    if not await _check_auth(request):
         return _LOGIN_REDIRECT
     return _serve_page("org.html")
 
@@ -177,6 +177,7 @@ async def get_costs(
     group_by: str = "team",
     period: str = "weekly",
     format: str = "json",
+    include_suggestions: bool = False,
 ) -> dict | Response:
     """Get cost aggregation data for the dashboard.
 
@@ -200,7 +201,8 @@ async def get_costs(
                 {
                     "team_id": team.id,
                     "team_name": team.name,
-                    "costs": _aggregate_team_costs(outcomes_store, quota_tracker, team.id, period),
+                    "budget": quota_tracker.get_team_quota(team.id),
+                    "costs": _aggregate_team_costs(outcomes_store, quota_tracker, team.id, period, include_suggestions),
                 }
                 for team in teams
             ]
@@ -241,6 +243,87 @@ async def get_costs(
         )
 
     return result
+
+@router.get("/dashboard/outcomes")
+async def outcomes_dashboard_api(request: Request) -> Response:
+    """The Treasury — outcomes and analytics dashboard API endpoint."""
+    if not await _check_auth(request):
+        return _LOGIN_REDIRECT
+
+    # Extract query parameters
+    group_by = request.query_params.get("group_by", "team")
+    period = request.query_params.get("period", "weekly")
+    format_type = request.query_params.get("format", "json")
+    include_suggestions = request.query_params.get("include_suggestions", "false").lower() == "true"
+
+    container = getattr(getattr(request.app, "state", None), "container", None)
+    if not container:
+        return Response(
+            content='{"error": "Service unavailable"}',
+            media_type="application/json",
+            status_code=503,
+        )
+
+    outcomes_store = container.outcomes_store
+    quota_tracker = container.quota_tracker
+
+    # Aggregate costs based on group_by and period
+    if group_by == "team":
+        teams = outcomes_store.list_teams()
+        result = {
+            "teams": [
+                {
+                    "team_id": team.id,
+                    "team_name": team.name,
+                    "budget": quota_tracker.get_team_quota(team.id),
+                    "costs": _aggregate_team_costs(outcomes_store, quota_tracker, team.id, period, include_suggestions),
+                }
+                for team in teams
+            ]
+        }
+    elif group_by == "user":
+        users = outcomes_store.list_users()
+        result = {
+            "users": [
+                {
+                    "user_id": user.id,
+                    "user_name": user.name,
+                    "costs": _aggregate_user_costs(outcomes_store, quota_tracker, user.id, period),
+                }
+                for user in users
+            ]
+        }
+    elif group_by == "org":
+        orgs = outcomes_store.list_orgs()
+        result = {
+            "orgs": [
+                {
+                    "org_id": org.id,
+                    "org_name": org.name,
+                    "costs": _aggregate_org_costs(outcomes_store, quota_tracker, org.id, period),
+                }
+                for org in orgs
+            ]
+        }
+    else:
+        return Response(
+            content='{"error": "Invalid group_by parameter"}',
+            media_type="application/json",
+            status_code=400,
+        )
+
+    if format_type == "csv":
+        csv_content = _costs_to_csv(result)
+        return Response(
+            content=csv_content,
+            media_type="text/csv; charset=utf-8",
+            headers={"Content-Disposition": "attachment; filename=costs.csv"},
+        )
+
+    return Response(
+        content=str(result).replace("'", '"'),
+        media_type="application/json",
+    )
 
 def _costs_to_csv(data: dict) -> str:
     """Convert cost aggregation data to CSV format."""
@@ -301,7 +384,7 @@ def _costs_to_csv(data: dict) -> str:
 
     return output.getvalue()
 
-def _aggregate_team_costs(outcomes_store, quota_tracker, team_id: str, period: str) -> dict:
+def _aggregate_team_costs(outcomes_store, quota_tracker, team_id: str, period: str, include_suggestions: bool = False) -> dict:
     """Aggregate costs by team."""
     # Get team outcomes
     outcomes = outcomes_store.get_team_outcomes(team_id)
@@ -344,7 +427,7 @@ def _aggregate_team_costs(outcomes_store, quota_tracker, team_id: str, period: s
                 "message": "Team has used 80% of monthly allocation",
                 "current": current_spend,
                 "quota": team_quota,
-                "threshold": 0.8,
+                "threshold": 80,
             })
         if current_spend >= team_quota:
             alerts.append({
@@ -352,7 +435,7 @@ def _aggregate_team_costs(outcomes_store, quota_tracker, team_id: str, period: s
                 "message": "Team has used 100% of monthly allocation",
                 "current": current_spend,
                 "quota": team_quota,
-                "threshold": 1.0,
+                "threshold": 100,
             })
 
     # Calculate total spend
@@ -360,10 +443,6 @@ def _aggregate_team_costs(outcomes_store, quota_tracker, team_id: str, period: s
 
     # Get optimization suggestions if include_suggestions flag is set
     optimization_suggestions = []
-    include_suggestions = False
-    if hasattr(outcomes_store, "_include_suggestions"):
-        include_suggestions = outcomes_store._include_suggestions
-
     if include_suggestions:
         optimization_suggestions = _generate_team_optimization_suggestions(outcomes_store, team_id)
 

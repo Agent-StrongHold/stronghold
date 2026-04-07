@@ -224,3 +224,21 @@ class TestCostAggregationDashboard:
             assert len(data_line) == 7
             assert all(field.strip() for field in data_line)
             assert data_line[5].replace(".", "").replace("-", "").isdigit()
+
+    def test_budget_alert_at_80_percent_uses_correct_threshold(self, app: FastAPI) -> None:
+        with TestClient(app) as client:
+            resp = client.get(
+                "/dashboard/outcomes",
+                headers=AUTH_HEADER,
+                params={"group_by": "team", "period": "monthly"},
+            )
+            data = resp.json()
+            for team in data["teams"]:
+                costs = team["costs"]
+                total_spend = costs["total_spend"]
+                budget = team.get("budget", 1000.0)
+                if total_spend >= 0.8 * budget:
+                    assert any(
+                        alert.get("type") == "budget_threshold" and alert.get("threshold") == 80
+                        for alert in costs.get("alerts", [])
+                    )
