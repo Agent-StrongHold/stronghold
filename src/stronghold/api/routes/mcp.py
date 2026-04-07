@@ -17,7 +17,7 @@ from fastapi.responses import JSONResponse
 
 logger = logging.getLogger("stronghold.api.mcp")
 
-router = APIRouter(prefix="/v1/stronghold/mcp")
+router = APIRouter(prefix="/mcp")
 
 
 def _check_csrf(request: Request) -> None:
