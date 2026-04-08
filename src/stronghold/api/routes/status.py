@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import time
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Request
@@ -9,6 +10,10 @@ from fastapi import APIRouter, HTTPException, Request
 from stronghold import __version__
 
 router = APIRouter()
+
+# Record start time at module level
+_START_TIME = time.monotonic()
+_STARTED_AT = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
 
 
 @router.get("/health")
@@ -96,5 +101,16 @@ async def version_v1() -> dict[str, Any]:
     return {
         "version": __version__,
         "python_version": sys.version,
+        "service": "stronghold",
+    }
+
+
+@router.get("/v1/stronghold/status/uptime")
+async def uptime() -> dict[str, Any]:
+    """Uptime endpoint — returns how long the service has been running."""
+    uptime_seconds = time.monotonic() - _START_TIME
+    return {
+        "uptime_seconds": uptime_seconds,
+        "started_at": _STARTED_AT,
         "service": "stronghold",
     }
