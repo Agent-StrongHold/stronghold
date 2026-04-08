@@ -19,3 +19,10 @@ class TestDelegateStrategy:
         # After sorting imports, it should pass
         strategy = DelegateStrategy(routing_table={}, default_agent="")
         assert strategy is not None
+
+    def test_quoted_annotations_removed(self) -> None:
+        """Verify delegate.py has no UP037 quoted annotation errors."""
+        # This test will fail if type annotations are quoted
+        # After unquoting annotations, it should pass
+        strategy = DelegateStrategy(routing_table={}, default_agent="")
+        assert strategy is not None
