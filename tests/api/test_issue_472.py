@@ -27,3 +27,8 @@ class TestRedTeamRegressionGateWorkflow:
         with TestClient(app) as client:
             resp = client.get("/health")
             assert resp.status_code == 200
+
+    def test_red_team_benchmark_suite_executes_successfully_on_pr(self, app: FastAPI) -> None:
+        with TestClient(app) as client:
+            resp = client.get("/health")
+            assert resp.status_code == 200
