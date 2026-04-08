@@ -469,3 +469,55 @@ class TestStreamCancellationCleanup:
                 assert len(active_tasks_after) == 0, (
                     "All streaming tasks should be cleaned up after client disconnect"
                 )
+
+
+class TestTextGenerationTokenStreaming:
+    def test_token_events_received_for_text_generation_with_stream_true(self, app: FastAPI) -> None:
+        """Test that token-by-token events are received for text generation when stream=true."""
+        with TestClient(app) as client:
+            payload = {"goal": "Write a short poem about the ocean", "stream": True}
+            response = client.post("/v1/chat/completions", json=payload, headers=AUTH_HEADER)
+
+            assert response.status_code == 200
+            assert response.headers["content-type"] == "text/event-stream; charset=utf-8"
+
+            lines = response.text.split("\n\n")
+            events = [line.replace("data: ", "") for line in lines if line.startswith("data: ")]
+
+            # Should have multiple events including status, tokens, and done/error
+            assert len(events) >= 3, "Should have status, token(s), and completion events"
+
+            # Parse events
+            event_objects = [json.loads(event) for event in events if event]
+
+            # Find token events
+            token_events = [e for e in event_objects if e.get("type") == "token"]
+
+            # Should have multiple token events for text generation
+            assert len(token_events) >= 3, "Should have multiple token events for text generation"
+
+            # Verify token events have proper structure
+            for i, event in enumerate(token_events):
+                assert "token" in event, f"Token event {i} missing 'token' field"
+                assert isinstance(event["token"], str), f"Token event {i} 'token' is not a string"
+                assert len(event["token"]) > 0, f"Token event {i} has empty token"
+                assert "timestamp" in event, f"Token event {i} missing 'timestamp' field"
+
+            # Verify tokens form coherent text (basic check)
+            full_text = "".join(event["token"] for event in token_events)
+            assert len(full_text) > 10, "Generated text should be more than 10 characters"
+
+            # Verify events are in chronological order
+            timestamps = [
+                event["timestamp"] for event in event_objects if event.get("type") == "token"
+            ]
+            assert timestamps == sorted(timestamps), "Token events should be in chronological order"
+
+            # Verify first token event comes after status event
+            if token_events:
+                first_token_idx = event_objects.index(token_events[0])
+                assert first_token_idx > 0, "Token events should come after status event"
+
+                # Verify status event exists
+                status_events = [e for e in event_objects if e.get("type") == "status"]
+                assert len(status_events) > 0, "Should have at least one status event"
