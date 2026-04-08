@@ -32,7 +32,7 @@ def install_skill(
     """Install a skill from a GitHub repository."""
     # Validate URL format and extract skill name
     if not re.match(r"^https://github\.com/[^/]+/[^/]+/?$", repository):
-        raise typer.BadParameter("Invalid GitHub repository URL format")
+        raise typer.BadParameter("Invalid repository URL format")
 
     # Extract skill name from URL
     skill_name = repository.rstrip("/").split("/")[-1]
