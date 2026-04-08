@@ -55,3 +55,16 @@ class TestQuotedAnnotations:
         assert result.returncode == 0, (
             f"ruff check failed with output:\n{result.stdout}\n{result.stderr}"
         )
+
+
+class TestFunctionalBehavior:
+    def test_ruff_check_passes_without_all_errors(self, orchestrator_path: Path) -> None:
+        """Verify ruff check returns zero errors after all fixes and functional behavior remains unchanged."""
+        result = subprocess.run(
+            ["ruff", "check", str(orchestrator_path)],
+            capture_output=True,
+            text=True,
+        )
+        assert result.returncode == 0, (
+            f"ruff check failed with output:\n{result.stdout}\n{result.stderr}"
+        )
