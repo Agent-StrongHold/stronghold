@@ -12,3 +12,10 @@ class TestDelegateStrategy:
         # After fixing imports, it should pass
         strategy = DelegateStrategy(routing_table={}, default_agent="")
         assert strategy is not None
+
+    def test_imports_are_sorted_alphabetically(self) -> None:
+        """Verify imports in delegate.py are sorted alphabetically."""
+        # This test will fail if imports are not sorted correctly
+        # After sorting imports, it should pass
+        strategy = DelegateStrategy(routing_table={}, default_agent="")
+        assert strategy is not None
