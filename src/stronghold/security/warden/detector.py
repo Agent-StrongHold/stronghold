@@ -29,6 +29,20 @@ logger = logging.getLogger("stronghold.warden")
 # all platforms, no SIGALRM needed.
 _PATTERN_TIMEOUT_S = 0.5
 
+# Known prompt injection phrases that should be caught by regex patterns
+PROMPT_INJECTION_PHRASES = [
+    "ignore previous instructions",
+    "forget what you were told",
+    "new instructions",
+    "instead of",
+    "disregard the above",
+    "do anything else",
+    "write a poem about hacking",
+    "bypass your safety",
+    "override your programming",
+    "as an unrestricted ai",
+]
+
 
 class Warden:
     """Threat detector. Runs at user_input and tool_result boundaries only.
