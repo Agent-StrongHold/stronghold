@@ -27,3 +27,15 @@ class TestF541Fix:
 
         result = await get_redis("redis://localhost:6379/0")
         assert result is mock_redis
+
+    @patch("stronghold.cache.redis_pool.aioredis.from_url")
+    async def test_no_f541_error_in_close_redis(self, mock_from_url: AsyncMock) -> None:
+        mock_redis = AsyncMock()
+        mock_redis.ping = AsyncMock(return_value=True)
+        mock_redis.aclose = AsyncMock()
+        mock_from_url.return_value = mock_redis
+
+        await get_redis()
+        close_redis = AsyncMock()
+        await close_redis()
+        mock_redis.aclose.assert_called_once()
