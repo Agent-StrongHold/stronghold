@@ -485,6 +485,7 @@ class RateAgentRequest(BaseModel):
 @router.get("")
 async def list_agents(
     request: Request,
+    query: str = "",
 ) -> JSONResponse:
     """List all available agents in the marketplace."""
     await _require_auth(request)
@@ -528,7 +529,6 @@ async def list_agents(
     ]
 
     # Apply search filter if query parameter is provided
-    query = request.query_params.get("query", "").lower()
     if query:
         mock_agents = [
             agent
@@ -592,6 +592,36 @@ async def rate_agent(
             "status": "rated",
         }
     )
+
+
+@router.get("/agents/{agent_id}/manifest")
+async def view_agent_manifest(
+    agent_id: str,
+    request: Request,
+) -> JSONResponse:
+    """View the signed manifest for an installed agent."""
+    await _require_auth(request)
+
+    # Mock manifest data for testing
+    mock_manifests = {
+        "data-processing-agent-123": {
+            "agent_id": "data-processing-agent-123",
+            "manifest": {
+                "name": "Data Processing Agent",
+                "description": "Processes and transforms data files",
+                "version": "1.0.0",
+                "author": "Stronghold Team",
+                "trust_tier": "T3",
+                "capabilities": ["data-processing", "file-operations"],
+            },
+            "signature": "mock-signature-for-data-processing-agent-123",
+        }
+    }
+
+    if agent_id not in mock_manifests:
+        raise HTTPException(status_code=404, detail="Agent manifest not found")
+
+    return JSONResponse(content=mock_manifests[agent_id])
 
 
 def _github_raw_url(repo_url: str, filename: str) -> str | None:

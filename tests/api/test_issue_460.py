@@ -104,3 +104,30 @@ class TestRateAgentEndpoint:
             assert agent_data is not None
             assert "rating" in agent_data
             assert agent_data["rating"] == rating
+
+
+class TestViewAgentManifestEndpoint:
+    def test_view_signed_manifest_for_installed_agent(self, app: FastAPI) -> None:
+        with TestClient(app) as client:
+            agent_id = "data-processing-agent-123"
+            resp = client.get(
+                f"/v1/stronghold/marketplace/agents/{agent_id}/manifest",
+                headers=AUTH_HEADER,
+            )
+            assert resp.status_code == 200
+            data = resp.json()
+            assert "manifest" in data
+            assert "signature" in data
+            assert "agent_id" in data
+            assert data["agent_id"] == agent_id
+
+    def test_view_manifest_returns_404_for_unknown_agent(self, app: FastAPI) -> None:
+        with TestClient(app) as client:
+            unknown_agent_id = "non-existent-agent-999"
+            resp = client.get(
+                f"/v1/stronghold/marketplace/agents/{unknown_agent_id}/manifest",
+                headers=AUTH_HEADER,
+            )
+            assert resp.status_code == 404
+            data = resp.json()
+            assert "detail" in data
