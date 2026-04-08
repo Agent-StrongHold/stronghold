@@ -47,3 +47,47 @@ class TestAgentStreaming:
             final_event = json.loads(events[-1])
             assert final_event["type"] == "done"
             assert "content" in final_event
+
+    def test_stream_includes_tool_call_and_result_events(self, app: FastAPI) -> None:
+        with TestClient(app) as client:
+            payload = {"goal": "Use the list_files tool", "stream": True}
+            response = client.post(
+                "/v1/stronghold/request/stream", json=payload, headers=AUTH_HEADER
+            )
+
+            assert response.status_code == 200
+            assert response.headers["content-type"] == "text/event-stream; charset=utf-8"
+
+            lines = response.text.split("\n\n")
+            events = [line.replace("data: ", "") for line in lines if line.startswith("data: ")]
+
+            # Parse all events to check for tool_call and tool_result types
+            event_objects = [json.loads(event) for event in events if event]
+
+            # Find tool_call and tool_result events
+            tool_events = [e for e in event_objects if e["type"] in ("tool_call", "tool_result")]
+
+            assert len(tool_events) >= 2, (
+                "Should have at least one tool_call and one tool_result event"
+            )
+
+            # Verify order: tool_call should come before tool_result
+            for i in range(len(tool_events) - 1):
+                if tool_events[i]["type"] == "tool_call":
+                    assert tool_events[i + 1]["type"] == "tool_result", (
+                        "tool_result should immediately follow tool_call"
+                    )
+
+            # Verify tool_call has required fields
+            tool_call_events = [e for e in tool_events if e["type"] == "tool_call"]
+            for event in tool_call_events:
+                assert "tool_name" in event
+                assert "arguments" in event
+                assert "call_id" in event
+
+            # Verify tool_result has required fields
+            tool_result_events = [e for e in tool_events if e["type"] == "tool_result"]
+            for event in tool_result_events:
+                assert "tool_name" in event
+                assert "result" in event
+                assert "call_id" in event
