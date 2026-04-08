@@ -371,7 +371,7 @@ class TestToolExecutionStreaming:
             )
 
             assert response.status_code == 200
-            assert response.headers["content-type"] == "text/event-stream; charset=utf-8"
+            assert response.headers["content-type"] == "text-event-stream; charset=utf-8"
 
             lines = response.text.split("\n\n")
             events = [line.replace("data: ", "") for line in lines if line.startswith("data: ")]
@@ -549,3 +549,50 @@ class TestWardenStreamingInterceptionWithChatCompletions:
                 assert "scan_id" in audit
                 assert isinstance(audit["scanned"], bool)
                 assert audit["scanned"] is True
+
+
+class TestErrorEventDuringStreaming:
+    def test_error_event_structure_during_streaming(self, app: FastAPI) -> None:
+        """Test that error events during streaming have the correct structure and details."""
+        with TestClient(app) as client:
+            # Use a goal that will trigger an error during streaming
+            payload = {"goal": "Trigger an error during streaming", "stream": True}
+            response = client.post("/v1/chat/completions", json=payload, headers=AUTH_HEADER)
+
+            assert response.status_code == 200
+            assert response.headers["content-type"] == "text/event-stream; charset=utf-8"
+
+            lines = response.text.split("\n\n")
+            events = [line.replace("data: ", "") for line in lines if line.startswith("data: ")]
+
+            # Parse all events
+            event_objects = [json.loads(event) for event in events if event]
+
+            # Find error event
+            error_events = [e for e in event_objects if e.get("type") == "error"]
+
+            # Should have at least one error event
+            assert len(error_events) > 0, "Should have at least one error event during streaming"
+
+            # Verify error event structure
+            error_event = error_events[0]
+            assert "error" in error_event
+            assert "message" in error_event["error"]
+            assert "type" in error_event["error"]
+            assert "details" in error_event["error"]
+            assert "timestamp" in error_event
+
+            # Verify error details structure
+            error_details = error_event["error"]
+            assert isinstance(error_details["message"], str)
+            assert len(error_details["message"]) > 0
+            assert isinstance(error_details["type"], str)
+            assert isinstance(error_details["details"], dict)
+
+            # Verify error type is appropriate
+            assert error_details["type"] in ["internal_error", "validation_error", "tool_error"]
+
+            # Verify error details contains useful information
+            if error_details["type"] == "tool_error":
+                assert "tool_name" in error_details["details"]
+                assert "error_message" in error_details["details"]

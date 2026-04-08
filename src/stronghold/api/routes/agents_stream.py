@@ -198,6 +198,8 @@ async def chat_completions(request: Request) -> StreamingResponse | dict[str, An
     # Status queue for progress updates
     status_queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
     token_queue: asyncio.Queue[str] = asyncio.Queue()
+    tool_call_queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
+    tool_result_queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
 
     async def status_cb(msg: str) -> None:
         """Push status updates into the SSE queue."""
@@ -206,6 +208,23 @@ async def chat_completions(request: Request) -> StreamingResponse | dict[str, An
     async def token_cb(token: str) -> None:
         """Push token updates into the token queue."""
         await token_queue.put(token)
+
+    async def tool_call_cb(tool_name: str, arguments: str, call_id: str) -> None:
+        """Push tool call updates into the tool call queue."""
+        await tool_call_queue.put(
+            {
+                "type": "tool_call",
+                "tool_name": tool_name,
+                "arguments": arguments,
+                "call_id": call_id,
+            }
+        )
+
+    async def tool_result_cb(tool_name: str, result: str, call_id: str) -> None:
+        """Push tool result updates into the tool result queue."""
+        await tool_result_queue.put(
+            {"type": "tool_result", "tool_name": tool_name, "result": result, "call_id": call_id}
+        )
 
     async def run_chat() -> dict[str, Any]:
         """Run the chat pipeline, posting status updates to the queue."""
@@ -216,6 +235,8 @@ async def chat_completions(request: Request) -> StreamingResponse | dict[str, An
                 auth=auth_ctx,
                 status_callback=status_cb,
                 token_callback=token_cb,
+                tool_call_callback=tool_call_cb,
+                tool_result_callback=tool_result_cb,
             )
         except QuotaExhaustedError as e:
             await status_queue.put({"type": "error", "message": f"Quota exhausted: {e.detail}"})
@@ -244,7 +265,7 @@ async def chat_completions(request: Request) -> StreamingResponse | dict[str, An
         return result
 
     async def stream_events() -> Any:
-        """Yield SSE events: status updates, tokens, then final result."""
+        """Yield SSE events: status updates, tool calls/results, tokens, then final result."""
         task = asyncio.create_task(run_chat())
 
         yield _sse({"type": "status", "message": "Starting..."})
@@ -269,6 +290,42 @@ async def chat_completions(request: Request) -> StreamingResponse | dict[str, An
                 yield _sse(update)
                 if update.get("type") == "done":
                     return
+            except TimeoutError:
+                pass
+
+            # Check tool call queue
+            try:
+                tool_call = await asyncio.wait_for(tool_call_queue.get(), timeout=0.0)
+                tool_call_event = tool_call
+                if warden_verdict:
+                    tool_call_event["warden_audit"] = {
+                        "scanned_at": warden_verdict.scanned_at.isoformat()
+                        if hasattr(warden_verdict, "scanned_at")
+                        else None,
+                        "scan_id": warden_verdict.scan_id
+                        if hasattr(warden_verdict, "scan_id")
+                        else None,
+                        "scanned": warden_verdict.clean,
+                    }
+                yield _sse(tool_call_event)
+            except TimeoutError:
+                pass
+
+            # Check tool result queue
+            try:
+                tool_result = await asyncio.wait_for(tool_result_queue.get(), timeout=0.0)
+                tool_result_event = tool_result
+                if warden_verdict:
+                    tool_result_event["warden_audit"] = {
+                        "scanned_at": warden_verdict.scanned_at.isoformat()
+                        if hasattr(warden_verdict, "scanned_at")
+                        else None,
+                        "scan_id": warden_verdict.scan_id
+                        if hasattr(warden_verdict, "scan_id")
+                        else None,
+                        "scanned": warden_verdict.clean,
+                    }
+                yield _sse(tool_result_event)
             except TimeoutError:
                 pass
 
