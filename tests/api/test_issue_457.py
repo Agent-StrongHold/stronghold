@@ -218,3 +218,102 @@ class TestErrorStreaming:
             assert len(error_details["message"]) > 0
             assert isinstance(error_details["type"], str)
             assert isinstance(error_details["details"], dict)
+
+
+class TestEventOrderingValidation:
+    def test_events_received_in_correct_order_for_streaming_agent(self, app: FastAPI) -> None:
+        """Test that events are received in the correct order: start, tool_call/tool_result, token, finish/error."""
+        with TestClient(app) as client:
+            payload = {
+                "goal": "Use the list_files tool and then write a short summary",
+                "stream": True,
+            }
+            response = client.post(
+                "/v1/stronghold/request/stream", json=payload, headers=AUTH_HEADER
+            )
+
+            assert response.status_code == 200
+            assert response.headers["content-type"] == "text/event-stream; charset=utf-8"
+
+            lines = response.text.split("\n\n")
+            events = [line.replace("data: ", "") for line in lines if line.startswith("data: ")]
+
+            # Parse all events
+            event_objects = [json.loads(event) for event in events if event]
+
+            # Find specific event types
+            status_events = [e for e in event_objects if e.get("type") == "status"]
+            tool_call_events = [e for e in event_objects if e.get("type") == "tool_call"]
+            tool_result_events = [e for e in event_objects if e.get("type") == "tool_result"]
+            token_events = [e for e in event_objects if e.get("type") == "token"]
+            [e for e in event_objects if e.get("type") == "done"]
+            error_events = [e for e in event_objects if e.get("type") == "error"]
+
+            # Verify at least one status event exists (start)
+            assert len(status_events) > 0, "Should have at least one status event"
+
+            # Verify events follow the expected order
+            all_events = event_objects
+            first_event = all_events[0]
+            assert first_event["type"] == "status", "First event should be a status event"
+
+            # Find the last non-error event
+            last_valid_index = len(all_events) - 1
+            if error_events:
+                last_valid_index = event_objects.index(error_events[0]) - 1
+
+            last_event = all_events[last_valid_index]
+            assert last_event["type"] in ("done", "error"), "Last event should be done or error"
+
+            # Verify tool events (if any) come after status and before token events
+            if tool_call_events:
+                first_tool_index = event_objects.index(tool_call_events[0])
+                assert first_tool_index > 0, "Tool call event should not be the first event"
+
+                # Verify tool_call is followed by tool_result
+                for i in range(len(tool_call_events)):
+                    if i < len(tool_result_events):
+                        tool_call_idx = event_objects.index(tool_call_events[i])
+                        tool_result_idx = event_objects.index(tool_result_events[i])
+                        assert tool_result_idx > tool_call_idx, (
+                            "tool_result should come after tool_call"
+                        )
+
+            # Verify token events (if any) come after tool events
+            if token_events:
+                first_token_index = event_objects.index(token_events[0])
+                if tool_result_events:
+                    last_tool_result_index = event_objects.index(tool_result_events[-1])
+                    assert first_token_index > last_tool_result_index, (
+                        "Token events should come after tool_result events"
+                    )
+
+            # Verify overall sequence: status -> (tool_call -> tool_result)* -> token* -> (done|error)
+            expected_sequence = ["status"]
+            if tool_call_events:
+                expected_sequence.extend(["tool_call", "tool_result"])
+            if token_events:
+                expected_sequence.extend(["token"])
+            expected_sequence.extend(["done", "error"])
+
+            actual_types = [e["type"] for e in all_events]
+            valid_sequence = True
+
+            # Check that the sequence follows the expected pattern
+            tool_pairs = 0
+            for i in range(len(actual_types)):
+                current_type = actual_types[i]
+
+                # Handle tool_call -> tool_result pairs
+                if current_type == "tool_call":
+                    if i + 1 < len(actual_types) and actual_types[i + 1] == "tool_result":
+                        tool_pairs += 1
+                        i += 1  # Skip the next item as we've processed the pair
+                    else:
+                        valid_sequence = False
+                        break
+                elif current_type not in ["status", "token", "done", "error"]:
+                    valid_sequence = False
+                    break
+
+            assert valid_sequence, "Events should follow the expected sequence pattern"

@@ -167,16 +167,22 @@ async def chat_completions(request: Request) -> StreamingResponse | dict[str, An
         raise HTTPException(status_code=400, detail="'messages' is required")
 
     # Warden scan the first user message
+    warden_verdict = None
     if messages and messages[0].get("role") == "user":
         warden_verdict = await container.warden.scan(messages[0].get("content", ""), "user_input")
         if not warden_verdict.clean:
+            if stream:
 
-            async def blocked_stream() -> Any:
-                yield _sse(
-                    {"type": "error", "message": f"Blocked: {', '.join(warden_verdict.flags)}"}
+                async def blocked_stream() -> Any:
+                    yield _sse(
+                        {"type": "error", "message": f"Blocked: {', '.join(warden_verdict.flags)}"}
+                    )
+
+                return StreamingResponse(blocked_stream(), media_type="text/event-stream")
+            else:
+                raise HTTPException(
+                    status_code=400, detail=f"Blocked: {', '.join(warden_verdict.flags)}"
                 )
-
-            return StreamingResponse(blocked_stream(), media_type="text/event-stream")
 
     if not stream:
         # Non-streaming path
@@ -241,15 +247,16 @@ async def chat_completions(request: Request) -> StreamingResponse | dict[str, An
             try:
                 update = await asyncio.wait_for(status_queue.get(), timeout=1.0)
                 # Add Warden audit to each event
-                update["warden_audit"] = {
-                    "scanned_at": warden_verdict.scanned_at.isoformat()
-                    if hasattr(warden_verdict, "scanned_at")
-                    else None,
-                    "scan_id": warden_verdict.scan_id
-                    if hasattr(warden_verdict, "scan_id")
-                    else None,
-                    "scanned": warden_verdict.clean,
-                }
+                if warden_verdict:
+                    update["warden_audit"] = {
+                        "scanned_at": warden_verdict.scanned_at.isoformat()
+                        if hasattr(warden_verdict, "scanned_at")
+                        else None,
+                        "scan_id": warden_verdict.scan_id
+                        if hasattr(warden_verdict, "scan_id")
+                        else None,
+                        "scanned": warden_verdict.clean,
+                    }
                 yield _sse(update)
                 if update.get("type") == "done":
                     return
@@ -268,24 +275,30 @@ async def chat_completions(request: Request) -> StreamingResponse | dict[str, An
                 "model": result.get("model", ""),
             }
             # Add Warden audit to final event
-            final_event["warden_audit"] = {
-                "scanned_at": warden_verdict.scanned_at.isoformat()
-                if hasattr(warden_verdict, "scanned_at")
-                else None,
-                "scan_id": warden_verdict.scan_id if hasattr(warden_verdict, "scan_id") else None,
-                "scanned": warden_verdict.clean,
-            }
+            if warden_verdict:
+                final_event["warden_audit"] = {
+                    "scanned_at": warden_verdict.scanned_at.isoformat()
+                    if hasattr(warden_verdict, "scanned_at")
+                    else None,
+                    "scan_id": warden_verdict.scan_id
+                    if hasattr(warden_verdict, "scan_id")
+                    else None,
+                    "scanned": warden_verdict.clean,
+                }
             yield _sse(final_event)
         except Exception as e:
             error_event = {"type": "error", "message": str(e)}
             # Add Warden audit to error event
-            error_event["warden_audit"] = {
-                "scanned_at": warden_verdict.scanned_at.isoformat()
-                if hasattr(warden_verdict, "scanned_at")
-                else None,
-                "scan_id": warden_verdict.scan_id if hasattr(warden_verdict, "scan_id") else None,
-                "scanned": warden_verdict.clean,
-            }
+            if warden_verdict:
+                error_event["warden_audit"] = {
+                    "scanned_at": warden_verdict.scanned_at.isoformat()
+                    if hasattr(warden_verdict, "scanned_at")
+                    else None,
+                    "scan_id": warden_verdict.scan_id
+                    if hasattr(warden_verdict, "scan_id")
+                    else None,
+                    "scanned": warden_verdict.clean,
+                }
             yield _sse(error_event)
 
     return StreamingResponse(stream_events(), media_type="text/event-stream")
