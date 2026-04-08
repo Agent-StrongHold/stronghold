@@ -37,6 +37,7 @@ async def structured_request_stream(request: Request) -> StreamingResponse:
     details = body.get("details", "")
     repo = body.get("repo", "")
     session_id: str | None = body.get("session_id")
+    body.get("stream", False)
 
     if not goal:
         raise HTTPException(status_code=400, detail="'goal' is required")
