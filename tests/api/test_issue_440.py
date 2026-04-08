@@ -36,3 +36,16 @@ class TestAgentsRouteUnusedImports:
         assert result.returncode == 0, (
             f"ruff check failed with output:\n{result.stdout}\n{result.stderr}"
         )
+
+    def test_imports_are_sorted_alphabetically(self, app: FastAPI) -> None:
+        """Verify imports in agents.py are sorted alphabetically."""
+        import subprocess  # noqa: PLC0415
+
+        result = subprocess.run(
+            ["ruff", "check", "--select", "I001", "src/stronghold/api/routes/agents.py"],
+            capture_output=True,
+            text=True,
+        )
+        assert result.returncode == 0, (
+            f"Imports are not sorted alphabetically:\n{result.stdout}\n{result.stderr}"
+        )
