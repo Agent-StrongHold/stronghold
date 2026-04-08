@@ -35,6 +35,9 @@ htmlcov/
 *.key
 *secrets*
 *credentials*
+# Allow documentation that discusses the secrets approach (no actual secrets)
+!docs/adr/*secrets*.md
+!docs/**/*secrets*.md
 
 # OS
 .DS_Store
