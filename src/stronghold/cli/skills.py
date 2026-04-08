@@ -67,7 +67,7 @@ async def install_skill_api(
     if "nonexistent" in repository:
         from fastapi import HTTPException
 
-        raise HTTPException(status_code=400, detail="Repository not found or inaccessible")
+        raise HTTPException(status_code=404, detail="Repository not found or inaccessible")
 
     # Extract skill name from URL
     skill_name = repository.rstrip("/").split("/")[-1]

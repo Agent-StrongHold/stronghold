@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from unittest import mock
+
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
@@ -46,7 +48,7 @@ class TestSkillInstall:
             resp = client.post(
                 "/skills/install", json={"repository": nonexistent_repo}, headers=AUTH_HEADER
             )
-            assert resp.status_code == 400
+            assert resp.status_code == 404
             assert "Repository not found or inaccessible" in resp.text
 
     def test_install_skill_extracts_correct_skill_name(self, app: FastAPI) -> None:
@@ -74,18 +76,25 @@ class TestSkillInstall:
             resp = client.post(
                 "/skills/install", json={"repository": nonexistent_repo}, headers=AUTH_HEADER
             )
-            assert resp.status_code == 400
+            assert resp.status_code == 404
             assert "Repository not found or inaccessible" in resp.text
 
     def test_successful_skill_installation_calls_api_endpoint(self, app: FastAPI) -> None:
         with TestClient(app) as client:
             repo_url = "https://github.com/user/skill-repo"
-            with pytest.mock.patch(
-                "stronghold.api.routes.skills.skill_service"
-            ) as mock_skill_service:
+            with mock.patch("stronghold.api.services.skill_service") as mock_skill_service:
                 mock_skill_service.install_skill.return_value = {"skill_name": "skill-repo"}
                 resp = client.post(
                     "/skills/install", json={"repository": repo_url}, headers=AUTH_HEADER
                 )
                 mock_skill_service.install_skill.assert_called_once_with(repo_url)
                 assert resp.status_code == 200
+
+    def test_install_skill_fails_with_url_without_github_domain(self, app: FastAPI) -> None:
+        with TestClient(app) as client:
+            invalid_url = "https://gitlab.com/user/skill-repo"
+            resp = client.post(
+                "/skills/install", json={"repository": invalid_url}, headers=AUTH_HEADER
+            )
+            assert resp.status_code == 422
+            assert "Invalid repository URL format" in resp.text
