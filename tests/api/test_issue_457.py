@@ -683,3 +683,63 @@ class TestEventOrderingForChatCompletions:
             assert valid_sequence, (
                 "Events should follow the expected sequence pattern: status -> token* -> (done|error)"
             )
+
+
+class TestStreamAgentExecution:
+    def test_stream_agent_execution_with_valid_request(self, app: FastAPI) -> None:
+        """Test streaming agent execution with valid request to /v1/chat/completions."""
+        with TestClient(app) as client:
+            payload = {
+                "model": "agent-model",
+                "messages": [{"role": "user", "content": "Plan a trip"}],
+                "stream": True,
+            }
+            response = client.post("/v1/chat/completions", json=payload, headers=AUTH_HEADER)
+
+            # Then the server responds with HTTP 200
+            assert response.status_code == 200
+
+            # And the response has Content-Type "text/event-stream"
+            assert response.headers["content-type"] == "text/event-stream; charset=utf-8"
+
+            # And the first event is:
+            lines = response.text.split("\n\n")
+            first_event_line = lines[0]
+            assert first_event_line.startswith("event: start")
+            assert "data: " in first_event_line
+            data_part = first_event_line.split("data: ")[1]
+            first_event_data = json.loads(data_part)
+            assert first_event_data["model"] == "agent-model"
+            assert "timestamp" in first_event_data
+
+            # Parse all events to verify subsequent events
+            events = [line.replace("data: ", "") for line in lines if line.startswith("data: ")]
+            event_objects = [json.loads(event) for event in events if event]
+
+            # And subsequent events include "tool_call", "token", and "finish" in order
+            event_types = [e["type"] for e in event_objects]
+
+            # Find indices of each event type
+            start_index = event_types.index("start") if "start" in event_types else -1
+            tool_call_indices = [i for i, t in enumerate(event_types) if t == "tool_call"]
+            token_indices = [i for i, t in enumerate(event_types) if t == "token"]
+            finish_index = next(
+                (i for i, t in enumerate(event_types) if t in ("done", "error")), -1
+            )
+
+            # Verify tool_call, token, and finish events exist
+            assert len(tool_call_indices) >= 0, "Should have tool_call events"
+            assert len(token_indices) >= 0, "Should have token events"
+            assert finish_index > start_index, "Should have finish/error event after start"
+
+            # Verify order: tool_call should come before token, and both should come before finish
+            if tool_call_indices and token_indices:
+                last_tool_call = max(tool_call_indices)
+                first_token = min(token_indices)
+                assert first_token > last_tool_call, (
+                    "token events should come after tool_call events"
+                )
+
+            if token_indices and finish_index > 0:
+                last_token = max(token_indices)
+                assert last_token < finish_index, "finish event should come after token events"

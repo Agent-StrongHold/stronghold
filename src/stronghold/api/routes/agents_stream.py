@@ -147,7 +147,7 @@ async def structured_request_stream(request: Request) -> StreamingResponse:
 
 
 @router.post("/chat/completions")
-async def chat_completions(request: Request) -> StreamingResponse | dict[str, Any]:
+async def chat_completions(request: Request) -> StreamingResponse:
     """Handle chat completions with streaming support."""
     container = request.app.state.container
 
@@ -169,7 +169,8 @@ async def chat_completions(request: Request) -> StreamingResponse | dict[str, An
     # Warden scan the first user message
     warden_verdict = None
     if messages and messages[0].get("role") == "user":
-        warden_verdict = await container.warden.scan(messages[0].get("content", ""), "user_input")
+        user_content = messages[0].get("content", "")
+        warden_verdict = await container.warden.scan(user_content, "user_input")
         if not warden_verdict.clean:
             if stream:
 
@@ -268,9 +269,11 @@ async def chat_completions(request: Request) -> StreamingResponse | dict[str, An
         """Yield SSE events: status updates, tool calls/results, tokens, then final result."""
         task = asyncio.create_task(run_chat())
 
+        # Send initial status
         yield _sse({"type": "status", "message": "Starting..."})
 
         # Track tool calls and results
+        active_tool_calls: dict[str, dict[str, Any]] = {}
 
         while not task.done():
             # Check status queue
@@ -297,6 +300,7 @@ async def chat_completions(request: Request) -> StreamingResponse | dict[str, An
             try:
                 tool_call = await asyncio.wait_for(tool_call_queue.get(), timeout=0.0)
                 tool_call_event = tool_call
+                active_tool_calls[tool_call["call_id"]] = tool_call_event
                 if warden_verdict:
                     tool_call_event["warden_audit"] = {
                         "scanned_at": warden_verdict.scanned_at.isoformat()
@@ -326,6 +330,8 @@ async def chat_completions(request: Request) -> StreamingResponse | dict[str, An
                         "scanned": warden_verdict.clean,
                     }
                 yield _sse(tool_result_event)
+                # Clean up active tool call
+                active_tool_calls.pop(tool_result["call_id"], None)
             except TimeoutError:
                 pass
 
