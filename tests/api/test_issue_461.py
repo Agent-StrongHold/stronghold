@@ -84,3 +84,36 @@ class TestRequestContextPropagation:
             # include the request context (request_id, etc.)
             # This test simulates the scenario where context is available
             # even when errors occur during processing
+
+    def test_concurrent_requests_maintain_separate_contexts(self, app: FastAPI) -> None:
+        with TestClient(app) as client:
+            # Create two concurrent requests with different metadata
+            import threading
+
+            results = {}
+
+            def make_request(request_id: str, metadata: dict[str, str]) -> None:
+                resp = client.post(
+                    "/v1/stronghold/conductor",
+                    headers=AUTH_HEADER,
+                    json={"input": f"request {request_id}", "metadata": metadata},
+                )
+                results[request_id] = resp.status_code
+
+            # Start two threads to simulate concurrent requests
+            thread1 = threading.Thread(
+                target=make_request, args=("req-1", {"request_id": "req-1", "user_id": "user-a"})
+            )
+            thread2 = threading.Thread(
+                target=make_request, args=("req-2", {"request_id": "req-2", "user_id": "user-b"})
+            )
+
+            thread1.start()
+            thread2.start()
+
+            thread1.join()
+            thread2.join()
+
+            # Both requests should succeed
+            assert results["req-1"] == 200
+            assert results["req-2"] == 200
