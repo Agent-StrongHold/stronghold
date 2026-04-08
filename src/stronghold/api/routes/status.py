@@ -98,3 +98,23 @@ async def version_v1() -> dict[str, Any]:
         "python_version": sys.version,
         "service": "stronghold",
     }
+
+
+@router.post("/v1/stronghold/gate/red-team-regression")
+async def red_team_regression_gate(request: Request, payload: dict[str, Any]) -> dict[str, Any]:
+    """Red team regression gate endpoint."""
+    container = request.app.state.container
+    auth_header = request.headers.get("authorization")
+    try:
+        await container.auth_provider.authenticate(auth_header, headers=dict(request.headers))
+    except ValueError as e:
+        raise HTTPException(status_code=401, detail=str(e)) from e
+
+    benchmark_results = payload.get("benchmark_results", {})
+    threshold = payload.get("threshold", 0.9)
+
+    score = benchmark_results.get("score", 0)
+    if score > threshold:
+        raise HTTPException(status_code=400, detail="Benchmark score exceeds allowed threshold")
+
+    return {"status": "passed", "score": score, "threshold": threshold}
