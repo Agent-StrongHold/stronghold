@@ -115,4 +115,61 @@ class TestSuccessfulLibraryDocsLookupOnAttributeError:
             assert "documentation" in data
             assert data["documentation"] is not None
             assert data["documentation"] != ""
-            assert "FastAPI" in data["documentation"]
+            assert "FastAPI" in data["library_name"]
+
+
+class TestContext7MCPIntegrationWithCachedDocs:
+    def test_cached_library_docs_prevent_duplicate_context7_calls(self, app: FastAPI) -> None:
+        with TestClient(app) as client:
+            error_msg = "No module named 'redis.asyncio'"
+            container = app.state.container
+
+            # Mock the Context7 MCP client to track calls
+            original_resolve = container.context7_mcp.resolve_library_id
+            original_query = container.context7_mcp.query_docs
+            resolve_calls = []
+            query_calls = []
+
+            def mock_resolve(lib_name: str) -> str:
+                resolve_calls.append(lib_name)
+                return original_resolve(lib_name)
+
+            def mock_query(lib_id: str) -> str:
+                query_calls.append(lib_id)
+                return original_query(lib_id)
+
+            container.context7_mcp.resolve_library_id = mock_resolve
+            container.context7_mcp.query_docs = mock_query
+
+            # First call - should make Context7 MCP calls
+            first_resp = client.post(
+                "/mcp/lookup",
+                headers=AUTH_HEADER,
+                json={"error": error_msg},
+            )
+            assert first_resp.status_code == 200
+            first_data = first_resp.json()
+            assert len(resolve_calls) == 1
+            assert len(query_calls) == 1
+            assert first_data["library_name"] == "redis.asyncio"
+            assert "documentation" in first_data
+            assert first_data["cached"] is False
+
+            # Reset call tracking
+            resolve_calls.clear()
+            query_calls.clear()
+
+            # Second call with same error - should NOT make Context7 MCP calls
+            second_resp = client.post(
+                "/mcp/lookup",
+                headers=AUTH_HEADER,
+                json={"error": error_msg},
+            )
+            assert second_resp.status_code == 200
+            second_data = second_resp.json()
+            assert len(resolve_calls) == 0
+            assert len(query_calls) == 0
+            assert second_data["library_name"] == "redis.asyncio"
+            assert "documentation" in second_data
+            assert second_data["cached"] is True
+            assert second_data["documentation"] == first_data["documentation"]

@@ -389,32 +389,6 @@ async def get_catalog(request: Request) -> JSONResponse:
     return JSONResponse(content={"servers": container.mcp_registry.catalog()})
 
 
-@router.get("/catalog")
-async def get_catalog(request: Request) -> JSONResponse:
-    """Get MCP catalog."""
-    container = request.app.state.container
-    auth_header = request.headers.get("authorization")
-    try:
-        await container.auth_provider.authenticate(auth_header, headers=dict(request.headers))
-    except ValueError as e:
-        raise HTTPException(status_code=401, detail=str(e)) from e
-
-    return JSONResponse(content={"servers": container.mcp_registry.catalog()})
-
-
-@router.get("/catalog")
-async def get_catalog(request: Request) -> JSONResponse:
-    """Get MCP catalog."""
-    container = request.app.state.container
-    auth_header = request.headers.get("authorization")
-    try:
-        await container.auth_provider.authenticate(auth_header, headers=dict(request.headers))
-    except ValueError as e:
-        raise HTTPException(status_code=200, detail=str(e)) from e
-
-    return JSONResponse(content={"servers": container.mcp_registry.catalog()})
-
-
 @router.post("/lookup")
 async def lookup_library_docs(request: Request) -> JSONResponse:
     """Lookup library documentation from error message."""
@@ -493,15 +467,13 @@ async def _fetch_library_docs(library_name: str, container) -> str | None:
     """Fetch library documentation from Context7 MCP."""
     try:
         # Resolve library ID
-        resolve_result = await container.mcp_client.call_tool(
-            "resolve-library-id", {"query": library_name}
-        )
+        resolve_result = await container.context7_mcp.resolve_library_id(library_name)
         library_id = resolve_result.get("library_id")
         if not library_id:
             return None
 
         # Query documentation
-        docs_result = await container.mcp_client.call_tool("query-docs", {"library_id": library_id})
+        docs_result = await container.context7_mcp.query_docs(library_id)
         return docs_result.get("documentation", "")
     except Exception:
         return None
