@@ -144,3 +144,16 @@ def test_stronghold_cli_help_shows_help_option() -> None:
     assert "Usage:" in result.stdout, "Output should contain 'Usage:'"
     assert "Options:" in result.stdout, "Output should contain 'Options:'"
     assert "--help" in result.stdout, "Output should contain '--help' option"
+
+
+def test_stronghold_cli_invalid_command_fails() -> None:
+    import subprocess
+
+    result = subprocess.run(
+        ["stronghold", "invalid-argument"],
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode != 0, "stronghold invalid-argument should exit with non-zero code"
+    assert "Error" in result.stderr, "Output should contain 'Error'"
