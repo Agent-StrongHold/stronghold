@@ -96,3 +96,17 @@ class TestPythonVersionField:
             data = client.get("/v1/stronghold/version").json()
             assert "python_version" in data
             assert data["python_version"] != ""
+
+
+class TestVersionInformationCompleteness:
+    def test_version_response_contains_all_required_fields(self, app: FastAPI) -> None:
+        with TestClient(app) as client:
+            data = client.get("/v1/stronghold/version").json()
+            assert "version" in data
+            assert isinstance(data["version"], str)
+            assert len(data["version"]) > 0
+            assert "python_version" in data
+            assert isinstance(data["python_version"], str)
+            assert len(data["python_version"]) > 0
+            assert "service" in data
+            assert data["service"] == "stronghold"
