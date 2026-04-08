@@ -111,3 +111,21 @@ def test_stronghold_cli_version_output_contains_stronghold() -> None:
 
     assert result.returncode == 0, "stronghold --version should exit with code 0"
     assert "stronghold" in result.stdout.lower(), "Output should contain 'stronghold'"
+
+
+def test_pyproject_toml_scripts_entry_exact_format() -> None:
+    pyproject_path = Path("pyproject.toml")
+    content = pyproject_path.read_text()
+
+    scripts_section = "[project.scripts]"
+    start = content.find(scripts_section)
+    assert start != -1, "Could not find [project.scripts] section"
+
+    end = content.find("\n[", start + 1)
+    if end == -1:
+        end = len(content)
+
+    scripts_content = content[start:end]
+    assert 'stronghold = "src.stronghold.cli.main:app"' in scripts_content, (
+        'Scripts section should include exact format: stronghold = "src.stronghold.cli.main:app"'
+    )
