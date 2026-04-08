@@ -146,6 +146,102 @@ async def structured_request_stream(request: Request) -> StreamingResponse:
     return StreamingResponse(stream_events(), media_type="text/event-stream")
 
 
+@router.post("/chat/completions")
+async def chat_completions(request: Request) -> StreamingResponse:
+    """Handle chat completions with streaming support."""
+    container = request.app.state.container
+
+    auth_header = request.headers.get("authorization")
+    try:
+        auth_ctx = await container.auth_provider.authenticate(
+            auth_header, headers=dict(request.headers)
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=401, detail=str(e)) from e
+
+    body: dict[str, Any] = await request.json()
+    messages = body.get("messages", [])
+    body.get("stream", False)
+
+    if not messages:
+        raise HTTPException(status_code=400, detail="'messages' is required")
+
+    # Status queue for progress updates
+    status_queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
+
+    async def status_cb(msg: str) -> None:
+        """Push status updates into the SSE queue."""
+        await status_queue.put({"type": "status", "message": msg})
+
+    async def run_chat() -> dict[str, Any]:
+        """Run the chat pipeline, posting status updates to the queue."""
+        await status_queue.put({"type": "status", "message": "Processing..."})
+        try:
+            result = await container.route_chat(
+                messages,
+                auth=auth_ctx,
+                status_callback=status_cb,
+            )
+        except QuotaExhaustedError as e:
+            await status_queue.put({"type": "error", "message": f"Quota exhausted: {e.detail}"})
+            return {
+                "choices": [
+                    {
+                        "message": {
+                            "content": f"Request rejected: {e.detail}",
+                        }
+                    }
+                ],
+                "_routing": {"error": "quota_exhausted"},
+            }
+
+        content = ""
+        if result.get("choices"):
+            content = result["choices"][0].get("message", {}).get("content", "")
+        await status_queue.put(
+            {
+                "type": "done",
+                "content": content,
+                "_routing": result.get("_routing", {}),
+                "model": result.get("model", ""),
+            }
+        )
+        return result
+
+    async def stream_events() -> Any:
+        """Yield SSE events: status updates then final result."""
+        task = asyncio.create_task(run_chat())
+
+        yield _sse({"type": "status", "message": "Starting..."})
+
+        while not task.done():
+            try:
+                update = await asyncio.wait_for(status_queue.get(), timeout=1.0)
+                yield _sse(update)
+                if update.get("type") == "done":
+                    return
+            except TimeoutError:
+                yield _sse({"type": "heartbeat"})
+
+        try:
+            result = task.result()
+            content = ""
+            if result.get("choices"):
+                content = result["choices"][0].get("message", {}).get("content", "")
+            yield _sse(
+                {
+                    "type": "done",
+                    "content": content,
+                    "_routing": result.get("_routing", {}),
+                    "model": result.get("model", ""),
+                }
+            )
+        except Exception as e:
+            yield _sse({"type": "error", "message": str(e)})
+
+    return StreamingResponse(stream_events(), media_type="text/event-stream")
+
+
 def _sse(data: dict[str, Any]) -> str:
     """Format a dict as an SSE event."""
     return f"data: {json.dumps(data)}\n\n"

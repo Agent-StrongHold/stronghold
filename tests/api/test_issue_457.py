@@ -106,7 +106,9 @@ class TestAgentStreaming:
 
                 # Read first event
                 first_chunk = next(response.iter_lines())
-                assert first_chunk.decode("utf-8").startswith("data: ")
+                if isinstance(first_chunk, bytes):
+                    first_chunk = first_chunk.decode("utf-8")
+                assert first_chunk.startswith("data: ")
 
                 # Simulate client disconnect by closing the response
                 response.close()
@@ -114,5 +116,37 @@ class TestAgentStreaming:
                 # Verify no further events are sent after disconnect
                 remaining_chunks = list(response.iter_lines())
                 assert not any(
-                    chunk.decode("utf-8").startswith("data: ") for chunk in remaining_chunks
+                    chunk.decode("utf-8").startswith("data: ")
+                    if isinstance(chunk, bytes)
+                    else chunk.startswith("data: ")
+                    for chunk in remaining_chunks
                 ), "Server should stop sending events after client disconnect"
+
+    def test_stream_returns_token_events_for_text_generation(self, app: FastAPI) -> None:
+        with TestClient(app) as client:
+            payload = {"goal": "Write a short poem", "stream": True}
+            response = client.post("/v1/chat/completions", json=payload, headers=AUTH_HEADER)
+
+            assert response.status_code == 200
+            assert response.headers["content-type"] == "text/event-stream; charset=utf-8"
+
+            lines = response.text.split("\n\n")
+            events = [line.replace("data: ", "") for line in lines if line.startswith("data: ")]
+
+            # Should have at least status and done events
+            assert len(events) >= 2
+
+            # Parse events
+            event_objects = [json.loads(event) for event in events if event]
+
+            # Find token events
+            token_events = [e for e in event_objects if e.get("type") == "token"]
+
+            # Should have multiple token events for text generation
+            assert len(token_events) > 0, "Should have token events for text generation"
+
+            # Verify token events have required fields
+            for event in token_events:
+                assert "token" in event
+                assert isinstance(event["token"], str)
+                assert len(event["token"]) > 0
