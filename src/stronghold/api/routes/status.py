@@ -117,4 +117,17 @@ async def red_team_regression_gate(request: Request, payload: dict[str, Any]) ->
     if score > threshold:
         raise HTTPException(status_code=400, detail="Benchmark score exceeds allowed threshold")
 
+    # Check for baseline in container
+    baseline = getattr(container, "red_team_baseline", None)
+    if baseline is None:
+        raise HTTPException(status_code=400, detail="Baseline not configured")
+
     return {"status": "passed", "score": score, "threshold": threshold}
+
+
+@router.post("/v1/stronghold/gate/red-team-regression")
+async def red_team_regression_gate_legacy(
+    request: Request, payload: dict[str, Any]
+) -> dict[str, Any]:
+    """Red team regression gate endpoint - legacy path for backward compatibility."""
+    return await red_team_regression_gate(request, payload)

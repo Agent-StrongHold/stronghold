@@ -44,3 +44,15 @@ class TestRedTeamRegressionGateWorkflow:
             data = resp.json()
             assert "error" in data
             assert "exceeds allowed threshold" in data["error"]
+
+    def test_workflow_fails_when_baseline_is_missing(self, app: FastAPI) -> None:
+        with TestClient(app) as client:
+            resp = client.post(
+                "/v1/stronghold/gate/red-team-regression",
+                json={"benchmark_results": {"score": 0.8}, "threshold": 0.9},
+                headers=AUTH_HEADER,
+            )
+            assert resp.status_code == 400
+            data = resp.json()
+            assert "error" in data
+            assert "baseline" in data["error"].lower()
