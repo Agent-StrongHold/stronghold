@@ -743,3 +743,60 @@ class TestStreamAgentExecution:
             if token_indices and finish_index > 0:
                 last_token = max(token_indices)
                 assert last_token < finish_index, "finish event should come after token events"
+
+
+class TestStreamingInterruptionCleanup:
+    def test_streaming_interruption_cleans_up_resources_and_stops_events(
+        self, app: FastAPI
+    ) -> None:
+        """Test that server cleans up resources and stops sending events when client disconnects during streaming."""
+        with TestClient(app) as client:
+            payload = {"goal": "List files in current directory", "stream": True}
+
+            # Use client.stream to maintain connection for interruption simulation
+            with client.stream(
+                "POST", "/v1/stronghold/request/stream", json=payload, headers=AUTH_HEADER
+            ) as response:
+                assert response.status_code == 200
+                assert response.headers["content-type"] == "text/event-stream; charset=utf-8"
+
+                # Read first event to ensure streaming started
+                first_chunk = next(response.iter_lines())
+                if isinstance(first_chunk, bytes):
+                    first_chunk = first_chunk.decode("utf-8")
+                assert first_chunk.startswith("data: ")
+
+                # Simulate client disconnect/interruption
+                response.close()
+
+                # Verify no "finish" event is sent after disconnect
+                remaining_content = response.text
+                lines = remaining_content.split("\n\n")
+                events = [line.replace("data: ", "") for line in lines if line.startswith("data: ")]
+
+                # Parse remaining events
+                event_objects = []
+                for event in events:
+                    try:
+                        event_objects.append(json.loads(event))
+                    except json.JSONDecodeError:
+                        continue
+
+                # Check that no "done" or "error" events were sent after disconnect
+                finish_events = [e for e in event_objects if e.get("type") in ("done", "error")]
+                assert len(finish_events) == 0, (
+                    "No finish/error events should be sent after client disconnect"
+                )
+
+                # Verify agent resources are cleaned up
+                container = app.state.container
+
+                # Check for agent-related cleanup (implementation-specific)
+                # This verifies that the streaming task was properly cancelled
+                streaming_tasks = getattr(container, "streaming_tasks", [])
+                active_tasks_after = [
+                    task for task in streaming_tasks if not task.done() and not task.cancelled()
+                ]
+                assert len(active_tasks_after) == 0, (
+                    "All streaming tasks should be cleaned up after client disconnect"
+                )

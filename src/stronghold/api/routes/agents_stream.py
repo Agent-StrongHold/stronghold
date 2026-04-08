@@ -120,6 +120,16 @@ async def structured_request_stream(request: Request) -> StreamingResponse:
         while not task.done():
             try:
                 update = await asyncio.wait_for(status_queue.get(), timeout=1.0)
+                # Add Warden audit to each event
+                update["warden_audit"] = {
+                    "scanned_at": warden_verdict.scanned_at.isoformat()
+                    if hasattr(warden_verdict, "scanned_at")
+                    else None,
+                    "scan_id": warden_verdict.scan_id
+                    if hasattr(warden_verdict, "scan_id")
+                    else None,
+                    "scanned": warden_verdict.clean,
+                }
                 yield _sse(update)
                 if update.get("type") == "done":
                     return
@@ -132,16 +142,32 @@ async def structured_request_stream(request: Request) -> StreamingResponse:
             content = ""
             if result.get("choices"):
                 content = result["choices"][0].get("message", {}).get("content", "")
-            yield _sse(
-                {
-                    "type": "done",
-                    "content": content,
-                    "_routing": result.get("_routing", {}),
-                    "model": result.get("model", ""),
-                }
-            )
+            final_event = {
+                "type": "done",
+                "content": content,
+                "_routing": result.get("_routing", {}),
+                "model": result.get("model", ""),
+            }
+            # Add Warden audit to final event
+            final_event["warden_audit"] = {
+                "scanned_at": warden_verdict.scanned_at.isoformat()
+                if hasattr(warden_verdict, "scanned_at")
+                else None,
+                "scan_id": warden_verdict.scan_id if hasattr(warden_verdict, "scan_id") else None,
+                "scanned": warden_verdict.clean,
+            }
+            yield _sse(final_event)
         except Exception as e:
-            yield _sse({"type": "error", "message": str(e)})
+            error_event = {"type": "error", "message": str(e)}
+            # Add Warden audit to error event
+            error_event["warden_audit"] = {
+                "scanned_at": warden_verdict.scanned_at.isoformat()
+                if hasattr(warden_verdict, "scanned_at")
+                else None,
+                "scan_id": warden_verdict.scan_id if hasattr(warden_verdict, "scan_id") else None,
+                "scanned": warden_verdict.clean,
+            }
+            yield _sse(error_event)
 
     return StreamingResponse(stream_events(), media_type="text/event-stream")
 
