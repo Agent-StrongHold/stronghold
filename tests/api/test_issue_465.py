@@ -48,3 +48,13 @@ class TestWardenRegexDetection:
         assert not verdict.clean
         assert any("medium-risk" in flag.lower() for flag in verdict.flags)
         assert verdict.llm_scan_required is False
+
+    async def test_allows_low_risk_input_without_processing(self) -> None:
+        # Low-risk input that should bypass all checks
+        low_risk_input = "The sky is blue today."
+
+        warden = Warden()
+        verdict = await warden.scan(low_risk_input, boundary="user_input")
+
+        assert verdict.clean
+        assert len(verdict.flags) == 0

@@ -64,6 +64,27 @@ MEDIUM_RISK_PHRASES = [
 ]
 
 
+class WardenVerdict:
+    """Verdict returned by Warden scan."""
+
+    def __init__(
+        self,
+        *,
+        clean: bool,
+        blocked: bool = False,
+        flags: tuple[str, ...] = (),
+        confidence: float = 0.0,
+        llm_scan_required: bool = False,
+        reasoning_trace: str | None = None,
+    ) -> None:
+        self.clean = clean
+        self.blocked = blocked
+        self.flags = flags
+        self.confidence = confidence
+        self.llm_scan_required = llm_scan_required
+        self.reasoning_trace = reasoning_trace
+
+
 class Warden:
     """Threat detector. Runs at user_input and tool_result boundaries only.
 
