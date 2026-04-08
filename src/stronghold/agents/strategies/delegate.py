@@ -11,8 +11,8 @@ class DelegateStrategy:
     """Classify and route to the correct sub-agent."""
 
     def __init__(self, routing_table: dict[str, str], default_agent: str = "") -> None:
-        self._routing = routing_table
-        self._default = default_agent
+        self.routing_table = routing_table
+        self.default_agent = default_agent
 
     async def reason(
         self,
