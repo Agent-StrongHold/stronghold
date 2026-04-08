@@ -73,6 +73,19 @@ class TestInstallAgentEndpoint:
             assert "error" in data["detail"]
             assert "publisher" in data["detail"]["error"].lower()
 
+    def test_install_agent_fails_with_invalid_signature(self, app: FastAPI) -> None:
+        with TestClient(app) as client:
+            agent_id = "invalid-signature-agent-789"
+            resp = client.post(
+                "/v1/stronghold/marketplace/agents/install",
+                headers=AUTH_HEADER,
+                json={"agent_id": agent_id},
+            )
+            assert resp.status_code == 400
+            data = resp.json()
+            assert "detail" in data
+            assert "signature" in data["detail"]["error"].lower()
+
 
 class TestRateAgentEndpoint:
     def test_rate_installed_agent_records_rating(self, app: FastAPI) -> None:

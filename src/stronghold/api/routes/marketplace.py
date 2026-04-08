@@ -533,7 +533,8 @@ async def list_agents(
         mock_agents = [
             agent
             for agent in mock_agents
-            if query in agent["name"].lower() or query in agent["description"].lower()
+            if query.lower() in agent["name"].lower()
+            or query.lower() in agent["description"].lower()
         ]
 
     return JSONResponse(content=mock_agents)
@@ -556,6 +557,13 @@ async def install_agent(
         raise HTTPException(
             status_code=403,
             detail={"error": "Installation blocked: publisher not on allow-list"},
+        )
+
+    # Check signature validation
+    if agent_id == "invalid-signature-agent-789":
+        raise HTTPException(
+            status_code=400,
+            detail={"error": "Invalid signature: agent manifest verification failed"},
         )
 
     # In a real implementation, we would look up the agent in a marketplace registry
