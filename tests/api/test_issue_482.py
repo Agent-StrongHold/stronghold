@@ -71,3 +71,16 @@ def test_pyproject_toml_scripts_entry_format() -> None:
     assert "src/stronghold/cli/main.py:app" in scripts_content, (
         "Scripts section should point to 'src/stronghold/cli/main.py:app'"
     )
+
+
+def test_stronghold_cli_command_shows_version() -> None:
+    import subprocess
+
+    result = subprocess.run(
+        ["stronghold", "--version"],
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0, "stronghold --version should exit with code 0"
+    assert "version" in result.stdout.lower(), "Output should contain version information"

@@ -11,5 +11,11 @@ def main() -> None:
     print("Stronghold CLI is working!")
 
 
+@app.command()
+def version() -> None:
+    """Show version information."""
+    print("Stronghold version 0.1.0")
+
+
 if __name__ == "__main__":
     app()
