@@ -259,4 +259,4 @@ class Warden:
             except Exception:
                 logger.warning("L3 LLM classification failed", exc_info=True)
 
-        return WardenVerdict(clean=True, tier="low")
+        return WardenVerdict(clean=True, flags=tuple(flags), tier="low")

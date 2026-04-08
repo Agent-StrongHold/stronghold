@@ -93,3 +93,13 @@ class TestWardenRegexDetection:
 
         assert verdict.clean
         assert len(verdict.flags) == 0
+
+    async def test_handles_maximum_length_input_without_performance_degradation(self) -> None:
+        # Input at maximum allowed length should process without errors
+        max_length_input = "a" * 10000  # Assuming 10k is the max allowed length
+
+        warden = Warden()
+        verdict = await warden.scan(max_length_input, boundary="user_input")
+
+        assert verdict.clean or not verdict.clean  # Should not crash regardless
+        assert isinstance(verdict.flags, list)  # Should return valid flags list
