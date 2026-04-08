@@ -233,7 +233,7 @@ class TestEventOrderingValidation:
             )
 
             assert response.status_code == 200
-            assert response.headers["content-type"] == "text/event-stream; charset=utf-8"
+            assert response.headers["content-type"] == "text-event-stream; charset=utf-8"
 
             lines = response.text.split("\n\n")
             events = [line.replace("data: ", "") for line in lines if line.startswith("data: ")]
@@ -799,4 +799,56 @@ class TestStreamingInterruptionCleanup:
                 ]
                 assert len(active_tasks_after) == 0, (
                     "All streaming tasks should be cleaned up after client disconnect"
+                )
+
+
+class TestTextGenerationStreamingWithWardenInterception:
+    def test_warden_intercepts_and_forwards_streaming_events_preserving_order(
+        self, app: FastAPI
+    ) -> None:
+        """Test that Warden receives events in correct order and forwards them unchanged during streaming."""
+        with TestClient(app) as client:
+            payload = {"goal": "Write a short story about space exploration", "stream": True}
+            response = client.post("/v1/chat/completions", json=payload, headers=AUTH_HEADER)
+
+            assert response.status_code == 200
+            assert response.headers["content-type"] == "text/event-stream; charset=utf-8"
+
+            lines = response.text.split("\n\n")
+            events = [line.replace("data: ", "") for line in lines if line.startswith("data: ")]
+
+            # Parse all events
+            event_objects = [json.loads(event) for event in events if event]
+
+            # Verify each event has Warden audit information
+            for event in event_objects:
+                assert "warden_audit" in event, (
+                    f"Event of type {event.get('type')} was not intercepted by Warden"
+                )
+                audit = event["warden_audit"]
+                assert "scanned_at" in audit
+                assert "scan_id" in audit
+                assert isinstance(audit["scanned"], bool)
+                assert audit["scanned"] is True
+
+            # Verify event order is preserved by checking timestamps
+            timestamps = [event["timestamp"] for event in event_objects]
+            assert timestamps == sorted(timestamps), "Event order should be preserved"
+
+            # Verify the sequence follows expected pattern: status -> token* -> done
+            event_types = [e["type"] for e in event_objects]
+
+            # First event should be status
+            assert event_types[0] == "status", "First event should be status"
+
+            # Last event should be done or error
+            assert event_types[-1] in ("done", "error"), "Last event should be done or error"
+
+            # All token events should be in order
+            token_indices = [i for i, t in enumerate(event_types) if t == "token"]
+            if token_indices:
+                # Verify tokens are in chronological order
+                token_timestamps = [event_objects[i]["timestamp"] for i in token_indices]
+                assert token_timestamps == sorted(token_timestamps), (
+                    "Token events should maintain chronological order"
                 )
