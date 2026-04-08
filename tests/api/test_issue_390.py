@@ -136,3 +136,13 @@ class TestVersionSource:
             from stronghold import __version__
 
             assert version == __version__
+
+
+class TestPythonVersionAccuracy:
+    def test_python_version_matches_sys_version(self, app: FastAPI) -> None:
+        with TestClient(app) as client:
+            data = client.get("/v1/stronghold/version").json()
+            python_version = data["python_version"]
+            import sys
+
+            assert python_version == sys.version
