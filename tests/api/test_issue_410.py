@@ -52,3 +52,14 @@ class TestUptimeEndpoint:
 
             # Uptime should have increased
             assert uptime2 > uptime1
+
+    def test_no_authentication_requirement(self, app: FastAPI) -> None:
+        with TestClient(app) as client:
+            resp = client.get("/v1/stronghold/status/uptime")
+            assert resp.status_code == 200
+            assert "WWW-Authenticate" not in resp.headers
+
+    def test_no_auth_header_in_request(self, app: FastAPI) -> None:
+        with TestClient(app) as client:
+            resp = client.get("/v1/stronghold/status/uptime")
+            assert resp.status_code == 200
