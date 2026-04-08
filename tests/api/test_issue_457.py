@@ -521,3 +521,31 @@ class TestTextGenerationTokenStreaming:
                 # Verify status event exists
                 status_events = [e for e in event_objects if e.get("type") == "status"]
                 assert len(status_events) > 0, "Should have at least one status event"
+
+
+class TestWardenStreamingInterceptionWithChatCompletions:
+    def test_warden_scans_each_event_in_chat_completions_stream(self, app: FastAPI) -> None:
+        """Test that Warden intercepts and scans each streaming event when enabled in /v1/chat/completions."""
+        with TestClient(app) as client:
+            payload = {"goal": "Write a short story about space", "stream": True}
+            response = client.post("/v1/chat/completions", json=payload, headers=AUTH_HEADER)
+
+            assert response.status_code == 200
+            assert response.headers["content-type"] == "text/event-stream; charset=utf-8"
+
+            lines = response.text.split("\n\n")
+            events = [line.replace("data: ", "") for line in lines if line.startswith("data: ")]
+
+            # Parse all events to check for Warden audit entries
+            event_objects = [json.loads(event) for event in events if event]
+
+            # Verify each event was scanned by Warden
+            for event in event_objects:
+                assert "warden_audit" in event, (
+                    f"Event of type {event.get('type')} was not scanned by Warden"
+                )
+                audit = event["warden_audit"]
+                assert "scanned_at" in audit
+                assert "scan_id" in audit
+                assert isinstance(audit["scanned"], bool)
+                assert audit["scanned"] is True

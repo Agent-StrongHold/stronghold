@@ -197,10 +197,15 @@ async def chat_completions(request: Request) -> StreamingResponse | dict[str, An
 
     # Status queue for progress updates
     status_queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
+    token_queue: asyncio.Queue[str] = asyncio.Queue()
 
     async def status_cb(msg: str) -> None:
         """Push status updates into the SSE queue."""
         await status_queue.put({"type": "status", "message": msg})
+
+    async def token_cb(token: str) -> None:
+        """Push token updates into the token queue."""
+        await token_queue.put(token)
 
     async def run_chat() -> dict[str, Any]:
         """Run the chat pipeline, posting status updates to the queue."""
@@ -210,6 +215,7 @@ async def chat_completions(request: Request) -> StreamingResponse | dict[str, An
                 messages,
                 auth=auth_ctx,
                 status_callback=status_cb,
+                token_callback=token_cb,
             )
         except QuotaExhaustedError as e:
             await status_queue.put({"type": "error", "message": f"Quota exhausted: {e.detail}"})
@@ -238,14 +244,17 @@ async def chat_completions(request: Request) -> StreamingResponse | dict[str, An
         return result
 
     async def stream_events() -> Any:
-        """Yield SSE events: status updates then final result."""
+        """Yield SSE events: status updates, tokens, then final result."""
         task = asyncio.create_task(run_chat())
 
         yield _sse({"type": "status", "message": "Starting..."})
 
+        # Track tool calls and results
+
         while not task.done():
+            # Check status queue
             try:
-                update = await asyncio.wait_for(status_queue.get(), timeout=1.0)
+                update = await asyncio.wait_for(status_queue.get(), timeout=0.1)
                 # Add Warden audit to each event
                 if warden_verdict:
                     update["warden_audit"] = {
@@ -261,7 +270,25 @@ async def chat_completions(request: Request) -> StreamingResponse | dict[str, An
                 if update.get("type") == "done":
                     return
             except TimeoutError:
-                yield _sse({"type": "heartbeat"})
+                pass
+
+            # Check token queue
+            try:
+                token = await asyncio.wait_for(token_queue.get(), timeout=0.0)
+                token_event = {"type": "token", "token": token}
+                if warden_verdict:
+                    token_event["warden_audit"] = {
+                        "scanned_at": warden_verdict.scanned_at.isoformat()
+                        if hasattr(warden_verdict, "scanned_at")
+                        else None,
+                        "scan_id": warden_verdict.scan_id
+                        if hasattr(warden_verdict, "scan_id")
+                        else None,
+                        "scanned": warden_verdict.clean,
+                    }
+                yield _sse(token_event)
+            except TimeoutError:
+                pass
 
         try:
             result = task.result()
