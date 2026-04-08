@@ -98,3 +98,25 @@ async def version_v1() -> dict[str, Any]:
         "python_version": sys.version,
         "service": "stronghold",
     }
+
+
+@router.get("/v1/stronghold/status/agents")
+async def agents_status(request: Request) -> dict[str, Any]:
+    """List currently loaded agents and their basic info."""
+    container = request.app.state.container
+    agents = container.agents.values()
+
+    agents_list = [
+        {
+            "name": agent.identity.name,
+            "version": agent.identity.version,
+            "description": agent.identity.description,
+            "model": agent.identity.model,
+        }
+        for agent in agents
+    ]
+
+    return {
+        "agents": agents_list,
+        "count": len(agents_list),
+    }
