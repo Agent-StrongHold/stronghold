@@ -42,3 +42,17 @@ class TestSearchAgentsEndpoint:
             agent_names = [agent.get("name", "") for agent in data]
             matching_agents = [name for name in agent_names if "data-processing" in name.lower()]
             assert len(matching_agents) > 0
+
+
+class TestInstallAgentEndpoint:
+    def test_install_agent_sets_trust_tier_to_t3(self, app: FastAPI) -> None:
+        with TestClient(app) as client:
+            agent_id = "data-processing-agent-123"
+            resp = client.post(
+                "/v1/stronghold/marketplace/agents/install",
+                headers=AUTH_HEADER,
+                json={"agent_id": agent_id},
+            )
+            assert resp.status_code == 200
+            data = resp.json()
+            assert data["trust_tier"] == "T3"

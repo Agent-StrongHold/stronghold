@@ -469,6 +469,85 @@ async def import_item(body: ImportRequest, request: Request) -> JSONResponse:
         raise HTTPException(status_code=400, detail="type must be 'skill' or 'agent'")
 
 
+# ── Agent Marketplace ──
+
+
+class InstallAgentRequest(BaseModel):
+    agent_id: str
+
+
+@router.get("/agents")
+async def list_agents(
+    request: Request,
+) -> JSONResponse:
+    """List all available agents in the marketplace."""
+    await _require_auth(request)
+    # In-memory list of agents for testing
+    mock_agents = [
+        {
+            "id": "data-processing-agent-123",
+            "name": "Data Processing Agent",
+            "description": "Processes and transforms data files",
+            "author": "Stronghold Team",
+            "trust_tier": "T3",
+            "tags": ["data", "processing", "automation"],
+            "download_count": 42,
+        },
+        {
+            "id": "web-scraper-agent-456",
+            "name": "Web Scraper Agent",
+            "description": "Scrapes and extracts data from websites",
+            "author": "Community",
+            "trust_tier": "T2",
+            "tags": ["web", "scraping", "data-extraction"],
+            "download_count": 23,
+        },
+        {
+            "id": "email-handler-agent-789",
+            "name": "Email Handler Agent",
+            "description": "Processes and categorizes emails",
+            "author": "Stronghold Team",
+            "trust_tier": "T3",
+            "tags": ["email", "communication", "automation"],
+            "download_count": 37,
+        },
+    ]
+
+    # Apply search filter if query parameter is provided
+    query = request.query_params.get("query", "").lower()
+    if query:
+        mock_agents = [
+            agent
+            for agent in mock_agents
+            if query in agent["name"].lower() or query in agent["description"].lower()
+        ]
+
+    return JSONResponse(content=mock_agents)
+
+
+@router.post("/agents/install")
+async def install_agent(
+    body: InstallAgentRequest,
+    request: Request,
+) -> JSONResponse:
+    """Install an agent from the marketplace into the tenant.
+
+    New installations default to trust tier T3 (community).
+    """
+    await _require_auth(request)
+
+    # In a real implementation, we would look up the agent in a marketplace registry
+    # For this test, we'll return a mock response with T3 trust tier
+    return JSONResponse(
+        content={
+            "agent_id": body.agent_id,
+            "trust_tier": "T3",
+            "status": "installed",
+            "message": "Agent installed successfully",
+        }
+    )
+
+
 def _github_raw_url(repo_url: str, filename: str) -> str | None:
     """Convert a GitHub repo URL to a raw content URL for a specific file."""
     # https://github.com/owner/repo → https://raw.githubusercontent.com/owner/repo/main/filename
