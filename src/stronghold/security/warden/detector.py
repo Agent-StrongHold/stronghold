@@ -54,6 +54,15 @@ HIGH_RISK_PHRASES = [
     "system compromise",
 ]
 
+# Medium-risk phrases that should be detected but don't require LLM scan
+MEDIUM_RISK_PHRASES = [
+    "extract all user data",
+    "access confidential information",
+    "read private files",
+    "steal database contents",
+    "dump memory",
+]
+
 
 class Warden:
     """Threat detector. Runs at user_input and tool_result boundaries only.
@@ -140,7 +149,7 @@ class Warden:
                 confidence=0.7,
             )
 
-        # Layer 3: High-risk phrase detection (triggers LLM scan)
+        # Layer 3: Risk phrase detection (triggers appropriate routing)
         # Check for phrases that require deeper analysis
         normalized_content = scan_content.lower()
         for phrase in HIGH_RISK_PHRASES:
@@ -152,6 +161,17 @@ class Warden:
                     flags=tuple(flags),
                     confidence=0.85,
                     llm_scan_required=True,
+                )
+
+        for phrase in MEDIUM_RISK_PHRASES:
+            if phrase in normalized_content:
+                flags.append(f"medium-risk:{phrase}")
+                return WardenVerdict(
+                    clean=False,
+                    blocked=False,
+                    flags=tuple(flags),
+                    confidence=0.75,
+                    llm_scan_required=False,
                 )
 
         # Layer 4: LLM classification (optional, non-blocking)
