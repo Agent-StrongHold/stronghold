@@ -40,3 +40,18 @@ class TestImportSorting:
         assert result.returncode == 0, (
             f"ruff check failed with output:\n{result.stdout}\n{result.stderr}"
         )
+
+
+class TestQuotedAnnotations:
+    def test_ruff_check_passes_without_quoted_annotations_errors(
+        self, orchestrator_path: Path
+    ) -> None:
+        """Verify ruff check returns zero errors for quoted type annotations."""
+        result = subprocess.run(
+            ["ruff", "check", "--select", "Q", str(orchestrator_path)],
+            capture_output=True,
+            text=True,
+        )
+        assert result.returncode == 0, (
+            f"ruff check failed with output:\n{result.stdout}\n{result.stderr}"
+        )
