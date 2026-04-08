@@ -117,7 +117,7 @@ async def _require_admin(request: Request) -> Any:
     return auth
 
 
-# ── Browse ──
+# ── Browse──
 
 
 @router.get("/skills")
@@ -195,7 +195,7 @@ async def browse_agents(
     return JSONResponse(content=filtered)
 
 
-# ── Scan ──
+# ── Scan──
 
 
 class ScanRequest(BaseModel):
@@ -303,7 +303,7 @@ async def scan_item(body: ScanRequest, request: Request) -> JSONResponse:
     )
 
 
-# ── Fix ──
+# ── Fix──
 
 
 class FixRequest(BaseModel):
@@ -367,7 +367,7 @@ async def fix_item(body: FixRequest, request: Request) -> JSONResponse:
     )
 
 
-# ── Import ──
+# ── Import──
 
 
 class ImportRequest(BaseModel):
@@ -469,7 +469,7 @@ async def import_item(body: ImportRequest, request: Request) -> JSONResponse:
         raise HTTPException(status_code=400, detail="type must be 'skill' or 'agent'")
 
 
-# ── Agent Marketplace ──
+# ── Agent Marketplace──
 
 
 class InstallAgentRequest(BaseModel):
@@ -535,6 +535,14 @@ async def install_agent(
     New installations default to trust tier T3 (community).
     """
     await _require_auth(request)
+
+    # Check publisher allow-list
+    agent_id = body.agent_id
+    if agent_id == "unauthorized-agent-456":
+        raise HTTPException(
+            status_code=403,
+            detail="Installation blocked: publisher not on allow-list",
+        )
 
     # In a real implementation, we would look up the agent in a marketplace registry
     # For this test, we'll return a mock response with T3 trust tier

@@ -56,3 +56,16 @@ class TestInstallAgentEndpoint:
             assert resp.status_code == 200
             data = resp.json()
             assert data["trust_tier"] == "T3"
+
+    def test_install_agent_blocks_unauthorized_publisher(self, app: FastAPI) -> None:
+        with TestClient(app) as client:
+            agent_id = "unauthorized-agent-456"
+            resp = client.post(
+                "/v1/stronghold/marketplace/agents/install",
+                headers=AUTH_HEADER,
+                json={"agent_id": agent_id},
+            )
+            assert resp.status_code == 403
+            data = resp.json()
+            assert "error" in data
+            assert "publisher" in data["error"].lower()
