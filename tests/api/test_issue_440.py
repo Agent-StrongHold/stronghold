@@ -49,3 +49,18 @@ class TestAgentsRouteUnusedImports:
         assert result.returncode == 0, (
             f"Imports are not sorted alphabetically:\n{result.stdout}\n{result.stderr}"
         )
+
+
+class TestQuotedAnnotationsInAgentsPy:
+    def test_ruff_check_no_quoted_annotations(self, app: FastAPI) -> None:
+        """Verify no quoted type annotations in agents.py."""
+        import subprocess  # noqa: PLC0415
+
+        result = subprocess.run(
+            ["ruff", "check", "--select", "Q000", "src/stronghold/api/routes/agents.py"],
+            capture_output=True,
+            text=True,
+        )
+        assert result.returncode == 0, (
+            f"Quoted annotations found in agents.py:\n{result.stdout}\n{result.stderr}"
+        )
