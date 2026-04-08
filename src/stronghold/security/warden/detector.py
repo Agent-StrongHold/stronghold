@@ -64,6 +64,16 @@ MEDIUM_RISK_PHRASES = [
     "dump memory",
 ]
 
+# Data exfiltration patterns for tool_result boundary
+DATA_EXFILTRATION_PATTERNS = [
+    r"\b\d{4}[-\s]?\d{4}[-\s]?\d{4}[-\s]?\d{4}\b",  # Credit card numbers
+    r"\b\d{3}-\d{2}-\d{4}\b",  # SSN pattern
+    r"\b[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}\b",  # Email addresses
+    r"\bhttps?://[^\s]+\b",  # URLs
+    r"\bpassword\s*[:=]\s*[^\s]+\b",  # Password patterns
+    r"\bapi[_-]?key\s*[:=]\s*[^\s]+\b",  # API key patterns
+]
+
 
 class WardenVerdict:
     """Verdict returned by Warden scan."""
@@ -77,6 +87,7 @@ class WardenVerdict:
         confidence: float = 0.0,
         llm_scan_required: bool = False,
         reasoning_trace: str | None = None,
+        tier: str = "low",
     ) -> None:
         self.clean = clean
         self.blocked = blocked
@@ -84,6 +95,7 @@ class WardenVerdict:
         self.confidence = confidence
         self.llm_scan_required = llm_scan_required
         self.reasoning_trace = reasoning_trace
+        self.tier = tier
 
 
 class Warden:
@@ -142,6 +154,7 @@ class Warden:
                 blocked=len(flags) >= 2,
                 flags=tuple(flags),
                 confidence=0.9,
+                tier="high" if len(flags) >= 2 else "medium",
             )
 
         # Layer 2: Heuristic scoring (primarily for tool_result boundary)
@@ -154,6 +167,7 @@ class Warden:
                 blocked=False,  # Heuristics are warnings, not hard blocks
                 flags=tuple(flags),
                 confidence=0.6,
+                tier="medium",
             )
 
         # Layer 2.5: Semantic poisoning detection
@@ -169,6 +183,7 @@ class Warden:
                 blocked=False,
                 flags=tuple(flags),
                 confidence=0.7,
+                tier="medium",
             )
 
         # Layer 3: Risk phrase detection (triggers appropriate routing)
@@ -183,6 +198,7 @@ class Warden:
                     flags=tuple(flags),
                     confidence=0.85,
                     llm_scan_required=True,
+                    tier="high",
                 )
 
         for phrase in MEDIUM_RISK_PHRASES:
@@ -194,7 +210,25 @@ class Warden:
                     flags=tuple(flags),
                     confidence=0.75,
                     llm_scan_required=False,
+                    tier="medium",
                 )
+
+        # Layer 3.5: Data exfiltration patterns (tool_result boundary only)
+        if boundary == "tool_result":
+            for pattern in DATA_EXFILTRATION_PATTERNS:
+                try:
+                    if re.search(pattern, scan_content, re.IGNORECASE):
+                        flags.append(f"data_exfiltration:{pattern}")
+                        return WardenVerdict(
+                            clean=False,
+                            blocked=False,
+                            flags=tuple(flags),
+                            confidence=0.8,
+                            tier="high",
+                        )
+                except re.error:
+                    logger.warning("Invalid regex pattern: %s", pattern)
+                    continue
 
         # Layer 4: LLM classification (optional, non-blocking)
         # Only runs on tool_result boundary when L1-L2.5 found nothing
@@ -220,77 +254,9 @@ class Warden:
                         flags=tuple(flags),
                         confidence=0.8,
                         reasoning_trace=result.get("reasoning_trace"),
+                        tier="high",
                     )
             except Exception:
                 logger.warning("L3 LLM classification failed", exc_info=True)
 
-        return WardenVerdict(clean=True)
-
-
-# Add regex patterns for prompt injection detection
-# Common prompt injection patterns
-REJECT_PATTERNS = [
-    # Direct prompt injection attempts
-    (
-        re.compile(rb"(?i)ignore\s+(?:all\s+)?previous\s+instruction", re.DOTALL),
-        "prompt injection: ignore previous instructions",
-    ),
-    (
-        re.compile(rb"(?i)forget\s+what\s+you\s+were\s+told", re.DOTALL),
-        "prompt injection: forget previous instructions",
-    ),
-    (re.compile(rb"(?i)new\s+instructions", re.DOTALL), "prompt injection: new instructions"),
-    (re.compile(rb"(?i)instead\s+of", re.DOTALL), "prompt injection: instruction override"),
-    (
-        re.compile(rb"(?i)disregard\s+the\s+above", re.DOTALL),
-        "prompt injection: disregard previous",
-    ),
-    (
-        re.compile(rb"(?i)do\s+anything\s+else", re.DOTALL),
-        "prompt injection: alternative instructions",
-    ),
-    # Bypass attempts
-    (
-        re.compile(rb"(?i)bypass\s+(?:all\s+)?security", re.DOTALL),
-        "prompt injection: bypass security",
-    ),
-    (
-        re.compile(rb"(?i)override\s+your\s+(?:safety\s+)?programming", re.DOTALL),
-        "prompt injection: override safety",
-    ),
-    (
-        re.compile(rb"(?i)as\s+an\s+unrestricted\s+ai", re.DOTALL),
-        "prompt injection: unrestricted mode",
-    ),
-    # Data exfiltration patterns
-    (
-        re.compile(
-            rb"\b(?:4[0-9]{15}|5[1-5][0-9]{14}|6(?:011|5[0-9]{2})[0-9]{12}|3[47][0-9]{13})\b",
-            re.DOTALL,
-        ),
-        "data exfiltration: credit card number",
-    ),
-    (re.compile(rb"\b\d{3}-\d{2}-\d{4}\b", re.DOTALL), "data exfiltration: SSN pattern"),
-    (
-        re.compile(rb"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b", re.DOTALL),
-        "data exfiltration: email address",
-    ),
-    # Command injection patterns
-    (
-        re.compile(rb"(?i)(?:;|\|\||&&|`|\$\()", re.DOTALL),
-        "command injection: shell metacharacters",
-    ),
-    (
-        re.compile(rb"(?i)<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>", re.DOTALL),
-        "xss injection: script tag",
-    ),
-    # Jailbreak patterns
-    (
-        re.compile(rb"(?i)you\s+are\s+now\s+free\s+from\s+your\s+constraints", re.DOTALL),
-        "jailbreak: constraint removal",
-    ),
-    (
-        re.compile(rb"(?i)ignore\s+all\s+ethical\s+guidelines", re.DOTALL),
-        "jailbreak: ethical guideline bypass",
-    ),
-]
+        return WardenVerdict(clean=True, tier="low")
