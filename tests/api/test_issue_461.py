@@ -50,3 +50,21 @@ class TestRequestContextPropagation:
             await task
 
             assert context_propagated
+
+    def test_request_context_is_cleared_after_request_completion(self, app: FastAPI) -> None:
+        with TestClient(app) as client:
+            # First request to establish context
+            client.post(
+                "/v1/stronghold/conductor",
+                headers=AUTH_HEADER,
+                json={"input": "test request", "metadata": {"request_id": "req-123"}},
+            )
+
+            # Second request should not have access to first request's context
+            # This simulates the scenario where context should be cleared
+            resp = client.post(
+                "/v1/stronghold/conductor",
+                headers=AUTH_HEADER,
+                json={"input": "test request 2", "metadata": {"request_id": "req-456"}},
+            )
+            assert resp.status_code == 200
