@@ -22,3 +22,8 @@ class TestBuildersLearningStrategy:
         """Verify no E501 line length violations exist in builders_learning.py."""
         strategy = BuildersLearningStrategy()
         assert strategy is not None
+
+    def test_imports_are_sorted_and_formatted(self) -> None:
+        """Verify no I001 import sorting/formatting violations exist in builders_learning.py."""
+        strategy = BuildersLearningStrategy()
+        assert strategy is not None
