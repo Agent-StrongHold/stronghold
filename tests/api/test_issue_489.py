@@ -58,3 +58,12 @@ class TestSkillInstall:
             assert resp.status_code == 200
             data = resp.json()
             assert data["skill_name"] == "skill-repo"
+
+    def test_install_skill_fails_with_url_without_https(self, app: FastAPI) -> None:
+        with TestClient(app) as client:
+            invalid_url = "http://github.com/user/skill-repo"
+            resp = client.post(
+                "/skills/install", json={"repository": invalid_url}, headers=AUTH_HEADER
+            )
+            assert resp.status_code == 422
+            assert "Invalid repository URL format" in resp.text

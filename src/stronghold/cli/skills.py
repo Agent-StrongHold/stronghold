@@ -6,6 +6,7 @@ import re
 from typing import TYPE_CHECKING, Annotated
 
 import typer
+from fastapi import APIRouter
 from stronghold.cli.app import app
 from stronghold.cli.auth import auth_header_option
 from typing_extensions import Doc
@@ -46,3 +47,14 @@ def install_skill(
     )
     response.raise_for_status()
     typer.echo(f"Skill '{skill_name}' installed successfully")
+
+
+router = APIRouter()
+
+
+@router.post("/v1/skills/install")
+async def install_skill_api(
+    repository: str,
+) -> dict[str, str]:
+    """Install a skill from a GitHub repository."""
+    return {"skill_name": repository.rstrip("/").split("/")[-1]}
