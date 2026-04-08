@@ -61,13 +61,11 @@ class BuildersLearningStrategy:
 
         if worker == "frank":
             return await self._frank_with_learning(messages, model, llm, trace, warden, **kwargs)
-        elif worker == "mason":
+        if worker == "mason":
             return await self._mason_with_learning(messages, model, llm, trace, warden, **kwargs)
-        else:
-            # Fallback to standard React for other workers
-            return await self._react.reason(
-                messages, model, llm, trace=trace, warden=warden, **kwargs
-            )
+
+        # Fallback to standard React for other workers
+        return await self._react.reason(messages, model, llm, trace=trace, warden=warden, **kwargs)
 
     async def _frank_with_learning(
         self,
@@ -89,7 +87,7 @@ class BuildersLearningStrategy:
         6. Store learning in memory
         """
         # Extract run_id from kwargs (don't re-pass)
-        run_id = kwargs.get("run_id", "unknown")
+        _run_id = kwargs.get("run_id", "unknown")
 
         # Step 1: Repository reconnaissance (simulated - would call GitHub service)
         repo_state = await self._check_repository_state(**kwargs)
@@ -113,9 +111,9 @@ class BuildersLearningStrategy:
         )
 
         # Step 5: Store diagnostic artifact (TODO: wire to orchestrator)
-        _diagnostic = {  # noqa: F841
+        _diagnostic = {
             "worker": "frank",
-            "run_id": run_id,
+            "run_id": _run_id,
             "repository_state": repo_state,
             "failure_patterns": failure_patterns,
             "expectation": "First implementation - expect 85% coverage",
@@ -124,7 +122,7 @@ class BuildersLearningStrategy:
 
         # Step 6: Store learning in memory (would go to memory store)
         if self.enable_learning:
-            await self._store_frank_learning(run_id, repo_state, failure_patterns, result)
+            await self._store_frank_learning(_run_id, repo_state, failure_patterns, result)
 
         return result
 
@@ -173,7 +171,7 @@ class BuildersLearningStrategy:
         }
 
         result = await self._react.reason(
-            messages, model, llm, trace=trace, warden=warden, context=context, **kwargs
+            messages, model, llm, trace=trace, warden=wardon, context=context, **kwargs
         )
 
         # Step 4: Self-diagnosis before PR submission (simulated)
