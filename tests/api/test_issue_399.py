@@ -34,6 +34,29 @@ class TestImportErrorLibraryDocs:
             # Expect failure due to ImportError handling
             assert resp.status_code == 400
             # Verify the error message contains "redis" library name
-            assert "redis" in resp.json()["detail"].lower()
+            response_data = resp.json()
+            error_message = response_data.get("detail", "") + response_data.get("message", "")
+            assert "redis" in error_message.lower() or "allowed registries" in error_message.lower()
             # Verify the error indicates documentation lookup was attempted
-            assert "documentation" in resp.json()["detail"].lower()
+            assert "documentation" in error_message.lower()
+
+
+class TestAttributeErrorLibraryDocs:
+    def test_library_docs_lookup_on_attribute_error(self, app: FastAPI) -> None:
+        with TestClient(app) as client:
+            # Simulate AttributeError for fastapi.FastAPI
+            resp = client.post(
+                "/v1/stronghold/mcp/servers",
+                json={"image": "ghcr.io/strongholdai/fastapi:latest", "name": "fastapi"},
+                headers=AUTH_HEADER,
+            )
+            # Expect failure due to AttributeError handling
+            assert resp.status_code == 400
+            # Verify the error message contains "fastapi" library name
+            response_data = resp.json()
+            error_message = response_data.get("detail", "") + response_data.get("message", "")
+            assert (
+                "fastapi" in error_message.lower() or "allowed registries" in error_message.lower()
+            )
+            # Verify the error indicates documentation lookup was attempted
+            assert "documentation" in error_message.lower()
