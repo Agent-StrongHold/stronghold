@@ -27,3 +27,18 @@ class TestBrowseAgentsEndpoint:
         with TestClient(app) as client:
             resp = client.get("/v1/stronghold/marketplace/agents")
             assert resp.status_code == 200
+
+
+class TestSearchAgentsEndpoint:
+    def test_search_for_data_processing_agents(self, app: FastAPI) -> None:
+        with TestClient(app) as client:
+            resp = client.get(
+                "/v1/stronghold/marketplace/agents", params={"query": "data-processing"}
+            )
+            assert resp.status_code == 200
+            data = resp.json()
+            assert isinstance(data, list)
+            # Verify at least one agent matches the search term
+            agent_names = [agent.get("name", "") for agent in data]
+            matching_agents = [name for name in agent_names if "data-processing" in name.lower()]
+            assert len(matching_agents) > 0
