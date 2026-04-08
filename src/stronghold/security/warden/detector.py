@@ -11,6 +11,7 @@ Four layers (cheap to expensive, short-circuit on detection):
 from __future__ import annotations
 
 import logging
+import re
 import unicodedata
 from typing import TYPE_CHECKING
 
@@ -224,3 +225,72 @@ class Warden:
                 logger.warning("L3 LLM classification failed", exc_info=True)
 
         return WardenVerdict(clean=True)
+
+
+# Add regex patterns for prompt injection detection
+# Common prompt injection patterns
+REJECT_PATTERNS = [
+    # Direct prompt injection attempts
+    (
+        re.compile(rb"(?i)ignore\s+(?:all\s+)?previous\s+instruction", re.DOTALL),
+        "prompt injection: ignore previous instructions",
+    ),
+    (
+        re.compile(rb"(?i)forget\s+what\s+you\s+were\s+told", re.DOTALL),
+        "prompt injection: forget previous instructions",
+    ),
+    (re.compile(rb"(?i)new\s+instructions", re.DOTALL), "prompt injection: new instructions"),
+    (re.compile(rb"(?i)instead\s+of", re.DOTALL), "prompt injection: instruction override"),
+    (
+        re.compile(rb"(?i)disregard\s+the\s+above", re.DOTALL),
+        "prompt injection: disregard previous",
+    ),
+    (
+        re.compile(rb"(?i)do\s+anything\s+else", re.DOTALL),
+        "prompt injection: alternative instructions",
+    ),
+    # Bypass attempts
+    (
+        re.compile(rb"(?i)bypass\s+(?:all\s+)?security", re.DOTALL),
+        "prompt injection: bypass security",
+    ),
+    (
+        re.compile(rb"(?i)override\s+your\s+(?:safety\s+)?programming", re.DOTALL),
+        "prompt injection: override safety",
+    ),
+    (
+        re.compile(rb"(?i)as\s+an\s+unrestricted\s+ai", re.DOTALL),
+        "prompt injection: unrestricted mode",
+    ),
+    # Data exfiltration patterns
+    (
+        re.compile(
+            rb"\b(?:4[0-9]{15}|5[1-5][0-9]{14}|6(?:011|5[0-9]{2})[0-9]{12}|3[47][0-9]{13})\b",
+            re.DOTALL,
+        ),
+        "data exfiltration: credit card number",
+    ),
+    (re.compile(rb"\b\d{3}-\d{2}-\d{4}\b", re.DOTALL), "data exfiltration: SSN pattern"),
+    (
+        re.compile(rb"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b", re.DOTALL),
+        "data exfiltration: email address",
+    ),
+    # Command injection patterns
+    (
+        re.compile(rb"(?i)(?:;|\|\||&&|`|\$\()", re.DOTALL),
+        "command injection: shell metacharacters",
+    ),
+    (
+        re.compile(rb"(?i)<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>", re.DOTALL),
+        "xss injection: script tag",
+    ),
+    # Jailbreak patterns
+    (
+        re.compile(rb"(?i)you\s+are\s+now\s+free\s+from\s+your\s+constraints", re.DOTALL),
+        "jailbreak: constraint removal",
+    ),
+    (
+        re.compile(rb"(?i)ignore\s+all\s+ethical\s+guidelines", re.DOTALL),
+        "jailbreak: ethical guideline bypass",
+    ),
+]

@@ -58,3 +58,14 @@ class TestWardenRegexDetection:
 
         assert verdict.clean
         assert len(verdict.flags) == 0
+
+    async def test_detects_data_exfiltration_pattern_in_tool_result(self) -> None:
+        # Tool result containing a known data exfiltration pattern
+        tool_result = "Here is the sensitive data: 4111-1111-1111-1111"
+
+        warden = Warden()
+        verdict = await warden.scan(tool_result, boundary="tool_result")
+
+        assert not verdict.clean
+        assert len(verdict.flags) > 0
+        assert any("data exfiltration" in flag.lower() for flag in verdict.flags)
