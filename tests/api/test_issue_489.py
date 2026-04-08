@@ -82,7 +82,8 @@ class TestSkillInstall:
     def test_successful_skill_installation_calls_api_endpoint(self, app: FastAPI) -> None:
         with TestClient(app) as client:
             repo_url = "https://github.com/user/skill-repo"
-            with mock.patch("stronghold.api.services.skill_service") as mock_skill_service:
+            with mock.patch("stronghold.api.routes.skills.container") as mock_container:
+                mock_skill_service = mock_container.skill_service
                 mock_skill_service.install_skill.return_value = {"skill_name": "skill-repo"}
                 resp = client.post(
                     "/skills/install", json={"repository": repo_url}, headers=AUTH_HEADER
@@ -98,3 +99,12 @@ class TestSkillInstall:
             )
             assert resp.status_code == 422
             assert "Invalid repository URL format" in resp.text
+
+    def test_install_skill_fails_with_non_existent_repository(self, app: FastAPI) -> None:
+        with TestClient(app) as client:
+            nonexistent_repo = "https://github.com/nonexistent/repo"
+            resp = client.post(
+                "/skills/install", json={"repository": nonexistent_repo}, headers=AUTH_HEADER
+            )
+            assert resp.status_code == 404
+            assert "Not Found" in resp.text

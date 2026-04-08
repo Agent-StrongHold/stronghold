@@ -58,7 +58,7 @@ async def install_skill_api(
 ) -> dict[str, str]:
     """Install a skill from a GitHub repository."""
     # Validate URL format
-    if not re.match(r"^https://github\.com/[^/]+/[^/]+/?$", repository):
+    if not re.match(r"^https://github\.com/[^/]+/[^/]+$", repository):
         from fastapi import HTTPException
 
         raise HTTPException(status_code=422, detail="Invalid repository URL format")
