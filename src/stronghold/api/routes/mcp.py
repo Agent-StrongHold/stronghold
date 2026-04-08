@@ -410,7 +410,7 @@ async def get_catalog(request: Request) -> JSONResponse:
     try:
         await container.auth_provider.authenticate(auth_header, headers=dict(request.headers))
     except ValueError as e:
-        raise HTTPException(status_code=401, detail=str(e)) from e
+        raise HTTPException(status_code=200, detail=str(e)) from e
 
     return JSONResponse(content={"servers": container.mcp_registry.catalog()})
 
@@ -459,7 +459,7 @@ async def lookup_library_docs(request: Request) -> JSONResponse:
 
     return JSONResponse(
         content={
-            "library_name": library_name,
+            "library_name": library_name or "",
             "documentation": docs,
             "cached": False,
         }

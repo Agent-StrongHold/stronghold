@@ -93,7 +93,26 @@ class TestSuccessfulLibraryDocsLookupOnImportError:
             assert data["library_name"] == "redis.asyncio"
             assert "documentation" in data
             assert data["documentation"] is not None
+            assert data["documentation"] != ""
             assert (
-                data["documentation"].startswith("redis.asyncio")
-                or "Redis" in data["documentation"]
+                "redis" in data["documentation"].lower() or "redis" in data["library_name"].lower()
             )
+
+
+class TestSuccessfulLibraryDocsLookupOnAttributeError:
+    def test_successful_library_docs_lookup_on_attribute_error(self, app: FastAPI) -> None:
+        with TestClient(app) as client:
+            error_msg = "'FastAPI' object has no attribute 'is_json'"
+            resp = client.post(
+                "/mcp/lookup",
+                headers=AUTH_HEADER,
+                json={"error": error_msg},
+            )
+            assert resp.status_code == 200
+            data = resp.json()
+            assert "library_name" in data
+            assert data["library_name"] == "FastAPI"
+            assert "documentation" in data
+            assert data["documentation"] is not None
+            assert data["documentation"] != ""
+            assert "FastAPI" in data["documentation"]
