@@ -110,3 +110,10 @@ class TestVersionInformationCompleteness:
             assert len(data["python_version"]) > 0
             assert "service" in data
             assert data["service"] == "stronghold"
+
+
+class TestPublicAccess:
+    def test_version_endpoint_is_public(self, app: FastAPI) -> None:
+        with TestClient(app) as client:
+            resp = client.get("/v1/stronghold/version")
+            assert resp.status_code == 200
