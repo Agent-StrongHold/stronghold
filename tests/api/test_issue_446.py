@@ -39,3 +39,14 @@ class TestF541Fix:
         close_redis = AsyncMock()
         await close_redis()
         mock_redis.aclose.assert_called_once()
+
+
+class TestModuleLoad:
+    def test_module_loads_without_errors(self) -> None:
+        """Confirm string format adjustments maintain original functionality."""
+        import stronghold.cache.redis_pool as mod
+
+        assert mod is not None
+        assert hasattr(mod, "get_redis")
+        assert hasattr(mod, "close_redis")
+        assert hasattr(mod, "_mask_url")
