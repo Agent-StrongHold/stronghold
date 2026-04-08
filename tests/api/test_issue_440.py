@@ -64,3 +64,18 @@ class TestQuotedAnnotationsInAgentsPy:
         assert result.returncode == 0, (
             f"Quoted annotations found in agents.py:\n{result.stdout}\n{result.stderr}"
         )
+
+
+class TestRuffCheckFunctionalChanges:
+    def test_ruff_check_no_functional_changes_after_fixes(self, app: FastAPI) -> None:
+        """Verify no functional changes after fixes by checking for new errors."""
+        import subprocess  # noqa: PLC0415
+
+        result = subprocess.run(
+            ["ruff", "check", "--select", "F", "src/stronghold/api/routes/agents.py"],
+            capture_output=True,
+            text=True,
+        )
+        assert result.returncode == 0, (
+            f"Functional changes detected (new errors introduced):\n{result.stdout}\n{result.stderr}"
+        )
