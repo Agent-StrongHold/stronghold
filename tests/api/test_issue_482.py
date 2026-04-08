@@ -157,3 +157,19 @@ def test_stronghold_cli_invalid_command_fails() -> None:
 
     assert result.returncode != 0, "stronghold invalid-argument should exit with non-zero code"
     assert "Error" in result.stderr, "Output should contain 'Error'"
+
+
+def test_stronghold_cli_version_output_format() -> None:
+    import subprocess
+
+    result = subprocess.run(
+        ["stronghold", "--version"],
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0, "stronghold --version should exit with code 0"
+    output = result.stdout.lower()
+    assert any(marker in output for marker in ("version", "stronghold")), (
+        "Output should contain either 'version' or 'stronghold' information"
+    )
