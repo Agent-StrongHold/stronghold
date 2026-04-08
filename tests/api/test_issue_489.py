@@ -30,3 +30,12 @@ class TestSkillInstall:
                 "/skills/install", json={"repository": repo_url}, headers=AUTH_HEADER
             )
             assert resp.status_code == 200
+
+    def test_install_skill_with_invalid_url_format(self, app: FastAPI) -> None:
+        with TestClient(app) as client:
+            invalid_url = "invalid-url"
+            resp = client.post(
+                "/skills/install", json={"repository": invalid_url}, headers=AUTH_HEADER
+            )
+            assert resp.status_code == 422
+            assert "Invalid repository URL format" in resp.text
