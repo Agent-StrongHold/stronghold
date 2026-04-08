@@ -36,3 +36,17 @@ def test_pyproject_toml_has_correct_scripts_entry() -> None:
     assert "stronghold = 'src.stronghold.cli.main:app'" in scripts_content, (
         "Scripts section should include 'stronghold = 'src.stronghold.cli.main:app''"
     )
+
+
+def test_stronghold_cli_help_output() -> None:
+    import subprocess
+
+    result = subprocess.run(
+        ["stronghold", "--help"],
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0, "stronghold --help should exit with code 0"
+    assert "Usage:" in result.stdout, "Output should contain 'Usage:'"
+    assert "Options:" in result.stdout, "Output should contain 'Options:'"
