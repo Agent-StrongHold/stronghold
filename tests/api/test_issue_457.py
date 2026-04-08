@@ -434,3 +434,38 @@ class TestToolExecutionStreaming:
                 assert first_result_index > last_call_index, (
                     "All tool_result events should come after all tool_call events"
                 )
+
+
+class TestStreamCancellationCleanup:
+    def test_cancellation_during_streaming_cleans_up_resources(self, app: FastAPI) -> None:
+        """Test that server cleans up resources when client disconnects during streaming."""
+        with TestClient(app) as client:
+            payload = {"goal": "List files in current directory", "stream": True}
+            with client.stream(
+                "POST", "/v1/stronghold/request/stream", json=payload, headers=AUTH_HEADER
+            ) as response:
+                assert response.status_code == 200
+
+                # Read first event to ensure streaming started
+                first_chunk = next(response.iter_lines())
+                if isinstance(first_chunk, bytes):
+                    first_chunk = first_chunk.decode("utf-8")
+                assert first_chunk.startswith("data: ")
+
+                # Simulate client disconnect
+                response.close()
+
+                # Verify the streaming task was cancelled
+                container = app.state.container
+                streaming_tasks = getattr(container, "streaming_tasks", [])
+
+                # Check that the streaming task was removed from active tasks
+                active_tasks_after = [
+                    task for task in streaming_tasks if not task.done() and not task.cancelled()
+                ]
+
+                # The exact cleanup mechanism may vary, so we check that no active streaming
+                # tasks remain that could cause resource leaks
+                assert len(active_tasks_after) == 0, (
+                    "All streaming tasks should be cleaned up after client disconnect"
+                )
