@@ -98,3 +98,16 @@ def test_stronghold_cli_invalid_arg_fails() -> None:
     assert result.returncode != 0, "stronghold --invalid-arg should exit with non-zero code"
     assert "Error:" in result.stderr, "Output should contain 'Error:'"
     assert "no such option" in result.stderr.lower(), "Output should contain 'no such option'"
+
+
+def test_stronghold_cli_version_output_contains_stronghold() -> None:
+    import subprocess
+
+    result = subprocess.run(
+        ["stronghold", "--version"],
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0, "stronghold --version should exit with code 0"
+    assert "stronghold" in result.stdout.lower(), "Output should contain 'stronghold'"
