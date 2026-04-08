@@ -117,3 +117,23 @@ class TestPublicAccess:
         with TestClient(app) as client:
             resp = client.get("/v1/stronghold/version")
             assert resp.status_code == 200
+
+
+class TestAPIContractCompliance:
+    def test_response_matches_api_contract(self, app: FastAPI) -> None:
+        with TestClient(app) as client:
+            resp = client.get("/v1/stronghold/version")
+            assert resp.status_code == 200
+            data = resp.json()
+
+            # Verify response is a valid JSON object
+            assert isinstance(data, dict)
+
+            # Verify response contains exactly the required fields
+            required_fields = {"version", "python_version", "service"}
+            assert set(data.keys()) == required_fields
+
+            # Verify field values are non-empty strings
+            assert isinstance(data["version"], str) and data["version"]
+            assert isinstance(data["python_version"], str) and data["python_version"]
+            assert isinstance(data["service"], str) and data["service"]
