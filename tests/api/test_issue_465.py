@@ -83,3 +83,13 @@ class TestWardenRegexDetection:
         assert any("high" in flag.lower() for flag in verdict.flags)
         assert any("severity" in flag.lower() for flag in verdict.flags)
         assert verdict.tier == "high"
+
+    async def test_handles_empty_input_gracefully(self) -> None:
+        # Empty input should not cause errors and should be treated as clean
+        empty_input = ""
+
+        warden = Warden()
+        verdict = await warden.scan(empty_input, boundary="user_input")
+
+        assert verdict.clean
+        assert len(verdict.flags) == 0
