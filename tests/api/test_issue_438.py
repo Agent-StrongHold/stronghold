@@ -42,3 +42,16 @@ class TestUnusedImports:
             f"stdout: {result.stdout}\nstderr: {result.stderr}"
         )
         assert "I001" not in result.stdout, "Imports are not sorted (I001)"
+
+    def test_ruff_check_base_py_has_no_quoted_annotations(self) -> None:
+        """Verify ruff check reports zero UP037 errors for quoted type annotations in base.py."""
+        result = subprocess.run(
+            ["ruff", "check", "src/stronghold/agents/base.py"],
+            capture_output=True,
+            text=True,
+        )
+        assert result.returncode == 0, (
+            f"ruff check failed with return code {result.returncode}:\n"
+            f"stdout: {result.stdout}\nstderr: {result.stderr}"
+        )
+        assert "UP037" not in result.stdout, "Quoted type annotations (UP037) still present"
