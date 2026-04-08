@@ -39,8 +39,10 @@ _ALLOWED_STAGE_TRANSITIONS: dict[str, tuple[str, ...]] = {
     "completed": (),
 }
 
+
 def _utc_now() -> datetime:
     return datetime.now(UTC)
+
 
 @dataclass
 class RunState:
@@ -60,12 +62,14 @@ class RunState:
     retries: dict[str, int] = field(default_factory=dict)
     updated_at: datetime = field(default_factory=_utc_now)
 
+
 @dataclass
 class RuntimeVersionState:
     """Lifecycle state for a Builders runtime version."""
 
     version: str
     state: str = "ready"  # ready | draining | retired
+
 
 class BuildersOrchestrator:
     """Minimal orchestration state holder for Builders 2.0."""
@@ -315,17 +319,10 @@ class BuildersOrchestrator:
                 runtime_version=str(item.get("runtime_version", "v1")),
                 status=RunStatus(str(item["status"])),
                 artifacts=[
-                    ArtifactRef.model_validate(artifact)
-                    for artifact in list(run.artifacts)
+                    ArtifactRef.model_validate(artifact) for artifact in list(item["artifacts"])
                 ],
-                events=[
-                    StageEvent.model_validate(event)
-                    for event in list(run.events)
-                ],
-                retries={
-                    str(k): int(str(v))
-                    for k, v in dict(item.get("retries", {})).items()
-                },
+                events=[StageEvent.model_validate(event) for event in list(item["events"])],
+                retries={str(k): int(str(v)) for k, v in dict(item.get("retries", {})).items()},
             )
             run.updated_at = _utc_now()
             self._runs[run.run_id] = run

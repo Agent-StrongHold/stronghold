@@ -319,9 +319,9 @@ class BuildersOrchestrator:
                 runtime_version=str(item.get("runtime_version", "v1")),
                 status=RunStatus(str(item["status"])),
                 artifacts=[
-                    ArtifactRef.model_validate(artifact) for artifact in list(run.artifacts)
+                    ArtifactRef.model_validate(artifact) for artifact in list(item["artifacts"])
                 ],
-                events=[StageEvent.model_validate(event) for event in list(run.events)],
+                events=[StageEvent.model_validate(event) for event in list(item["events"])],
                 retries={str(k): int(str(v)) for k, v in dict(item.get("retries", {})).items()},
             )
             run.updated_at = _utc_now()

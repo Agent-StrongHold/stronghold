@@ -108,3 +108,53 @@ class TestRuffAutoFix:
 
         # Clean up backup
         backup_path.unlink(missing_ok=True)
+
+
+class TestRuffAutoFixAndFormat:
+    def test_ruff_auto_fix_and_format_workflow(self, orchestrator_path: Path) -> None:
+        """Verify the complete ruff auto-fix and format workflow succeeds."""
+        # Make a copy to compare later
+        backup_path = orchestrator_path.with_suffix(".py.bak")
+        subprocess.run(["cp", str(orchestrator_path), str(backup_path)], check=True)
+
+        # Run ruff with --fix
+        fix_result = subprocess.run(
+            ["ruff", "check", "--fix", str(orchestrator_path)],
+            capture_output=True,
+            text=True,
+        )
+        assert fix_result.returncode == 0, (
+            f"ruff check --fix failed with output:\n{fix_result.stdout}\n{fix_result.stderr}"
+        )
+
+        # Verify file was modified
+        assert (
+            subprocess.run(
+                ["diff", str(backup_path), str(orchestrator_path)],
+                capture_output=True,
+            ).returncode
+            != 0
+        ), "File was not modified by ruff --fix"
+
+        # Run ruff format
+        format_result = subprocess.run(
+            ["ruff", "format", str(orchestrator_path)],
+            capture_output=True,
+            text=True,
+        )
+        assert format_result.returncode == 0, (
+            f"ruff format failed with output:\n{format_result.stdout}\n{format_result.stderr}"
+        )
+
+        # Verify no further issues remain
+        check_result = subprocess.run(
+            ["ruff", "check", str(orchestrator_path)],
+            capture_output=True,
+            text=True,
+        )
+        assert check_result.returncode == 0, (
+            f"ruff check failed after formatting with output:\n{check_result.stdout}\n{check_result.stderr}"
+        )
+
+        # Clean up backup
+        backup_path.unlink(missing_ok=True)
