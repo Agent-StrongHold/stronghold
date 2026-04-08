@@ -46,3 +46,33 @@ class TestAttributeErrorLibraryLookup:
             assert "documentation" in data
             assert "cached" in data
             assert data["cached"] is True
+
+
+class TestCachedLibraryDocsPrevention:
+    def test_cached_library_docs_prevents_redundant_queries(self, app: FastAPI) -> None:
+        with TestClient(app) as client:
+            # First call to cache the documentation
+            error_msg = "No module named 'requests'"
+            first_resp = client.post(
+                "/mcp/lookup",
+                headers=AUTH_HEADER,
+                json={"error": error_msg},
+            )
+            assert first_resp.status_code == 200
+            first_data = first_resp.json()
+            assert first_data["library_name"] == "requests"
+            assert "documentation" in first_data
+            assert first_data["cached"] is False
+
+            # Second call should use cached docs
+            second_resp = client.post(
+                "/mcp/lookup",
+                headers=AUTH_HEADER,
+                json={"error": error_msg},
+            )
+            assert second_resp.status_code == 200
+            second_data = second_resp.json()
+            assert second_data["library_name"] == "requests"
+            assert "documentation" in second_data
+            assert second_data["cached"] is True
+            assert second_data["documentation"] == first_data["documentation"]
