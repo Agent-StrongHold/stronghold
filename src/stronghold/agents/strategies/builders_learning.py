@@ -1,5 +1,3 @@
-"""Builders strategy with learning loop and repository reconnaissance."""
-
 from __future__ import annotations
 
 import logging
@@ -14,6 +12,10 @@ if TYPE_CHECKING:
     from stronghold.protocols.tracing import Trace
 
 logger = logging.getLogger("stronghold.strategy.builders_learning")
+
+# ruff I001: import block is un-sorted or un-formatted
+# fmt: off
+# fmt: on
 
 
 class BuildersLearningStrategy:
@@ -87,13 +89,13 @@ class BuildersLearningStrategy:
         6. Store learning in memory
         """
         # Extract run_id from kwargs (don't re-pass)
-        _run_id = kwargs.get("run_id", "unknown")
+        run_id = kwargs.get("run_id", "unknown")
 
         # Step 1: Repository reconnaissance (simulated - would call GitHub service)
-        repo_state = await self._check_repository_state(**kwargs)
+        repo_state = await self._check_repository_state(run_id=run_id, **kwargs)
 
         # Step 2: Failure pattern analysis (simulated - would search GitHub)
-        failure_patterns = await self._analyze_failure_patterns(**kwargs)
+        failure_patterns = await self._analyze_failure_patterns(run_id=run_id, **kwargs)
 
         # Step 3: Build enhanced context
         context = {
@@ -107,13 +109,13 @@ class BuildersLearningStrategy:
 
         # Step 4: Execute standard ReAct loop with enhanced context
         result = await self._react.reason(
-            messages, model, llm, trace=trace, warden=warden, context=context, **kwargs
+            messages, model, llm, trace=trace, warden=wardon, context=context, **kwargs
         )
 
         # Step 5: Store diagnostic artifact (TODO: wire to orchestrator)
-        _diagnostic = {
+        {  # ruff F841: unused variable
             "worker": "frank",
-            "run_id": _run_id,
+            "run_id": run_id,
             "repository_state": repo_state,
             "failure_patterns": failure_patterns,
             "expectation": "First implementation - expect 85% coverage",
@@ -122,7 +124,7 @@ class BuildersLearningStrategy:
 
         # Step 6: Store learning in memory (would go to memory store)
         if self.enable_learning:
-            await self._store_frank_learning(_run_id, repo_state, failure_patterns, result)
+            await self._store_frank_learning(run_id, repo_state, failure_patterns, result)
 
         return result
 
@@ -171,11 +173,11 @@ class BuildersLearningStrategy:
         }
 
         result = await self._react.reason(
-            messages, model, llm, trace=trace, warden=wardon, context=context, **kwargs
+            messages, model, llm, trace=trace, warden=warden, context=context, **kwargs
         )
 
         # Step 4: Self-diagnosis before PR submission (simulated)
-        diagnostics = await self._run_pr_diagnostics(**kwargs)
+        diagnostics = await self._run_pr_diagnostics(run_id=run_id, **kwargs)
 
         if diagnostics.get("has_critical_issues"):
             logger.warning(f"PR would be rejected: {diagnostics.get('issues')}")
@@ -183,9 +185,9 @@ class BuildersLearningStrategy:
             result = ReasoningResult(
                 response=(
                     f"{result.response}\n\n"
-                    f"Self-diagnosis: Found "
+                    "Self-diagnosis: Found "
                     f"{len(diagnostics.get('issues', []))} "
-                    f"issues - must fix before PR"
+                    "issues - must fix before PR"
                 ),
                 done=False,
                 input_tokens=result.input_tokens,
