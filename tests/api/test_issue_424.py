@@ -39,3 +39,15 @@ class TestAgentsStatusEndpoint:
                 assert "model" in agent
             assert "count" in data
             assert data["count"] == len(data["agents"])
+
+    def test_retrieve_agents_when_none_loaded(self, app: FastAPI) -> None:
+        with TestClient(app) as client:
+            resp = client.get("/v1/stronghold/status/agents")
+            assert resp.status_code == 200
+            data = resp.json()
+            assert isinstance(data, dict)
+            assert "agents" in data
+            assert isinstance(data["agents"], list)
+            assert len(data["agents"]) == 0
+            assert "count" in data
+            assert data["count"] == 0
