@@ -52,7 +52,7 @@ def install_skill(
 router = APIRouter()
 
 
-@router.post("/v1/skills/install")
+@router.post("/skills/install")
 async def install_skill_api(
     repository: str,
 ) -> dict[str, str]:

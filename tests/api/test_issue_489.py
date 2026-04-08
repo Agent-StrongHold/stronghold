@@ -76,3 +76,16 @@ class TestSkillInstall:
             )
             assert resp.status_code == 400
             assert "Repository not found or inaccessible" in resp.text
+
+    def test_successful_skill_installation_calls_api_endpoint(self, app: FastAPI) -> None:
+        with TestClient(app) as client:
+            repo_url = "https://github.com/user/skill-repo"
+            with pytest.mock.patch(
+                "stronghold.api.routes.skills.skill_service"
+            ) as mock_skill_service:
+                mock_skill_service.install_skill.return_value = {"skill_name": "skill-repo"}
+                resp = client.post(
+                    "/skills/install", json={"repository": repo_url}, headers=AUTH_HEADER
+                )
+                mock_skill_service.install_skill.assert_called_once_with(repo_url)
+                assert resp.status_code == 200
