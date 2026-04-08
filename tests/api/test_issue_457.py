@@ -317,3 +317,45 @@ class TestEventOrderingValidation:
                     break
 
             assert valid_sequence, "Events should follow the expected sequence pattern"
+
+
+class TestChatCompletionsStreaming:
+    def test_chat_completions_with_stream_true_returns_sse_events(self, app: FastAPI) -> None:
+        """Test that /v1/chat/completions with stream: true returns proper SSE events."""
+        with TestClient(app) as client:
+            payload = {"goal": "Write a short story", "stream": True}
+            response = client.post("/v1/chat/completions", json=payload, headers=AUTH_HEADER)
+
+            assert response.status_code == 200
+            assert response.headers["content-type"] == "text/event-stream; charset=utf-8"
+
+            lines = response.text.split("\n\n")
+            events = [line.replace("data: ", "") for line in lines if line.startswith("data: ")]
+
+            assert len(events) > 1, "Should have multiple events in the stream"
+
+            # Parse events
+            event_objects = [json.loads(event) for event in events if event]
+
+            # Verify sequence of events
+            first_event = event_objects[0]
+            assert first_event["type"] == "status"
+            assert "Starting..." in first_event["message"]
+
+            # Find token events
+            token_events = [e for e in event_objects if e.get("type") == "token"]
+            assert len(token_events) > 0, "Should have token events for text generation"
+
+            # Verify token events have content
+            for event in token_events:
+                assert "token" in event
+                assert isinstance(event["token"], str)
+
+            # Find final event
+            final_event = event_objects[-1]
+            assert final_event["type"] in ("done", "error")
+
+            # Verify all events have required fields
+            for event in event_objects:
+                assert "type" in event
+                assert "timestamp" in event
