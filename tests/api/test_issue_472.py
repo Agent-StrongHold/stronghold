@@ -56,3 +56,20 @@ class TestRedTeamRegressionGateWorkflow:
             data = resp.json()
             assert "error" in data
             assert "baseline" in data["error"].lower()
+
+    def test_workflow_runs_successfully_on_main_branch_pr(self, app: FastAPI) -> None:
+        with TestClient(app) as client:
+            resp = client.post(
+                "/v1/stronghold/gate/red-team-regression",
+                json={
+                    "benchmark_results": {"score": 0.85},
+                    "threshold": 0.9,
+                    "baseline": {"score": 0.82},
+                    "is_main_branch_pr": True,
+                },
+                headers=AUTH_HEADER,
+            )
+            assert resp.status_code == 200
+            data = resp.json()
+            assert "status" in data
+            assert data["status"] == "success"
