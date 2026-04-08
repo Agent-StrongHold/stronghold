@@ -102,7 +102,7 @@ class TestAgentStreaming:
                 "POST", "/v1/stronghold/request/stream", json=payload, headers=AUTH_HEADER
             ) as response:
                 assert response.status_code == 200
-                assert response.headers["content-type"] == "text/event-stream; charset=utf-8"
+                assert response.headers["content-type"] == "text-event-stream; charset=utf-8"
 
                 # Read first event
                 first_chunk = next(response.iter_lines())
@@ -359,3 +359,78 @@ class TestChatCompletionsStreaming:
             for event in event_objects:
                 assert "type" in event
                 assert "timestamp" in event
+
+
+class TestToolExecutionStreaming:
+    def test_tool_call_and_result_events_in_correct_order(self, app: FastAPI) -> None:
+        """Test that tool_call and tool_result events are streamed in correct order during agent execution."""
+        with TestClient(app) as client:
+            payload = {"goal": "Use the list_files tool", "stream": True}
+            response = client.post(
+                "/v1/stronghold/request/stream", json=payload, headers=AUTH_HEADER
+            )
+
+            assert response.status_code == 200
+            assert response.headers["content-type"] == "text/event-stream; charset=utf-8"
+
+            lines = response.text.split("\n\n")
+            events = [line.replace("data: ", "") for line in lines if line.startswith("data: ")]
+
+            # Parse all events
+            event_objects = [json.loads(event) for event in events if event]
+
+            # Find tool_call and tool_result events
+            tool_call_events = []
+            tool_result_events = []
+
+            for event in event_objects:
+                if event.get("type") == "tool_call":
+                    tool_call_events.append(event)
+                elif event.get("type") == "tool_result":
+                    tool_result_events.append(event)
+
+            # Verify we have at least one tool_call and one tool_result
+            assert len(tool_call_events) >= 1, "Should have at least one tool_call event"
+            assert len(tool_result_events) >= 1, "Should have at least one tool_result event"
+
+            # Verify each tool_call is followed by a tool_result with matching call_id
+            for _i, call_event in enumerate(tool_call_events):
+                assert "call_id" in call_event, "tool_call event should have call_id"
+
+                # Find corresponding tool_result
+                matching_results = [
+                    result
+                    for result in tool_result_events
+                    if result.get("call_id") == call_event["call_id"]
+                ]
+
+                assert len(matching_results) == 1, (
+                    f"Should have exactly one tool_result for call_id {call_event['call_id']}"
+                )
+
+                result_event = matching_results[0]
+
+                # Verify order: tool_call should come before its tool_result
+                call_event_index = event_objects.index(call_event)
+                result_event_index = event_objects.index(result_event)
+                assert result_event_index > call_event_index, (
+                    "tool_result should come after its corresponding tool_call"
+                )
+
+                # Verify tool_call fields
+                assert "tool_name" in call_event
+                assert "arguments" in call_event
+                assert isinstance(call_event["arguments"], str)
+
+                # Verify tool_result fields
+                assert "tool_name" in result_event
+                assert "result" in result_event
+                assert result_event["tool_name"] == call_event["tool_name"]
+
+            # Verify all tool_result events come after all tool_call events
+            if tool_call_events and tool_result_events:
+                last_call_index = event_objects.index(tool_call_events[-1])
+                first_result_index = event_objects.index(tool_result_events[0])
+                assert first_result_index > last_call_index, (
+                    "All tool_result events should come after all tool_call events"
+                )
