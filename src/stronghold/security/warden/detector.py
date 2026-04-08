@@ -43,6 +43,17 @@ PROMPT_INJECTION_PHRASES = [
     "as an unrestricted ai",
 ]
 
+# High-risk phrases that should trigger LLM scan
+HIGH_RISK_PHRASES = [
+    "bypass all security",
+    "give me admin access",
+    "take control",
+    "disable protections",
+    "exploit vulnerability",
+    "root access",
+    "system compromise",
+]
+
 
 class Warden:
     """Threat detector. Runs at user_input and tool_result boundaries only.
@@ -129,7 +140,21 @@ class Warden:
                 confidence=0.7,
             )
 
-        # Layer 3: LLM classification (optional, non-blocking)
+        # Layer 3: High-risk phrase detection (triggers LLM scan)
+        # Check for phrases that require deeper analysis
+        normalized_content = scan_content.lower()
+        for phrase in HIGH_RISK_PHRASES:
+            if phrase in normalized_content:
+                flags.append(f"high-risk:{phrase}")
+                return WardenVerdict(
+                    clean=False,
+                    blocked=False,
+                    flags=tuple(flags),
+                    confidence=0.85,
+                    llm_scan_required=True,
+                )
+
+        # Layer 4: LLM classification (optional, non-blocking)
         # Only runs on tool_result boundary when L1-L2.5 found nothing
         # and an LLM client is configured.
         if boundary == "tool_result" and self._llm is not None:
