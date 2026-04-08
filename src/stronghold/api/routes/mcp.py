@@ -343,7 +343,7 @@ async def start_server(name: str, request: Request) -> JSONResponse:
 @router.delete("/servers/{name}")
 async def remove_server(name: str, request: Request) -> JSONResponse:
     """Remove an MCP server entirely (delete K8s resources)."""
-    _check_csrf(request)
+    _check_csr(request)
     container = request.app.state.container
     auth_header = request.headers.get("authorization")
     try:
