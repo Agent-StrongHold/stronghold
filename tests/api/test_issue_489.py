@@ -48,3 +48,13 @@ class TestSkillInstall:
             )
             assert resp.status_code == 400
             assert "Repository not found or inaccessible" in resp.text
+
+    def test_install_skill_extracts_correct_skill_name(self, app: FastAPI) -> None:
+        with TestClient(app) as client:
+            repo_url = "https://github.com/user/skill-repo"
+            resp = client.post(
+                "/skills/install", json={"repository": repo_url}, headers=AUTH_HEADER
+            )
+            assert resp.status_code == 200
+            data = resp.json()
+            assert data["skill_name"] == "skill-repo"
