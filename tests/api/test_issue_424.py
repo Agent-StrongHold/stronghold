@@ -51,3 +51,14 @@ class TestAgentsStatusEndpoint:
             assert len(data["agents"]) == 0
             assert "count" in data
             assert data["count"] == 0
+
+    def test_response_format_matches_specification(self, app: FastAPI) -> None:
+        with TestClient(app) as client:
+            resp = client.get("/v1/stronghold/status/agents")
+            assert resp.status_code == 200
+            data = resp.json()
+            assert isinstance(data, dict)
+            assert set(data.keys()) == {"agents", "count"}
+            assert isinstance(data["agents"], list)
+            assert isinstance(data["count"], int)
+            assert data["count"] >= 0
