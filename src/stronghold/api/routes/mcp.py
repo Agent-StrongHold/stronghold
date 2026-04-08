@@ -389,6 +389,32 @@ async def get_catalog(request: Request) -> JSONResponse:
     return JSONResponse(content={"servers": container.mcp_registry.catalog()})
 
 
+@router.get("/catalog")
+async def get_catalog(request: Request) -> JSONResponse:
+    """Get MCP catalog."""
+    container = request.app.state.container
+    auth_header = request.headers.get("authorization")
+    try:
+        await container.auth_provider.authenticate(auth_header, headers=dict(request.headers))
+    except ValueError as e:
+        raise HTTPException(status_code=401, detail=str(e)) from e
+
+    return JSONResponse(content={"servers": container.mcp_registry.catalog()})
+
+
+@router.get("/catalog")
+async def get_catalog(request: Request) -> JSONResponse:
+    """Get MCP catalog."""
+    container = request.app.state.container
+    auth_header = request.headers.get("authorization")
+    try:
+        await container.auth_provider.authenticate(auth_header, headers=dict(request.headers))
+    except ValueError as e:
+        raise HTTPException(status_code=401, detail=str(e)) from e
+
+    return JSONResponse(content={"servers": container.mcp_registry.catalog()})
+
+
 @router.post("/lookup")
 async def lookup_library_docs(request: Request) -> JSONResponse:
     """Lookup library documentation from error message."""
@@ -406,22 +432,25 @@ async def lookup_library_docs(request: Request) -> JSONResponse:
             from stronghold.memory.learnings.store import InMemoryLearningStore  # noqa: PLC0415
 
             container.library_docs_cache = InMemoryLearningStore()
-        docs = container.library_docs_cache.get(library_name)
-        if docs:
-            return JSONResponse(
-                content={
-                    "library_name": library_name,
-                    "documentation": docs,
-                    "cached": True,
-                }
-            )
+        try:
+            docs = container.library_docs_cache.get(library_name)
+            if docs:
+                return JSONResponse(
+                    content={
+                        "library_name": library_name,
+                        "documentation": docs,
+                        "cached": True,
+                    }
+                )
+        except Exception:
+            docs = None
 
     # If not cached, fetch from Context7 MCP
     if not docs and library_name:
         try:
             docs = await _fetch_library_docs(library_name, container)
             if docs:
-                container.library_docs_cache[library_name] = docs
+                container.library_docs_cache.set(library_name, docs)
         except Exception as e:
             logger.warning("Failed to fetch library docs for %s: %s", library_name, e)
 

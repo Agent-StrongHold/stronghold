@@ -76,3 +76,24 @@ class TestCachedLibraryDocsPrevention:
             assert "documentation" in second_data
             assert second_data["cached"] is True
             assert second_data["documentation"] == first_data["documentation"]
+
+
+class TestSuccessfulLibraryDocsLookupOnImportError:
+    def test_successful_library_docs_lookup_on_import_error(self, app: FastAPI) -> None:
+        with TestClient(app) as client:
+            error_msg = "No module named 'redis.asyncio'"
+            resp = client.post(
+                "/mcp/lookup",
+                headers=AUTH_HEADER,
+                json={"error": error_msg},
+            )
+            assert resp.status_code == 200
+            data = resp.json()
+            assert "library_name" in data
+            assert data["library_name"] == "redis.asyncio"
+            assert "documentation" in data
+            assert data["documentation"] is not None
+            assert (
+                data["documentation"].startswith("redis.asyncio")
+                or "Redis" in data["documentation"]
+            )
