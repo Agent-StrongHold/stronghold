@@ -596,3 +596,90 @@ class TestErrorEventDuringStreaming:
             if error_details["type"] == "tool_error":
                 assert "tool_name" in error_details["details"]
                 assert "error_message" in error_details["details"]
+
+
+class TestEventOrderingForChatCompletions:
+    def test_events_follow_correct_order_in_chat_completions_stream(self, app: FastAPI) -> None:
+        """Test that events in /v1/chat/completions follow correct order: start, token, finish/error."""
+        with TestClient(app) as client:
+            payload = {"goal": "Write a short poem about mountains", "stream": True}
+            response = client.post("/v1/chat/completions", json=payload, headers=AUTH_HEADER)
+
+            assert response.status_code == 200
+            assert response.headers["content-type"] == "text/event-stream; charset=utf-8"
+
+            lines = response.text.split("\n\n")
+            events = [line.replace("data: ", "") for line in lines if line.startswith("data: ")]
+
+            # Parse all events
+            event_objects = [json.loads(event) for event in events if event]
+
+            # Find specific event types
+            status_events = [e for e in event_objects if e.get("type") == "status"]
+            token_events = [e for e in event_objects if e.get("type") == "token"]
+            done_events = [e for e in event_objects if e.get("type") == "done"]
+            error_events = [e for e in event_objects if e.get("type") == "error"]
+
+            # Verify at least one status event exists (start)
+            assert len(status_events) > 0, "Should have at least one status event"
+
+            # Verify first event is status
+            first_event = event_objects[0]
+            assert first_event["type"] == "status", "First event should be a status event"
+
+            # Verify last event is either done or error
+            last_event = event_objects[-1]
+            assert last_event["type"] in ("done", "error"), "Last event should be done or error"
+
+            # Verify token events (if any) come after status and before done/error
+            if token_events:
+                first_token_index = event_objects.index(token_events[0])
+                assert first_token_index > 0, "Token events should come after status event"
+
+                # Verify all token events come before any done/error events
+                if done_events:
+                    last_token_index = event_objects.index(token_events[-1])
+                    first_done_index = event_objects.index(done_events[0])
+                    assert last_token_index < first_done_index, (
+                        "Token events should come before done event"
+                    )
+
+                if error_events:
+                    last_token_index = event_objects.index(token_events[-1])
+                    first_error_index = event_objects.index(error_events[0])
+                    assert last_token_index < first_error_index, (
+                        "Token events should come before error event"
+                    )
+
+            # Verify overall sequence follows: status -> token* -> (done|error)
+            actual_types = [e["type"] for e in event_objects]
+            expected_pattern = ["status"]
+
+            if token_events:
+                expected_pattern.extend(["token"] * len(token_events))
+
+            expected_pattern.extend(["done", "error"])
+
+            # Check that the sequence follows the expected pattern
+            valid_sequence = True
+            token_count = 0
+
+            for event_type in actual_types:
+                if event_type == "token":
+                    token_count += 1
+                elif event_type == "status":
+                    if token_count > 0:
+                        valid_sequence = False
+                        break
+                elif event_type in ("done", "error"):
+                    if token_count == 0 and len(status_events) == 0:
+                        valid_sequence = False
+                        break
+                    break
+                else:
+                    valid_sequence = False
+                    break
+
+            assert valid_sequence, (
+                "Events should follow the expected sequence pattern: status -> token* -> (done|error)"
+            )
