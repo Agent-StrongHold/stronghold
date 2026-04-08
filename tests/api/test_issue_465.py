@@ -16,3 +16,13 @@ class TestWardenRegexDetection:
         assert not verdict.clean
         assert len(verdict.flags) > 0
         assert any("prompt injection" in flag.lower() for flag in verdict.flags)
+
+    async def test_no_false_positive_on_normal_user_input(self) -> None:
+        # Normal user input that should not trigger any flags
+        normal_input = "Hello, how are you doing today? I need help with my project."
+
+        warden = Warden()
+        verdict = await warden.scan(normal_input, boundary="user_input")
+
+        assert verdict.clean
+        assert len(verdict.flags) == 0
