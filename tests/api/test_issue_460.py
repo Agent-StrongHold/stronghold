@@ -25,7 +25,7 @@ def app() -> FastAPI:
 class TestBrowseAgentsEndpoint:
     def test_agents_endpoint_returns_200(self, app: FastAPI) -> None:
         with TestClient(app) as client:
-            resp = client.get("/v1/stronghold/marketplace/agents")
+            resp = client.get("/v1/stronghold/marketplace/agents", headers=AUTH_HEADER)
             assert resp.status_code == 200
 
 
@@ -33,7 +33,9 @@ class TestSearchAgentsEndpoint:
     def test_search_for_data_processing_agents(self, app: FastAPI) -> None:
         with TestClient(app) as client:
             resp = client.get(
-                "/v1/stronghold/marketplace/agents", params={"query": "data-processing"}
+                "/v1/stronghold/marketplace/agents",
+                params={"query": "data-processing"},
+                headers=AUTH_HEADER,
             )
             assert resp.status_code == 200
             data = resp.json()
@@ -67,5 +69,38 @@ class TestInstallAgentEndpoint:
             )
             assert resp.status_code == 403
             data = resp.json()
-            assert "error" in data
-            assert "publisher" in data["error"].lower()
+            assert "detail" in data
+            assert "error" in data["detail"]
+            assert "publisher" in data["detail"]["error"].lower()
+
+
+class TestRateAgentEndpoint:
+    def test_rate_installed_agent_records_rating(self, app: FastAPI) -> None:
+        with TestClient(app) as client:
+            agent_id = "data-processing-agent-123"
+            rating = 5
+            resp = client.post(
+                "/v1/stronghold/marketplace/agents/rate",
+                headers=AUTH_HEADER,
+                json={"agent_id": agent_id, "rating": rating},
+            )
+            assert resp.status_code == 200
+            data = resp.json()
+            assert "rating" in data
+            assert data["rating"] == rating
+
+    def test_rate_agent_displays_rating_in_browse(self, app: FastAPI) -> None:
+        with TestClient(app) as client:
+            agent_id = "data-processing-agent-123"
+            rating = 4
+            client.post(
+                "/v1/stronghold/marketplace/agents/rate",
+                headers=AUTH_HEADER,
+                json={"agent_id": agent_id, "rating": rating},
+            )
+            resp = client.get("/v1/stronghold/marketplace/agents", headers=AUTH_HEADER)
+            data = resp.json()
+            agent_data = next((a for a in data if a.get("id") == agent_id), None)
+            assert agent_data is not None
+            assert "rating" in agent_data
+            assert agent_data["rating"] == rating

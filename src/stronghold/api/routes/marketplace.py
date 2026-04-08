@@ -476,12 +476,23 @@ class InstallAgentRequest(BaseModel):
     agent_id: str
 
 
+class RateAgentRequest(BaseModel):
+    agent_id: str
+    rating: int
+
+
 @router.get("/agents")
+@router.get("")
 async def list_agents(
     request: Request,
 ) -> JSONResponse:
     """List all available agents in the marketplace."""
     await _require_auth(request)
+
+    # Get agent ratings from container
+    container = request.app.state.container
+    ratings: dict[str, int] = getattr(container, "agent_ratings", {})
+
     # In-memory list of agents for testing
     mock_agents = [
         {
@@ -492,6 +503,7 @@ async def list_agents(
             "trust_tier": "T3",
             "tags": ["data", "processing", "automation"],
             "download_count": 42,
+            "rating": ratings.get("data-processing-agent-123"),
         },
         {
             "id": "web-scraper-agent-456",
@@ -501,6 +513,7 @@ async def list_agents(
             "trust_tier": "T2",
             "tags": ["web", "scraping", "data-extraction"],
             "download_count": 23,
+            "rating": ratings.get("web-scraper-agent-456"),
         },
         {
             "id": "email-handler-agent-789",
@@ -510,6 +523,7 @@ async def list_agents(
             "trust_tier": "T3",
             "tags": ["email", "communication", "automation"],
             "download_count": 37,
+            "rating": ratings.get("email-handler-agent-789"),
         },
     ]
 
@@ -541,7 +555,7 @@ async def install_agent(
     if agent_id == "unauthorized-agent-456":
         raise HTTPException(
             status_code=403,
-            detail="Installation blocked: publisher not on allow-list",
+            detail={"error": "Installation blocked: publisher not on allow-list"},
         )
 
     # In a real implementation, we would look up the agent in a marketplace registry
@@ -552,6 +566,30 @@ async def install_agent(
             "trust_tier": "T3",
             "status": "installed",
             "message": "Agent installed successfully",
+        }
+    )
+
+
+@router.post("/agents/rate")
+async def rate_agent(
+    body: RateAgentRequest,
+    request: Request,
+) -> JSONResponse:
+    """Rate an installed agent."""
+    await _require_auth(request)
+
+    # In-memory agent ratings store
+    container = request.app.state.container
+    ratings: dict[str, int] = getattr(container, "agent_ratings", {})
+
+    # Store the rating
+    ratings[body.agent_id] = body.rating
+
+    return JSONResponse(
+        content={
+            "agent_id": body.agent_id,
+            "rating": body.rating,
+            "status": "rated",
         }
     )
 
