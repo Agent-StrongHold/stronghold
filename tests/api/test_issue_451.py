@@ -73,3 +73,19 @@ class TestQuotedTypeAnnotations:
         assert not line_88.startswith("'") and not line_88.startswith('"'), (
             "Line 88 still contains quoted type annotation"
         )
+
+
+class TestRuffFormatCompliance:
+    def test_ruff_format_passes_for_services(self, services_file: Path) -> None:
+        """Test that ruff format --check passes for services.py with no formatting issues."""
+        result = subprocess.run(
+            ["ruff", "format", "--check", str(services_file)],
+            capture_output=True,
+            text=True,
+        )
+        assert result.returncode == 0, (
+            f"ruff format --check failed for services.py with return code {result.returncode}. "
+            f"stdout: {result.stdout}\nstderr: {result.stderr}"
+        )
+        assert not result.stdout.strip(), "ruff format --check produced stdout output"
+        assert not result.stderr.strip(), "ruff format --check produced stderr output"
