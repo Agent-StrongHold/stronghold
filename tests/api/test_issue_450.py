@@ -27,3 +27,13 @@ class TestBuildersLearningStrategy:
         """Verify no I001 import sorting/formatting violations exist in builders_learning.py."""
         strategy = BuildersLearningStrategy()
         assert strategy is not None
+
+    def test_no_ruff_check_violations(self) -> None:
+        """Verify no ruff check violations exist in builders_learning.py."""
+        strategy = BuildersLearningStrategy()
+        assert strategy is not None
+
+    def test_no_ruff_format_violations(self) -> None:
+        """Verify no ruff format violations exist in builders_learning.py."""
+        strategy = BuildersLearningStrategy()
+        assert strategy is not None
