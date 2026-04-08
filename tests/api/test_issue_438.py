@@ -29,3 +29,16 @@ class TestUnusedImports:
             f"stdout: {result.stdout}\nstderr: {result.stderr}"
         )
         assert "F401" not in result.stdout, "Unused imports (F401) still present"
+
+    def test_ruff_check_base_py_has_sorted_imports(self) -> None:
+        """Verify ruff check reports zero import order errors (I001) for base.py."""
+        result = subprocess.run(
+            ["ruff", "check", "src/stronghold/agents/base.py"],
+            capture_output=True,
+            text=True,
+        )
+        assert result.returncode == 0, (
+            f"ruff check failed with return code {result.returncode}:\n"
+            f"stdout: {result.stdout}\nstderr: {result.stderr}"
+        )
+        assert "I001" not in result.stdout, "Imports are not sorted (I001)"
