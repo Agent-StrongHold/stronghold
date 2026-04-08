@@ -150,3 +150,33 @@ class TestAgentStreaming:
                 assert "token" in event
                 assert isinstance(event["token"], str)
                 assert len(event["token"]) > 0
+
+
+class TestWardenStreamingInterception:
+    def test_warden_scans_streaming_events_when_enabled(self, app: FastAPI) -> None:
+        """Test that Warden intercepts and scans each streaming event when enabled."""
+        with TestClient(app) as client:
+            payload = {"goal": "List files in current directory", "stream": True}
+            response = client.post(
+                "/v1/stronghold/request/stream", json=payload, headers=AUTH_HEADER
+            )
+
+            assert response.status_code == 200
+            assert response.headers["content-type"] == "text/event-stream; charset=utf-8"
+
+            lines = response.text.split("\n\n")
+            events = [line.replace("data: ", "") for line in lines if line.startswith("data: ")]
+
+            # Parse all events to check for Warden audit entries
+            event_objects = [json.loads(event) for event in events if event]
+
+            # Verify each event was scanned by Warden
+            for event in event_objects:
+                assert "warden_audit" in event, (
+                    f"Event of type {event.get('type')} was not scanned by Warden"
+                )
+                audit = event["warden_audit"]
+                assert "scanned_at" in audit
+                assert "scan_id" in audit
+                assert isinstance(audit["scanned"], bool)
+                assert audit["scanned"] is True

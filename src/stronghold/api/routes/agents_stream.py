@@ -161,10 +161,21 @@ async def chat_completions(request: Request) -> StreamingResponse:
 
     body: dict[str, Any] = await request.json()
     messages = body.get("messages", [])
-    body.get("stream", False)
+    stream = body.get("stream", False)
 
     if not messages:
         raise HTTPException(status_code=400, detail="'messages' is required")
+
+    if not stream:
+        # Non-streaming path
+        result = await container.route_chat(
+            messages,
+            auth=auth_ctx,
+        )
+        content = ""
+        if result.get("choices"):
+            content = result["choices"][0].get("message", {}).get("content", "")
+        return {"choices": [{"message": {"content": content}}]}
 
     # Status queue for progress updates
     status_queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
