@@ -31,3 +31,24 @@ class TestUptimeEndpoint:
             assert isinstance(data.get("uptime_seconds"), float)
             assert isinstance(data.get("started_at"), str)
             assert data.get("service") == "stronghold"
+
+    def test_uptime_increases_over_time(self, app: FastAPI) -> None:
+        with TestClient(app) as client:
+            # First request
+            resp1 = client.get("/v1/stronghold/status/uptime")
+            assert resp1.status_code == 200
+            data1 = resp1.json()
+            uptime1 = data1["uptime_seconds"]
+
+            # Second request after a small delay
+            import time
+
+            time.sleep(0.1)
+
+            resp2 = client.get("/v1/stronghold/status/uptime")
+            assert resp2.status_code == 200
+            data2 = resp2.json()
+            uptime2 = data2["uptime_seconds"]
+
+            # Uptime should have increased
+            assert uptime2 > uptime1
