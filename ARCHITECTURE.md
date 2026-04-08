@@ -476,7 +476,7 @@ class AuthProvider(Protocol):
 | Provider | Use Case | Claims |
 |----------|----------|--------|
 | Keycloak OIDC | Homelab, open-source default | realm_access.roles |
-| Entra ID | Enterprise (JedAI) | roles (app roles) |
+| Entra ID | Enterprise (Microsoft-shop customers) | roles (app roles) |
 | Static API key | Service-to-service, backward compat | Maps to system admin context |
 | OpenWebUI headers | Thin client passthrough | X-OpenWebUI-User-* headers |
 
