@@ -50,3 +50,24 @@ def test_stronghold_cli_help_output() -> None:
     assert result.returncode == 0, "stronghold --help should exit with code 0"
     assert "Usage:" in result.stdout, "Output should contain 'Usage:'"
     assert "Options:" in result.stdout, "Output should contain 'Options:'"
+
+
+def test_pyproject_toml_scripts_entry_format() -> None:
+    pyproject_path = Path("pyproject.toml")
+    content = pyproject_path.read_text()
+
+    scripts_section = "[project.scripts]"
+    start = content.find(scripts_section)
+    assert start != -1, "Could not find [project.scripts] section"
+
+    end = content.find("\n[", start + 1)
+    if end == -1:
+        end = len(content)
+
+    scripts_content = content[start:end]
+    assert "stronghold =" in scripts_content, (
+        "Scripts section should contain 'stronghold =' assignment"
+    )
+    assert "src/stronghold/cli/main.py:app" in scripts_content, (
+        "Scripts section should point to 'src/stronghold/cli/main.py:app'"
+    )
