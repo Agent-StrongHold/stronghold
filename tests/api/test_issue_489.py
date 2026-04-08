@@ -67,3 +67,12 @@ class TestSkillInstall:
             )
             assert resp.status_code == 422
             assert "Invalid repository URL format" in resp.text
+
+    def test_install_skill_fails_with_nonexistent_repository(self, app: FastAPI) -> None:
+        with TestClient(app) as client:
+            nonexistent_repo = "https://github.com/nonexistent/non-existent-repo"
+            resp = client.post(
+                "/skills/install", json={"repository": nonexistent_repo}, headers=AUTH_HEADER
+            )
+            assert resp.status_code == 400
+            assert "Repository not found or inaccessible" in resp.text
