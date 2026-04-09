@@ -600,3 +600,49 @@ class TestAgentReviewsEndpoint:
                 assert "reviewer" in review
                 assert "name" in review["reviewer"]
                 assert "id" in review["reviewer"]
+
+
+class TestAgentCreationScenario:
+    def test_create_agent_with_all_required_fields_and_retrieve_by_name(self, app: FastAPI) -> None:
+        with TestClient(app) as client:
+            # Create a new agent with all required fields
+            payload = {
+                "name": "Data Analyst",
+                "description": "Analyzes datasets",
+                "strategy": "ML",
+                "tools": ["pandas", "numpy"],
+                "trust_tier": "high",
+                "install_count": 0,
+            }
+
+            # Create the agent
+            create_resp = client.post("/v1/stronghold/agents", json=payload, headers=AUTH_HEADER)
+            assert create_resp.status_code == 200
+            created_agent = create_resp.json()
+
+            # Verify all fields are saved correctly
+            assert created_agent["name"] == "Data Analyst"
+            assert created_agent["description"] == "Analyzes datasets"
+            assert created_agent["strategy"] == "ML"
+            assert created_agent["tools"] == ["pandas", "numpy"]
+            assert created_agent["trust_tier"] == "high"
+            assert created_agent["install_count"] == 0
+            assert "id" in created_agent
+            assert isinstance(created_agent["id"], str)
+
+            # Retrieve the agent by name through search
+            search_resp = client.get(
+                "/v1/stronghold/agents", params={"name": "Data Analyst"}, headers=AUTH_HEADER
+            )
+            assert search_resp.status_code == 200
+            search_results = search_resp.json()
+
+            # Verify the agent is retrievable
+            assert len(search_results) == 1
+            retrieved_agent = search_results[0]
+            assert retrieved_agent["name"] == "Data Analyst"
+            assert retrieved_agent["description"] == "Analyzes datasets"
+            assert retrieved_agent["strategy"] == "ML"
+            assert retrieved_agent["tools"] == ["pandas", "numpy"]
+            assert retrieved_agent["trust_tier"] == "high"
+            assert retrieved_agent["install_count"] == 0
