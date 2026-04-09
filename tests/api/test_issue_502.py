@@ -328,3 +328,29 @@ class TestGetAgentRatingsAndReviews:
             assert "total_reviews" in data["ratings"]
             assert data["ratings"]["total_reviews"] == 3
             assert data["ratings"]["average_rating"] == 4.0  # (5 + 4 + 3) / 3
+
+
+class TestAgentCreationWithAllRequiredFields:
+    def test_create_agent_with_all_required_fields(self, app: FastAPI) -> None:
+        with TestClient(app) as client:
+            payload = {
+                "name": "Code Review Assistant",
+                "description": "AI-powered code reviewer",
+                "strategy": "review",
+                "tools": ["pylint", "flake8"],
+                "trust_tier": "high",
+                "install_count": 0,
+            }
+            resp = client.post("/v1/stronghold/agents", json=payload, headers=AUTH_HEADER)
+            assert resp.status_code == 200
+            data = resp.json()
+
+            # Verify all required fields are present and correct
+            assert data["name"] == "Code Review Assistant"
+            assert data["description"] == "AI-powered code reviewer"
+            assert data["strategy"] == "review"
+            assert data["tools"] == ["pylint", "flake8"]
+            assert data["trust_tier"] == "high"
+            assert data["install_count"] == 0
+            assert "id" in data
+            assert isinstance(data["id"], str)
