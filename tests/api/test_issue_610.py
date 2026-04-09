@@ -141,3 +141,29 @@ class TestUserPointsMigration:
 
         # Verify primary key exists
         assert hasattr(UserPoints, "id") or hasattr(UserPoints, "user_id")
+
+
+class TestUserPointsDuplicateUserId:
+    def test_duplicate_user_id_raises_error(self) -> None:
+        """Attempting to create duplicate user_id should raise an error."""
+        # Given an existing UserPoints record with user_id: 123
+        UserPoints(
+            user_id="123",
+            total_xp=100,
+            level=5,
+            issues_solved=20,
+            reviews=10,
+            streaks=3,
+        )
+
+        # When attempting to create another UserPoints record with user_id: 123
+        # Then the database should reject the duplicate entry
+        with pytest.raises(Exception, match="duplicate key value violates unique constraint"):
+            UserPoints(
+                user_id="123",
+                total_xp=200,
+                level=10,
+                issues_solved=40,
+                reviews=20,
+                streaks=6,
+            )
