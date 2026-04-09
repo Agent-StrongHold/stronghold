@@ -60,3 +60,30 @@ class TestIntentClassifierProtocol:
             asyncio.run(classifier.classify([], ["test"], False))
 
         assert str(exc_info.value) == "Input cannot be empty"
+
+    def test_classify_maximum_length_input_succeeds(self) -> None:
+        class FakeClassifier:
+            async def classify(
+                self,
+                messages: list[str],
+                task_types: list[str],
+                explicit_priority: bool = False,
+            ) -> dict[str, str]:
+                if len(messages) > 0 and len(messages[0]) > 10000:
+                    raise ValueError("Input too long")
+                return {"intent": "test"}
+
+        classifier = FakeClassifier()
+        import asyncio
+
+        import pytest
+
+        long_input = "a" * 10000
+        result = asyncio.run(classifier.classify([long_input], ["test"], False))
+        assert result == {"intent": "test"}
+
+        with pytest.raises(ValueError) as exc_info:
+            too_long_input = "a" * 10001
+            asyncio.run(classifier.classify([too_long_input], ["test"], False))
+
+        assert str(exc_info.value) == "Input too long"
