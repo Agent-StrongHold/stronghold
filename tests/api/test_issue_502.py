@@ -541,3 +541,62 @@ class TestAgentCreationWithMissingRequiredFields:
             # Verify agent was not created
             container = app.state.container
             assert len(container.agent_registry.list_agents()) == 0
+
+
+class TestAgentReviewsEndpoint:
+    def test_get_agent_reviews_endpoint_returns_all_reviews(self, app: FastAPI) -> None:
+        with TestClient(app) as client:
+            # Create an agent
+            agent_payload = {
+                "name": "Code Review Assistant",
+                "description": "AI-powered code reviewer",
+                "strategy": "review",
+                "tools": ["pylint", "flake8"],
+                "trust_tier": "high",
+                "install_count": 0,
+            }
+            create_resp = client.post(
+                "/v1/stronghold/agents", json=agent_payload, headers=AUTH_HEADER
+            )
+            assert create_resp.status_code == 200
+            agent_data = create_resp.json()
+            agent_id = agent_data["id"]
+
+            # Add reviews to the agent
+            review1 = {
+                "rating": 5,
+                "comment": "Excellent agent, very helpful!",
+                "reviewer": {"name": "Alice", "id": "user-123"},
+            }
+            review2 = {
+                "rating": 4,
+                "comment": "Good overall performance",
+                "reviewer": {"name": "Bob", "id": "user-456"},
+            }
+            review3 = {
+                "rating": 3,
+                "comment": "Could improve response time",
+                "reviewer": {"name": "Charlie", "id": "user-789"},
+            }
+
+            # Add reviews to the agent (implementation would add these to the agent's reviews list)
+            container = app.state.container
+            agent = container.agent_registry.get_agent(agent_id)
+            agent.reviews = [review1, review2, review3]
+
+            # Retrieve the agent's reviews
+            resp = client.get(f"/v1/stronghold/agents/{agent_id}/reviews", headers=AUTH_HEADER)
+            assert resp.status_code == 200
+            data = resp.json()
+
+            # Verify the response includes all reviews
+            assert "reviews" in data
+            assert len(data["reviews"]) == 3
+
+            # Verify each review has the required fields
+            for review in data["reviews"]:
+                assert "rating" in review
+                assert "comment" in review
+                assert "reviewer" in review
+                assert "name" in review["reviewer"]
+                assert "id" in review["reviewer"]

@@ -77,7 +77,7 @@ async def create_agent(
 ) -> AgentResponse:
     """Create a new agent in the marketplace."""
     # Check if agent with this name already exists
-    existing_agent = container.agents_store.get_by_name(request.name)
+    existing_agent = container.agent_registry.get_by_name(request.name)
     if existing_agent:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
@@ -96,7 +96,7 @@ async def create_agent(
     )
 
     # Store the agent
-    stored_agent = container.agents_store.create(agent)
+    stored_agent = container.agent_registry.create(agent)
 
     return AgentResponse(
         id=str(stored_agent.id),
@@ -119,7 +119,7 @@ async def search_agents(
     auth: AuthContext = Depends(StaticKeyAuthProvider().authenticate),
 ) -> list[AgentResponse]:
     """Search agents by capability or trust tier."""
-    agents = container.agents_store.list()
+    agents = container.agent_registry.list_agents()
 
     if capability:
         agents = [agent for agent in agents if capability in agent.capabilities]
@@ -150,7 +150,7 @@ async def get_agent_reviews(
     auth: AuthContext = Depends(StaticKeyAuthProvider().authenticate),
 ) -> AgentReviewsResponse:
     """Get ratings and reviews for a specific agent."""
-    agent = container.agents_store.get(agent_id)
+    agent = container.agent_registry.get_agent(agent_id)
     if not agent:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
