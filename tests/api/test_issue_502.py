@@ -695,3 +695,62 @@ class TestSearchAgentsByToolCapability:
             assert "Data Analyst" in agent_names
             assert "ML Engineer" in agent_names
             assert "Visualization Expert" not in agent_names
+
+
+class TestSearchAgentsByTrustTier:
+    def test_search_agents_by_trust_tier_medium(self, app: FastAPI) -> None:
+        with TestClient(app) as client:
+            # Create agents with different trust tiers
+            agent1 = {
+                "name": "Code Review Assistant",
+                "description": "AI-powered code reviewer",
+                "strategy": "review",
+                "tools": ["pylint", "flake8"],
+                "trust_tier": "high",
+                "install_count": 0,
+            }
+            agent2 = {
+                "name": "Documentation Writer",
+                "description": "Generates documentation",
+                "strategy": "write",
+                "tools": ["sphinx"],
+                "trust_tier": "medium",
+                "install_count": 0,
+            }
+            agent3 = {
+                "name": "Code Review Expert",
+                "description": "Specialized code reviewer",
+                "strategy": "review",
+                "tools": ["pylint", "flake8", "mypy"],
+                "trust_tier": "high",
+                "install_count": 0,
+            }
+            agent4 = {
+                "name": "Security Scanner",
+                "description": "Security vulnerability scanner",
+                "strategy": "scan",
+                "tools": ["bandit", "safety"],
+                "trust_tier": "medium",
+                "install_count": 0,
+            }
+
+            # Create all agents
+            client.post("/v1/stronghold/agents", json=agent1, headers=AUTH_HEADER)
+            client.post("/v1/stronghold/agents", json=agent2, headers=AUTH_HEADER)
+            client.post("/v1/stronghold/agents", json=agent3, headers=AUTH_HEADER)
+            client.post("/v1/stronghold/agents", json=agent4, headers=AUTH_HEADER)
+
+            # Search for agents with medium trust tier
+            resp = client.get(
+                "/v1/stronghold/agents", params={"trust_tier": "medium"}, headers=AUTH_HEADER
+            )
+            assert resp.status_code == 200
+            data = resp.json()
+
+            # Verify only agents with medium trust tier are returned
+            assert len(data) == 2
+            agent_names = [agent["name"] for agent in data]
+            assert "Documentation Writer" in agent_names
+            assert "Security Scanner" in agent_names
+            assert "Code Review Assistant" not in agent_names
+            assert "Code Review Expert" not in agent_names
