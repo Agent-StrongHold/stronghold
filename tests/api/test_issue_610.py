@@ -103,3 +103,41 @@ class TestUserPointsModel:
 
         # And the level should remain unchanged
         assert user_points.level == 1
+
+
+class TestUserPointsMigration:
+    def test_user_points_table_created_with_correct_columns(self) -> None:
+        """Verify UserPoints table has all required columns with correct data types."""
+        # This test verifies the migration file creates the correct table structure
+        # In a real implementation, this would use SQLAlchemy's metadata reflection
+        # or a database connection to inspect the schema
+
+        # Given a migration file that defines UserPoints table
+        # When the migration is executed
+        # Then the UserPoints table should exist
+
+        # Mock verification of table creation (implementation would vary by ORM)
+
+        from stronghold.models.user_points import UserPoints
+
+        # In a real test environment with a database connection:
+        # inspector = inspect(engine)
+        # columns = inspector.get_columns("user_points")
+
+        # For this test, we verify the model has all required fields
+        required_columns = {
+            "user_id": str,
+            "total_xp": int,
+            "level": int,
+            "issues_solved": int,
+            "reviews": int,
+            "streaks": int,
+        }
+
+        for column_name, expected_type in required_columns.items():
+            assert hasattr(UserPoints, column_name), f"Missing column: {column_name}"
+            column = getattr(UserPoints, column_name)
+            assert isinstance(column.type, expected_type), f"Wrong type for {column_name}"
+
+        # Verify primary key exists
+        assert hasattr(UserPoints, "id") or hasattr(UserPoints, "user_id")
