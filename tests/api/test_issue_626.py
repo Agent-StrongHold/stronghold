@@ -152,3 +152,7 @@ class TestFakeOutcomeStoreProtocolImplementation:
             assert hasattr(FakeOutcomeStore, method), (
                 f"FakeOutcomeStore should have {method} method to implement OutcomeStore protocol"
             )
+            # Verify the method is callable (even if it's just pass)
+            assert callable(getattr(FakeOutcomeStore, method)), (
+                f"FakeOutcomeStore.{method} should be callable"
+            )

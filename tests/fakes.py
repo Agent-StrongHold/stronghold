@@ -240,4 +240,8 @@ class FakeAuthProvider:
 
 
 class FakeOutcomeStore:
+    """Fake outcome store for testing."""
+
+    """Fake outcome store for testing."""
+
     pass
