@@ -74,3 +74,15 @@ class TestFakeOutcomeStoreSkeleton:
                     )
                 if line.strip() and not line.strip().startswith(("#", '"', "'")):
                     break
+
+    def test_fake_outcome_store_is_defined_as_class(self) -> None:
+        """Verify FakeOutcomeStore is defined as a class."""
+        from tests.fakes import FakeOutcomeStore
+
+        assert isinstance(FakeOutcomeStore, type)
+
+    def test_fake_outcome_store_has_no_syntax_errors(self) -> None:
+        """Verify FakeOutcomeStore can be compiled without syntax errors."""
+        from tests.fakes import FakeOutcomeStore
+
+        assert FakeOutcomeStore.__module__ is not None

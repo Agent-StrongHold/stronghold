@@ -185,8 +185,8 @@ class FakeQuotaTracker:
         self,
         provider: str,
         billing_cycle: str,
-        input_tokens: int,
-        output_tokens: int,
+        input_tokens: int = 0,
+        output_tokens: int = 0,
     ) -> dict[str, object]:
         self.recorded.append(
             {
