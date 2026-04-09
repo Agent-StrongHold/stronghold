@@ -50,3 +50,9 @@ class TestFakeOutcomeStoreSkeleton:
                 or line.strip().startswith("async def ")
             ):
                 break
+
+    def test_fake_outcome_store_is_importable_from_tests_fakes(self) -> None:
+        """Verify FakeOutcomeStore can be imported from tests.fakes."""
+        from tests.fakes import FakeOutcomeStore  # noqa: F401
+
+        assert FakeOutcomeStore is not None
