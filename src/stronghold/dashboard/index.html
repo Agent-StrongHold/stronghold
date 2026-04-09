@@ -123,37 +123,92 @@
   }
 </style>
 <script src="/dashboard/auth.js"></script>
+<script>
+  // Create XP Source Card component
+  function createXPSourceCard(icon, label, count) {
+    const card = document.createElement('div');
+    card.className = 'card p-4 flex items-center gap-4';
+    card.setAttribute('role', 'region');
+    card.setAttribute('aria-label', `${label} - ${count} XP`);
+
+    const iconSpan = document.createElement('span');
+    iconSpan.className = 'text-xl';
+    iconSpan.textContent = icon;
+    iconSpan.setAttribute('aria-hidden', 'true');
+
+    const contentDiv = document.createElement('div');
+    contentDiv.className = 'flex-1';
+
+    const labelP = document.createElement('p');
+    labelP.className = 'text-sm text-[var(--iron-light)] truncate';
+    labelP.textContent = label;
+
+    const countP = document.createElement('p');
+    countP.className = 'stat-value';
+    countP.textContent = count;
+
+    contentDiv.appendChild(labelP);
+    contentDiv.appendChild(countP);
+
+    card.appendChild(iconSpan);
+    card.appendChild(contentDiv);
+
+    return card;
+  }
+
+  // Initialize dashboard components
+  document.addEventListener('DOMContentLoaded', () => {
+    // Example usage of XPSourceCard
+    const xpSourcesContainer = document.createElement('div');
+    xpSourcesContainer.className = 'grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 p-4';
+
+    const xpSources = [
+      { icon: "🏆", label: "Quests Completed", count: 12 },
+      { icon: "⚔️", label: "Battles Won", count: 25 },
+      { icon: "🛡️", label: "Defenses Built", count: 8 },
+      { icon: "📜", label: "Scrolls Studied", count: 42 },
+      { icon: "🏹", label: "Targets Hit", count: 67 },
+      { icon: "🛠️", label: "Items Crafted", count: 19 }
+    ];
+
+    xpSources.forEach(source => {
+      const card = createXPSourceCard(source.icon, source.label, source.count);
+      xpSourcesContainer.appendChild(card);
+    });
+
+    const dashboardContent = document.body;
+    dashboardContent.appendChild(xpSourcesContainer);
+  });
+</script>
 </head>
-<body class="flex">
-
-<!-- Mobile sidebar overlay -->
-<div class="sidebar-overlay" id="sidebar-overlay" role="button" onclick="closeSidebar()"></div>
-
-<!-- Sidebar — Castle Turrets -->
-<nav class="sidebar flex-shrink-0 flex flex-col" id="sidebar">
-  <div class="p-5 border-b border-[var(--iron)]">
-    <div class="flex items-center gap-3">
-      <span class="crest tower-crest">&#x1F3F0;</span>
-      <div>
-        <h1 class="text-lg leading-tight">Stronghold</h1>
-        <p class="text-xs text-[var(--iron-light)]">Agent Governance Platform</p>
+<body class="min-h-screen">
+  <div class="flex min-h-screen">
+    <aside class="sidebar">
+      <div class="p-4">
+        <div class="crest mb-6 text-center">🏰</div>
+        <nav>
+          <a href="/dashboard" class="sidebar-item active">
+            <span class="sidebar-icon">🏰</span>
+            <span>Dashboard</span>
+          </a>
+          <a href="/agents" class="sidebar-item">
+            <span class="sidebar-icon">👾</span>
+            <span>Agents</span>
+          </a>
+          <a href="/missions" class="sidebar-item">
+            <span class="sidebar-icon">🎮</span>
+            <span>Missions</span>
+          </a>
+        </nav>
       </div>
-    </div>
+    </aside>
+    <main class="flex-1 p-8">
+      <h1 class="text-3xl font-bold mb-6">Stronghold Dashboard</h1>
+      <div class="parchment p-6 mb-8">
+        <h2 class="text-xl font-bold mb-4">Your Progress</h2>
+        <p class="mb-4">Track your achievements and XP gains across the stronghold.</p>
+      </div>
+    </main>
   </div>
-
-  <div class="flex-1 py-4" onclick="closeSidebar()">
-    <a href="/greathall" class="sidebar-item active">
-      <span style="width:24px;text-align:center">&#x1F3DB;</span> Great Hall
-    </a>
-    <a href="/dashboard/agents" class="sidebar-item">
-      <span class="sidebar-icon">&#x2694;</span> Knights
-    </a>
-    <a href="/dashboard/skills" class="sidebar-item">
-      <span class="sidebar-icon">&#x1F6E1;</span> Armory
-    </a>
-    <a href="/dashboard/mcp" class="sidebar-item">
-      <span style="width:24px;text-align:center">&#x1F525;</span> Forge
-    </a>
-    <a href="/dashboard/security" class="sidebar-item">
-      <span class="sidebar-icon">&#x1F5FC;</span> Watchtower
-    </a>
+</body>
+</html>
