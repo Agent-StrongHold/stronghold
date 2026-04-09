@@ -143,3 +143,68 @@ class TestSearchAgentsByTrustTier:
             assert "Code Review Assistant" in agent_names
             assert "Code Review Expert" in agent_names
             assert "Documentation Writer" not in agent_names
+
+
+class TestSearchAgentsByMultipleCriteria:
+    def test_filter_agents_by_capability_and_trust_tier(self, app: FastAPI) -> None:
+        with TestClient(app) as client:
+            # Create agents with various capabilities and trust tiers
+            agent1 = {
+                "name": "Code Review Assistant",
+                "description": "AI-powered code reviewer",
+                "strategy": "review",
+                "tools": ["pylint", "flake8"],
+                "capabilities": ["code_review", "linting"],
+                "trust_tier": "high",
+                "install_count": 0,
+            }
+            agent2 = {
+                "name": "Documentation Writer",
+                "description": "Generates documentation",
+                "strategy": "write",
+                "tools": ["sphinx"],
+                "capabilities": ["documentation"],
+                "trust_tier": "high",
+                "install_count": 0,
+            }
+            agent3 = {
+                "name": "Code Review Expert",
+                "description": "Specialized code reviewer",
+                "strategy": "review",
+                "tools": ["pylint", "flake8", "mypy"],
+                "capabilities": ["code_review"],
+                "trust_tier": "high",
+                "install_count": 0,
+            }
+            agent4 = {
+                "name": "Security Scanner",
+                "description": "Security vulnerability scanner",
+                "strategy": "scan",
+                "tools": ["bandit", "safety"],
+                "capabilities": ["code_review", "security"],
+                "trust_tier": "medium",
+                "install_count": 0,
+            }
+
+            # Create all agents
+            client.post("/v1/stronghold/agents", json=agent1, headers=AUTH_HEADER)
+            client.post("/v1/stronghold/agents", json=agent2, headers=AUTH_HEADER)
+            client.post("/v1/stronghold/agents", json=agent3, headers=AUTH_HEADER)
+            client.post("/v1/stronghold/agents", json=agent4, headers=AUTH_HEADER)
+
+            # Search for agents with capability "code_review" and trust tier "high"
+            resp = client.get(
+                "/v1/stronghold/agents",
+                params={"capability": "code_review", "trust_tier": "high"},
+                headers=AUTH_HEADER,
+            )
+            assert resp.status_code == 200
+            data = resp.json()
+
+            # Verify only agents matching both criteria are returned
+            assert len(data) == 2
+            agent_names = [agent["name"] for agent in data]
+            assert "Code Review Assistant" in agent_names
+            assert "Code Review Expert" in agent_names
+            assert "Documentation Writer" not in agent_names
+            assert "Security Scanner" not in agent_names
