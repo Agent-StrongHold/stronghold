@@ -86,3 +86,13 @@ class TestFakeOutcomeStoreSkeleton:
         from tests.fakes import FakeOutcomeStore
 
         assert FakeOutcomeStore.__module__ is not None
+
+
+class TestFakeOutcomeStoreImportability:
+    """Tests for FakeOutcomeStore importability from tests.fakes."""
+
+    def test_fake_outcome_store_is_importable_from_tests_fakes_module(self) -> None:
+        """Verify FakeOutcomeStore is importable from tests.fakes without errors."""
+        from tests.fakes import FakeOutcomeStore
+
+        assert FakeOutcomeStore is not None
