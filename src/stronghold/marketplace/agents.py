@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, validator
 
 from stronghold.agents.base import Agent
 from stronghold.security.auth_static import StaticKeyAuthProvider
@@ -16,6 +16,8 @@ if TYPE_CHECKING:
 
 router = APIRouter(prefix="/v1/stronghold", tags=["agents"])
 
+TRUST_TIERS = ["low", "medium", "high"]
+
 
 class AgentCreateRequest(BaseModel):
     name: str
@@ -25,6 +27,18 @@ class AgentCreateRequest(BaseModel):
     capabilities: list[str] = Field(default_factory=list, description="Capabilities of the agent")
     trust_tier: str = Field(..., description="Trust tier of the agent")
     install_count: int = Field(default=0, description="Number of times installed")
+
+    @validator("name")
+    def name_must_not_be_empty(self, v: str) -> str:
+        if not v.strip():
+            raise ValueError("Name cannot be empty")
+        return v
+
+    @validator("trust_tier")
+    def trust_tier_must_be_valid(self, v: str) -> str:
+        if v not in TRUST_TIERS:
+            raise ValueError(f"trust_tier must be one of {TRUST_TIERS}")
+        return v
 
 
 class AgentResponse(BaseModel):
@@ -39,7 +53,7 @@ class AgentResponse(BaseModel):
     rating: float | None = None
 
 
-@router.post("/agents", response_model=AgentResponse, status_code=status.HTTP_200_OK)
+@router.post("/agents", response_model=AgentResponse, status_code=status.HTTP_201_CREATED)
 async def create_agent(
     request: AgentCreateRequest,
     container: Container = Depends(lambda: None),

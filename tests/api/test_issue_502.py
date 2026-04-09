@@ -208,3 +208,57 @@ class TestSearchAgentsByMultipleCriteria:
             assert "Code Review Expert" in agent_names
             assert "Documentation Writer" not in agent_names
             assert "Security Scanner" not in agent_names
+
+
+class TestCreateAgentWithMissingFields:
+    def test_create_agent_with_missing_required_fields(self, app: FastAPI) -> None:
+        with TestClient(app) as client:
+            # Missing required fields: name, strategy, trust_tier
+            payload = {
+                "description": "AI-powered code reviewer",
+                "tools": ["pylint", "flake8"],
+                "install_count": 0,
+            }
+            resp = client.post("/v1/stronghold/agents", json=payload, headers=AUTH_HEADER)
+            assert resp.status_code == 422  # Unprocessable Entity
+            data = resp.json()
+            assert "detail" in data
+            assert len(data["detail"]) > 0
+            error_messages = [error["msg"] for error in data["detail"]]
+            assert any("name" in msg.lower() for msg in error_messages)
+            assert any("strategy" in msg.lower() for msg in error_messages)
+            assert any("trust_tier" in msg.lower() for msg in error_messages)
+
+    def test_create_agent_with_empty_name(self, app: FastAPI) -> None:
+        with TestClient(app) as client:
+            payload = {
+                "name": "",
+                "description": "AI-powered code reviewer",
+                "strategy": "review",
+                "tools": ["pylint", "flake8"],
+                "trust_tier": "high",
+                "install_count": 0,
+            }
+            resp = client.post("/v1/stronghold/agents", json=payload, headers=AUTH_HEADER)
+            assert resp.status_code == 422
+            data = resp.json()
+            assert "detail" in data
+            error_messages = [error["msg"] for error in data["detail"]]
+            assert any("name" in msg.lower() for msg in error_messages)
+
+    def test_create_agent_with_invalid_trust_tier(self, app: FastAPI) -> None:
+        with TestClient(app) as client:
+            payload = {
+                "name": "Test Agent",
+                "description": "Test description",
+                "strategy": "review",
+                "tools": ["pylint"],
+                "trust_tier": "invalid_tier",
+                "install_count": 0,
+            }
+            resp = client.post("/v1/stronghold/agents", json=payload, headers=AUTH_HEADER)
+            assert resp.status_code == 422
+            data = resp.json()
+            assert "detail" in data
+            error_messages = [error["msg"] for error in data["detail"]]
+            assert any("trust_tier" in msg.lower() for msg in error_messages)
