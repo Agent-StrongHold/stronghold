@@ -903,3 +903,43 @@ class TestUpdateAgentTrustTier:
             assert get_resp.status_code == 200
             retrieved_agent_data = get_resp.json()
             assert retrieved_agent_data["trust_tier"] == "high"
+
+
+class TestSearchAgentsWithNonExistentCapability:
+    def test_search_agents_with_non_existent_capability(self, app: FastAPI) -> None:
+        with TestClient(app) as client:
+            # Create some agents with various capabilities
+            agent1 = {
+                "name": "Code Review Assistant",
+                "description": "AI-powered code reviewer",
+                "strategy": "review",
+                "tools": ["pylint", "flake8"],
+                "capabilities": ["code_review", "linting"],
+                "trust_tier": "high",
+                "install_count": 0,
+            }
+            agent2 = {
+                "name": "Documentation Writer",
+                "description": "Generates documentation",
+                "strategy": "write",
+                "tools": ["sphinx"],
+                "capabilities": ["documentation"],
+                "trust_tier": "medium",
+                "install_count": 0,
+            }
+
+            # Create all agents
+            client.post("/v1/stronghold/agents", json=agent1, headers=AUTH_HEADER)
+            client.post("/v1/stronghold/agents", json=agent2, headers=AUTH_HEADER)
+
+            # Search for agents with a non-existent capability
+            resp = client.get(
+                "/v1/stronghold/agents",
+                params={"capability": "nonexistent_tool"},
+                headers=AUTH_HEADER,
+            )
+            assert resp.status_code == 200
+            data = resp.json()
+
+            # Verify the results are empty
+            assert len(data) == 0
