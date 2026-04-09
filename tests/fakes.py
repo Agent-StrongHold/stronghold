@@ -10,6 +10,8 @@ if TYPE_CHECKING:
     from collections.abc import AsyncIterator
     from types import TracebackType
 
+    from stronghold.protocols.secrets import SecretResult
+
 
 class FakeLLMClient:
     """Fake LLM that returns predetermined responses."""
@@ -271,6 +273,70 @@ class FakeViolationStore:
         limit: int = 5,
     ) -> list[tuple[Any, int]]:
         return []
+
+
+class FakeSecretBackend:
+    """In-memory `SecretBackend` for tests.
+
+    Pre-populate via `set_secret` or `set_permission_denied`. The `watch_changes`
+    iterator yields the seeded value once, then yields any further values pushed
+    via `push_change` until `close` is called.
+    """
+
+    def __init__(self) -> None:
+        from collections import defaultdict
+
+
+        self._values: dict[str, SecretResult] = {}
+        self._denied: set[str] = set()
+        self._closed = False
+        self._pending_changes: dict[str, list[SecretResult]] = defaultdict(list)
+        self.get_calls: list[str] = []
+        self.close_calls = 0
+
+    def set_secret(self, ref: str, value: str, version: str | None = None) -> None:
+        from stronghold.protocols.secrets import SecretResult
+
+        self._values[ref] = SecretResult(value=value, version=version)
+
+    def set_permission_denied(self, ref: str) -> None:
+        self._denied.add(ref)
+
+    def push_change(self, ref: str, value: str, version: str | None = None) -> None:
+        from stronghold.protocols.secrets import SecretResult
+
+        self._pending_changes[ref].append(SecretResult(value=value, version=version))
+
+    async def get_secret(self, ref: str) -> Any:
+        if self._closed:
+            raise RuntimeError("FakeSecretBackend is closed")
+        self.get_calls.append(ref)
+        if "/" not in ref or not ref.strip("/"):
+            raise ValueError(f"Malformed secret ref: {ref!r}")
+        if ref in self._denied:
+            raise PermissionError(f"Cedar PDP denied access to {ref!r}")
+        if ref not in self._values:
+            raise LookupError(f"No secret at {ref!r}")
+        return self._values[ref]
+
+    async def watch_changes(self, ref: str) -> AsyncIterator[Any]:
+        if self._closed:
+            raise RuntimeError("FakeSecretBackend is closed")
+        if "/" not in ref or not ref.strip("/"):
+            raise ValueError(f"Malformed secret ref: {ref!r}")
+        if ref in self._denied:
+            raise PermissionError(f"Cedar PDP denied access to {ref!r}")
+        if ref not in self._values:
+            raise LookupError(f"No secret at {ref!r}")
+        # Always yield the seeded value first.
+        yield self._values[ref]
+        # Then drain any explicitly-pushed changes.
+        for result in self._pending_changes.pop(ref, []):
+            yield result
+
+    async def close(self) -> None:
+        self.close_calls += 1
+        self._closed = True
 
 
 # ── Test container factory ───────────────────────────────────────────
