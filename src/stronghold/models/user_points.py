@@ -32,7 +32,7 @@ class UserPoints:
     def _update_level(self) -> None:
         """Update the level based on total XP."""
         # Simple level calculation: level = total_xp // 100
-        self.level = self.total_xp // 100
+        self.level = max(1, self.total_xp // 100)
 
     def increment_issues_solved(self, count: int = 1) -> None:
         """Increment the issues solved count."""
