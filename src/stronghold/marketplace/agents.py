@@ -19,6 +19,12 @@ router = APIRouter(prefix="/v1/stronghold", tags=["agents"])
 TRUST_TIERS = ["low", "medium", "high"]
 
 
+class Review(BaseModel):
+    rating: int
+    comment: str
+    reviewer: dict[str, str]
+
+
 class AgentCreateRequest(BaseModel):
     name: str
     description: str
@@ -51,6 +57,16 @@ class AgentResponse(BaseModel):
     trust_tier: str
     install_count: int
     rating: float | None = None
+
+
+class AgentRatingsResponse(BaseModel):
+    average_rating: float
+    total_reviews: int
+
+
+class AgentReviewsResponse(BaseModel):
+    ratings: AgentRatingsResponse
+    reviews: list[Review]
 
 
 @router.post("/agents", response_model=AgentResponse, status_code=status.HTTP_201_CREATED)
@@ -125,3 +141,33 @@ async def search_agents(
         )
         for agent in agents
     ]
+
+
+@router.get("/agents/{agent_id}/reviews", response_model=AgentReviewsResponse)
+async def get_agent_reviews(
+    agent_id: str,
+    container: Container = Depends(lambda: None),
+    auth: AuthContext = Depends(StaticKeyAuthProvider().authenticate),
+) -> AgentReviewsResponse:
+    """Get ratings and reviews for a specific agent."""
+    agent = container.agents_store.get(agent_id)
+    if not agent:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Agent with id '{agent_id}' not found",
+        )
+
+    reviews = agent.reviews if agent.reviews else []
+
+    total_reviews = len(reviews)
+    average_rating = (
+        sum(review["rating"] for review in reviews) / total_reviews if total_reviews > 0 else 0.0
+    )
+
+    return AgentReviewsResponse(
+        ratings=AgentRatingsResponse(
+            average_rating=average_rating,
+            total_reviews=total_reviews,
+        ),
+        reviews=reviews,
+    )
