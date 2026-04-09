@@ -84,14 +84,18 @@ async def create_agent(
 @router.get("/agents", response_model=list[AgentResponse])
 async def search_agents(
     capability: str | None = None,
+    trust_tier: str | None = None,
     container: Container = Depends(lambda: None),
     auth: AuthContext = Depends(StaticKeyAuthProvider().authenticate),
 ) -> list[AgentResponse]:
-    """Search agents by capability."""
+    """Search agents by capability or trust tier."""
     agents = container.agents_store.list()
 
     if capability:
         agents = [agent for agent in agents if capability in agent.capabilities]
+
+    if trust_tier:
+        agents = [agent for agent in agents if agent.trust_tier == trust_tier]
 
     return [
         AgentResponse(
