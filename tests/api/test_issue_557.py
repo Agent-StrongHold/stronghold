@@ -147,3 +147,33 @@ class TestTaskValidation:
             assert any(
                 "task_id" in str(err["loc"]) and err["type"] == "missing" for err in data["detail"]
             )
+
+
+class TestDeleteTask:
+    def test_delete_existing_task(self, app: FastAPI) -> None:
+        with TestClient(app) as client:
+            task_id = "task-789"
+            payload = {
+                "task_id": task_id,
+                "status": "pending",
+                "progress": 0,
+                "result": None,
+                "usage": {"prompt_tokens": 0, "completion_tokens": 0},
+                "callback_url": "https://example.com/callback",
+                "created_at": "2024-01-01T00:00:00Z",
+                "updated_at": "2024-01-01T00:00:00Z",
+            }
+            # Create the task
+            client.post("/v1/tasks", json=payload, headers=AUTH_HEADER)
+
+            # Verify task exists
+            get_resp = client.get(f"/v1/tasks/{task_id}", headers=AUTH_HEADER)
+            assert get_resp.status_code == 200
+
+            # Delete the task
+            delete_resp = client.delete(f"/v1/tasks/{task_id}", headers=AUTH_HEADER)
+            assert delete_resp.status_code == 204
+
+            # Verify task no longer exists
+            get_resp = client.get(f"/v1/tasks/{task_id}", headers=AUTH_HEADER)
+            assert get_resp.status_code == 404

@@ -103,3 +103,13 @@ async def update_task(
 
     container.tasks.update(task)
     return task
+
+
+@router.delete("/tasks/{task_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_task(
+    task_id: str,
+    auth: AuthContext = Depends(StaticKeyAuthProvider()),
+) -> None:
+    """Delete a task."""
+    container = auth.container
+    container.tasks.delete(task_id)
