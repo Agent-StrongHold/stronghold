@@ -19,7 +19,21 @@ class UserPoints:
     def add_xp(self, amount: int) -> None:
         """Add XP to the user's total."""
         self.total_xp += amount
+        self._update_level()
 
-    def level_up(self) -> None:
-        """Increment the user's level by 1."""
-        self.level += 1
+    def _update_level(self) -> None:
+        """Update the level based on total XP."""
+        # Simple level calculation: level = total_xp // 100
+        self.level = self.total_xp // 100
+
+    def increment_issues_solved(self, count: int = 1) -> None:
+        """Increment the issues solved count."""
+        self.issues_solved += count
+
+    def increment_reviews(self, count: int = 1) -> None:
+        """Increment the reviews count."""
+        self.reviews += count
+
+    def increment_streaks(self, count: int = 1) -> None:
+        """Increment the streaks count."""
+        self.streaks += count
