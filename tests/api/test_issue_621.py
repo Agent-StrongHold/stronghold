@@ -13,6 +13,14 @@ class FeedbackExtractor(Protocol):
         """Extract feedback from data."""
         ...
 
+    def get_feedback_count(self) -> int:
+        """Get the count of extracted feedback."""
+        ...
+
+    def clear_feedback(self) -> None:
+        """Clear all extracted feedback."""
+        ...
+
 
 def test_fake_feedback_extractor_exists_and_implements_protocol() -> None:
     """Verify FakeFeedbackExtractor exists and implements FeedbackExtractor protocol."""
@@ -24,3 +32,31 @@ def test_fake_feedback_extractor_exists_and_implements_protocol() -> None:
     # Verify it implements the protocol
     # Use structural subtyping check instead of isinstance
     assert callable(fake_extractor.extract_feedback)
+
+
+class TestFakeFeedbackExtractorProtocolMethods:
+    """Test all protocol methods of FakeFeedbackExtractor."""
+
+    def test_extract_feedback_returns_default(self) -> None:
+        """Verify extract_feedback returns a sensible default value."""
+        from tests.fakes import FakeFeedbackExtractor
+
+        extractor = FakeFeedbackExtractor()
+        result = extractor.extract_feedback({"test": "data"})
+        assert result == {}
+
+    def test_get_feedback_count_returns_default(self) -> None:
+        """Verify get_feedback_count returns a sensible default value."""
+        from tests.fakes import FakeFeedbackExtractor
+
+        extractor = FakeFeedbackExtractor()
+        count = extractor.get_feedback_count()
+        assert count == 0
+
+    def test_clear_feedback_returns_none(self) -> None:
+        """Verify clear_feedback returns None without errors."""
+        from tests.fakes import FakeFeedbackExtractor
+
+        extractor = FakeFeedbackExtractor()
+        result = extractor.clear_feedback()
+        assert result is None

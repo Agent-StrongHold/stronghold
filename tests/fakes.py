@@ -18,13 +18,29 @@ class FeedbackExtractor(Protocol):
         """Extract feedback from data."""
         ...
 
+    def get_feedback_count(self) -> int:
+        """Get the count of extracted feedback."""
+        ...
+
+    def clear_feedback(self) -> None:
+        """Clear all extracted feedback."""
+        ...
+
 
 class FakeFeedbackExtractor:
     """Fake feedback extractor for testing."""
 
     def extract_feedback(self, data: dict[str, Any]) -> dict[str, Any]:
         """Extract feedback from data with sensible defaults."""
-        return {"feedback": "ok", "score": 0.5}
+        return {}
+
+    def get_feedback_count(self) -> int:
+        """Return the count of extracted feedback."""
+        return 0
+
+    def clear_feedback(self) -> None:
+        """Clear all extracted feedback."""
+        return None
 
 
 class FakeLLMClient:
