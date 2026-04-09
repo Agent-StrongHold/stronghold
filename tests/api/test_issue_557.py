@@ -82,3 +82,46 @@ class TestGetTask:
             assert data["callback_url"] == payload["callback_url"]
             assert data["created_at"] == payload["created_at"]
             assert data["updated_at"] == payload["updated_at"]
+
+
+class TestUpdateTask:
+    def test_update_task_status_and_progress(self, app: FastAPI) -> None:
+        with TestClient(app) as client:
+            task_id = "task-456"
+            initial_payload = {
+                "task_id": task_id,
+                "status": "pending",
+                "progress": 50,
+                "result": None,
+                "usage": {"prompt_tokens": 0, "completion_tokens": 0},
+                "callback_url": "https://example.com/callback",
+                "created_at": "2024-01-01T00:00:00Z",
+                "updated_at": "2024-01-01T00:00:00Z",
+            }
+            # Create the task
+            client.post("/v1/tasks", json=initial_payload, headers=AUTH_HEADER)
+
+            # Update the task status and progress
+            update_payload = {
+                "status": "completed",
+                "progress": 100,
+                "updated_at": "2024-01-01T00:02:00Z",
+            }
+            update_resp = client.patch(
+                f"/v1/tasks/{task_id}", json=update_payload, headers=AUTH_HEADER
+            )
+            assert update_resp.status_code == 200
+
+            # Verify the update in the database
+            get_resp = client.get(f"/v1/tasks/{task_id}", headers=AUTH_HEADER)
+            assert get_resp.status_code == 200
+            data = get_resp.json()
+
+            assert data["task_id"] == task_id
+            assert data["status"] == update_payload["status"]
+            assert data["progress"] == update_payload["progress"]
+            assert data["result"] == initial_payload["result"]
+            assert data["usage"] == initial_payload["usage"]
+            assert data["callback_url"] == initial_payload["callback_url"]
+            assert data["created_at"] == initial_payload["created_at"]
+            assert data["updated_at"] == update_payload["updated_at"]

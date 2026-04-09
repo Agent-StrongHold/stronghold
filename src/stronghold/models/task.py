@@ -82,3 +82,24 @@ async def get_task(
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")
     return task
+
+
+@router.patch("/tasks/{task_id}")
+async def update_task(
+    task_id: str,
+    update_data: dict,
+    auth: AuthContext = Depends(StaticKeyAuthProvider()),
+) -> Task:
+    """Update a task."""
+    container = auth.container
+    task = container.tasks.get(task_id)
+    if not task:
+        raise HTTPException(status_code=404, detail="Task not found")
+
+    # Update fields from update_data
+    for key, value in update_data.items():
+        if hasattr(task, key):
+            setattr(task, key, value)
+
+    container.tasks.update(task)
+    return task
