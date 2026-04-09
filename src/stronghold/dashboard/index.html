@@ -123,37 +123,51 @@
   }
 </style>
 <script src="/dashboard/auth.js"></script>
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+  // Create XPSourceCard elements
+  const xpSourcesContainer = document.createElement('div');
+  xpSourcesContainer.className = 'grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 p-6';
+
+  const xpSources = [
+    { icon: '🏰', label: 'Castle Contributions', count: 1250 },
+    { icon: '⚔️', label: 'Battle Victories', count: 842 },
+    { icon: '🛡️', label: 'Defensive Actions', count: 678 },
+    { icon: '🏹', label: 'Archery Training', count: 432 },
+    { icon: '🐎', label: 'Horseback Riding', count: 312 },
+    { icon: '🏺', label: 'Artisan Work', count: 289 }
+  ];
+
+  xpSources.forEach(source => {
+    const card = document.createElement('div');
+    card.className = 'bg-white rounded-lg shadow-md p-4';
+    card.setAttribute('role', 'region');
+    card.setAttribute('aria-label', `${source.label} XP source`);
+    card.setAttribute('aria-live', 'polite');
+
+    const iconElement = document.createElement('span');
+    iconElement.className = 'text-2xl mb-2';
+    iconElement.textContent = source.icon;
+
+    const labelElement = document.createElement('h3');
+    labelElement.className = 'text-sm font-medium text-gray-500';
+    labelElement.textContent = source.label;
+
+    const countElement = document.createElement('div');
+    countElement.className = 'text-lg font-bold text-gray-900';
+    countElement.textContent = source.count;
+
+    card.appendChild(iconElement);
+    card.appendChild(labelElement);
+    card.appendChild(countElement);
+    xpSourcesContainer.appendChild(card);
+  });
+
+  document.body.appendChild(xpSourcesContainer);
+});
+</script>
 </head>
-<body class="flex">
-
-<!-- Mobile sidebar overlay -->
-<div class="sidebar-overlay" id="sidebar-overlay" role="button" onclick="closeSidebar()"></div>
-
-<!-- Sidebar — Castle Turrets -->
-<nav class="sidebar flex-shrink-0 flex flex-col" id="sidebar">
-  <div class="p-5 border-b border-[var(--iron)]">
-    <div class="flex items-center gap-3">
-      <span class="crest tower-crest">&#x1F3F0;</span>
-      <div>
-        <h1 class="text-lg leading-tight">Stronghold</h1>
-        <p class="text-xs text-[var(--iron-light)]">Agent Governance Platform</p>
-      </div>
-    </div>
-  </div>
-
-  <div class="flex-1 py-4" onclick="closeSidebar()">
-    <a href="/greathall" class="sidebar-item active">
-      <span style="width:24px;text-align:center">&#x1F3DB;</span> Great Hall
-    </a>
-    <a href="/dashboard/agents" class="sidebar-item">
-      <span class="sidebar-icon">&#x2694;</span> Knights
-    </a>
-    <a href="/dashboard/skills" class="sidebar-item">
-      <span class="sidebar-icon">&#x1F6E1;</span> Armory
-    </a>
-    <a href="/dashboard/mcp" class="sidebar-item">
-      <span style="width:24px;text-align:center">&#x1F525;</span> Forge
-    </a>
-    <a href="/dashboard/security" class="sidebar-item">
-      <span class="sidebar-icon">&#x1F5FC;</span> Watchtower
-    </a>
+<body class="px-8 py-6">
+  <div id="app"></div>
+</body>
+</html>
