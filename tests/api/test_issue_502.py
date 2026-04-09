@@ -514,3 +514,30 @@ class TestSearchAgentsByTrustTier:
             assert "Security Scanner" in agent_names
             assert "Code Review Assistant" not in agent_names
             assert "Code Review Expert" not in agent_names
+
+
+class TestAgentCreationWithMissingRequiredFields:
+    def test_create_agent_with_missing_required_fields_fails(self, app: FastAPI) -> None:
+        with TestClient(app) as client:
+            # Attempt to create agent with missing required fields
+            payload = {
+                "description": "AI-powered code reviewer",
+                "tools": ["pylint", "flake8"],
+                "install_count": 0,
+            }
+            resp = client.post("/v1/stronghold/agents", json=payload, headers=AUTH_HEADER)
+
+            # Should fail with 422 Unprocessable Entity
+            assert resp.status_code == 422
+
+            data = resp.json()
+            assert "detail" in data
+            assert len(data["detail"]) > 0
+
+            # Verify error messages mention missing fields
+            error_messages = [error["msg"] for error in data["detail"]]
+            assert any("field required" in msg.lower() for msg in error_messages)
+
+            # Verify agent was not created
+            container = app.state.container
+            assert len(container.agent_registry.list_agents()) == 0
