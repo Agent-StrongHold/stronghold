@@ -830,3 +830,36 @@ class TestAgentRatingsAndReviewsWithExactCriteria:
                 assert "reviewer" in review
                 assert "name" in review["reviewer"]
                 assert "id" in review["reviewer"]
+
+
+class TestAgentCreationWithMissingNameField:
+    def test_create_agent_with_missing_name_field_fails_with_validation_error(
+        self, app: FastAPI
+    ) -> None:
+        with TestClient(app) as client:
+            # Attempt to create agent with missing name field
+            payload = {
+                "description": "AI-powered code reviewer",
+                "strategy": "review",
+                "tools": ["pylint", "flake8"],
+                "trust_tier": "high",
+                "install_count": 0,
+            }
+            resp = client.post("/v1/stronghold/agents", json=payload, headers=AUTH_HEADER)
+
+            # Should fail with 422 Unprocessable Entity
+            assert resp.status_code == 422
+
+            data = resp.json()
+            assert "detail" in data
+            assert len(data["detail"]) > 0
+
+            # Verify error message indicates name is required
+            error_messages = [error["msg"] for error in data["detail"]]
+            assert any(
+                "name" in msg.lower() and "required" in msg.lower() for msg in error_messages
+            )
+
+            # Verify agent was not created
+            container = app.state.container
+            assert len(container.agent_registry.list_agents()) == 0
