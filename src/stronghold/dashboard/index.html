@@ -123,37 +123,95 @@
   }
 </style>
 <script src="/dashboard/auth.js"></script>
+<script>
+  // ProgressBar component
+  class ProgressBar {
+    constructor({ value = 0, max = 100, label = '' } = {}) {
+      this.value = value;
+      this.max = max;
+      this.label = label;
+    }
+
+    render() {
+      const percentage = Math.min(100, Math.max(0, (this.value / this.max) * 100));
+
+      const container = document.createElement('div');
+      container.className = 'w-full space-y-1';
+
+      const labelEl = document.createElement('label');
+      labelEl.className = 'text-sm font-medium text-gray-300';
+      labelEl.textContent = this.label;
+      container.appendChild(labelEl);
+
+      const progressContainer = document.createElement('div');
+      progressContainer.className = 'w-full h-4 bg-gray-700 rounded-full overflow-hidden';
+      progressContainer.setAttribute('role', 'progressbar');
+      progressContainer.setAttribute('aria-valuenow', this.value.toString());
+      progressContainer.setAttribute('aria-valuemin', '0');
+      progressContainer.setAttribute('aria-valuemax', this.max.toString());
+      progressContainer.setAttribute('aria-label', this.label);
+
+      const progressBar = document.createElement('div');
+      progressBar.className = 'h-full bg-emerald-500 transition-all duration-300 ease-out';
+      progressBar.style.width = `${percentage}%`;
+
+      const percentageText = document.createElement('span');
+      percentageText.className = 'percentage-text text-xs text-gray-300 ml-2';
+      percentageText.textContent = `${Math.round(percentage)}%`;
+
+      progressContainer.appendChild(progressBar);
+      container.appendChild(progressContainer);
+      container.appendChild(percentageText);
+
+      return container;
+    }
+  }
+
+  // Quota rendering
+  function loadQuota() {
+    const quotaData = {
+      value: 75,
+      max: 100,
+      label: "Storage Quota"
+    };
+
+    const quotaEl = document.getElementById('quota-display');
+    if (quotaEl) {
+      const progressBar = new ProgressBar(quotaData);
+      quotaEl.appendChild(progressBar.render());
+    }
+  }
+
+  document.addEventListener('DOMContentLoaded', function() {
+    var i = document.getElementById('chat-input');
+    if (i) i.addEventListener('keydown', function(e) {
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        askAnalyst();
+      }
+    });
+  });
+
+  loadQuota();
+  function openSidebar() {
+    document.getElementById('sidebar').classList.add('open');
+    document.getElementById('sidebar-overlay').classList.add('open');
+  }
+  function closeSidebar() {
+    document.getElementById('sidebar').classList.remove('open');
+    document.getElementById('sidebar-overlay').classList.remove('open');
+  }
+</script>
 </head>
-<body class="flex">
+<body class="antialiased">
+  <div id="sidebar-overlay" class="sidebar-overlay" onclick="closeSidebar()"></div>
+  <aside id="sidebar" class="sidebar">
+    <!-- Sidebar content -->
+  </aside>
 
-<!-- Mobile sidebar overlay -->
-<div class="sidebar-overlay" id="sidebar-overlay" role="button" onclick="closeSidebar()"></div>
-
-<!-- Sidebar — Castle Turrets -->
-<nav class="sidebar flex-shrink-0 flex flex-col" id="sidebar">
-  <div class="p-5 border-b border-[var(--iron)]">
-    <div class="flex items-center gap-3">
-      <span class="crest tower-crest">&#x1F3F0;</span>
-      <div>
-        <h1 class="text-lg leading-tight">Stronghold</h1>
-        <p class="text-xs text-[var(--iron-light)]">Agent Governance Platform</p>
-      </div>
-    </div>
-  </div>
-
-  <div class="flex-1 py-4" onclick="closeSidebar()">
-    <a href="/greathall" class="sidebar-item active">
-      <span style="width:24px;text-align:center">&#x1F3DB;</span> Great Hall
-    </a>
-    <a href="/dashboard/agents" class="sidebar-item">
-      <span class="sidebar-icon">&#x2694;</span> Knights
-    </a>
-    <a href="/dashboard/skills" class="sidebar-item">
-      <span class="sidebar-icon">&#x1F6E1;</span> Armory
-    </a>
-    <a href="/dashboard/mcp" class="sidebar-item">
-      <span style="width:24px;text-align:center">&#x1F525;</span> Forge
-    </a>
-    <a href="/dashboard/security" class="sidebar-item">
-      <span class="sidebar-icon">&#x1F5FC;</span> Watchtower
-    </a>
+  <main class="px-8 py-6">
+    <!-- Main content -->
+    <div id="quota-display" class="js_rendered"></div>
+  </main>
+</body>
+</html>
