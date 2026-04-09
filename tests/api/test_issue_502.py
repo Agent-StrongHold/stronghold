@@ -863,3 +863,43 @@ class TestAgentCreationWithMissingNameField:
             # Verify agent was not created
             container = app.state.container
             assert len(container.agent_registry.list_agents()) == 0
+
+
+class TestUpdateAgentTrustTier:
+    def test_update_agent_trust_tier(self, app: FastAPI) -> None:
+        with TestClient(app) as client:
+            # Create an agent with medium trust tier
+            agent_payload = {
+                "name": "Code Review Assistant",
+                "description": "AI-powered code reviewer",
+                "strategy": "review",
+                "tools": ["pylint", "flake8"],
+                "trust_tier": "medium",
+                "install_count": 0,
+            }
+            create_resp = client.post(
+                "/v1/stronghold/agents", json=agent_payload, headers=AUTH_HEADER
+            )
+            assert create_resp.status_code == 200
+            agent_data = create_resp.json()
+            agent_id = agent_data["id"]
+
+            # Verify initial trust tier is medium
+            assert agent_data["trust_tier"] == "medium"
+
+            # Update the agent's trust tier to high
+            update_payload = {"trust_tier": "high"}
+            update_resp = client.patch(
+                f"/v1/stronghold/agents/{agent_id}", json=update_payload, headers=AUTH_HEADER
+            )
+            assert update_resp.status_code == 200
+            updated_agent_data = update_resp.json()
+
+            # Verify the trust tier was updated to high
+            assert updated_agent_data["trust_tier"] == "high"
+
+            # Verify subsequent queries reflect the updated tier
+            get_resp = client.get(f"/v1/stronghold/agents/{agent_id}", headers=AUTH_HEADER)
+            assert get_resp.status_code == 200
+            retrieved_agent_data = get_resp.json()
+            assert retrieved_agent_data["trust_tier"] == "high"

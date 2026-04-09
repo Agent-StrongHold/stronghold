@@ -151,6 +151,45 @@ async def search_agents(
     ]
 
 
+@router.patch("/agents/{agent_id}", response_model=AgentResponse)
+async def update_agent(
+    agent_id: str,
+    request: dict[str, str],
+    container: Container = Depends(lambda: None),
+    auth: AuthContext = Depends(StaticKeyAuthProvider().authenticate),
+) -> AgentResponse:
+    """Update an agent's trust tier."""
+    agent = container.agent_registry.get_agent(agent_id)
+    if not agent:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Agent with id '{agent_id}' not found",
+        )
+
+    if "trust_tier" in request:
+        trust_tier = request["trust_tier"]
+        if trust_tier not in TRUST_TIERS:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=f"trust_tier must be one of {TRUST_TIERS}",
+            )
+        agent.trust_tier = trust_tier
+
+    container.agent_registry.update(agent)
+
+    return AgentResponse(
+        id=str(agent.id),
+        name=agent.name,
+        description=agent.description,
+        strategy=agent.strategy,
+        tools=agent.tools,
+        capabilities=agent.capabilities,
+        trust_tier=agent.trust_tier,
+        install_count=agent.install_count,
+        rating=agent.rating,
+    )
+
+
 @router.get("/agents/{agent_id}/reviews", response_model=AgentReviewsResponse)
 async def get_agent_reviews(
     agent_id: str,
