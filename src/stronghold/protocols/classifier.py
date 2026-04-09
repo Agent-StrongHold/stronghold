@@ -1,35 +1,54 @@
-"""Intent classifier protocol."""
-
-from __future__ import annotations
-
-from typing import TYPE_CHECKING, Protocol, runtime_checkable
-
-if TYPE_CHECKING:
-    from stronghold.types.config import TaskTypeConfig
-    from stronghold.types.intent import Intent
+from typing import Protocol, runtime_checkable
 
 
 @runtime_checkable
 class IntentClassifier(Protocol):
-    """Classifies user messages into task types with complexity and priority."""
+    """Protocol for classifying user intents in queries."""
 
-    async def classify(
-        self,
-        messages: list[dict[str, str]],
-        task_types: dict[str, TaskTypeConfig],
-        explicit_priority: str | None = None,
-    ) -> Intent:
-        """Classify the user's intent."""
-        ...
+    async def classify(self, query: str) -> str:
+        """Classify a single intent from a query.
 
-    def detect_multi_intent(
-        self,
-        user_text: str,
-        task_types: dict[str, TaskTypeConfig],
-    ) -> list[str]:
-        """Detect multiple intents in a compound request.
+        Args:
+            query: The user's input query to classify
 
-        Returns a list of task_type strings if a compound request is detected,
-        otherwise returns an empty list.
+        Returns:
+            A string representing the detected intent
         """
         ...
+
+    async def detect_multi_intent(self, query: str) -> list[str]:
+        """Detect multiple intents from a query.
+
+        Args:
+            query: The user's input query to classify
+
+        Returns:
+            A list of strings representing the detected intents
+        """
+        ...
+
+
+class FakeIntentClassifier:
+    """Fake implementation of IntentClassifier protocol for testing."""
+
+    async def classify(self, query: str) -> str:
+        """Classify a single intent from a query.
+
+        Args:
+            query: The user's input query to classify
+
+        Returns:
+            A string representing the detected intent
+        """
+        return "default_intent"
+
+    async def detect_multi_intent(self, query: str) -> list[str]:
+        """Detect multiple intents from a query.
+
+        Args:
+            query: The user's input query to classify
+
+        Returns:
+            A list of strings representing the detected intents
+        """
+        return ["default_intent"]

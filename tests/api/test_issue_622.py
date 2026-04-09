@@ -30,6 +30,26 @@ class TestIntentClassifierProtocol:
         # Check detect_multi_intent method documentation
         detect_doc = IntentClassifier.detect_multi_intent.__doc__
         assert detect_doc is not None, "detect_multi_intent method must be documented"
-        assert (
-            "detect_multi_intent" in detect_doc.lower() or "multi intent" in detect_doc.lower()
-        ), "detect_multi_intent method doc should mention its purpose"
+        assert "multiple intents" in detect_doc.lower(), (
+            "detect_multi_intent method doc should mention its purpose"
+        )
+
+    def test_fake_implementation_matches_protocol(self) -> None:
+        """Verify fake IntentClassifier implementation matches protocol requirements."""
+        from tests.fakes import FakeIntentClassifier
+
+        fake = FakeIntentClassifier()
+
+        # Verify all protocol methods are implemented
+        assert hasattr(fake, "classify")
+        assert hasattr(fake, "detect_multi_intent")
+        assert callable(fake.classify)
+        assert callable(fake.detect_multi_intent)
+
+        # Verify method signatures match protocol
+        assert fake.classify.__annotations__.get("return") is not None
+        assert fake.detect_multi_intent.__annotations__.get("return") is not None
+
+        # Verify fake has proper documentation
+        assert fake.classify.__doc__ is not None
+        assert fake.detect_multi_intent.__doc__ is not None
