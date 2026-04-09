@@ -754,3 +754,79 @@ class TestSearchAgentsByTrustTier:
             assert "Security Scanner" in agent_names
             assert "Code Review Assistant" not in agent_names
             assert "Code Review Expert" not in agent_names
+
+
+class TestAgentRatingsAndReviewsWithExactCriteria:
+    def test_retrieve_agent_ratings_and_reviews_with_exact_criteria(self, app: FastAPI) -> None:
+        with TestClient(app) as client:
+            # Create an agent named "Data Analyst"
+            agent_payload = {
+                "name": "Data Analyst",
+                "description": "Analyzes datasets and provides insights",
+                "strategy": "ML",
+                "tools": ["pandas", "numpy", "matplotlib"],
+                "trust_tier": "high",
+                "install_count": 0,
+            }
+            create_resp = client.post(
+                "/v1/stronghold/agents", json=agent_payload, headers=AUTH_HEADER
+            )
+            assert create_resp.status_code == 200
+            agent_data = create_resp.json()
+            agent_id = agent_data["id"]
+
+            # Add 5 reviews with average rating 4.2
+            reviews = [
+                {
+                    "rating": 5,
+                    "comment": "Excellent performance!",
+                    "reviewer": {"name": "User1", "id": "user-001"},
+                },
+                {
+                    "rating": 4,
+                    "comment": "Very good, minor improvements needed",
+                    "reviewer": {"name": "User2", "id": "user-002"},
+                },
+                {
+                    "rating": 4,
+                    "comment": "Solid work",
+                    "reviewer": {"name": "User3", "id": "user-003"},
+                },
+                {
+                    "rating": 4,
+                    "comment": "Reliable and fast",
+                    "reviewer": {"name": "User4", "id": "user-004"},
+                },
+                {
+                    "rating": 4,
+                    "comment": "Good overall",
+                    "reviewer": {"name": "User5", "id": "user-005"},
+                },
+            ]
+
+            # Add reviews to the agent
+            container = app.state.container
+            agent = container.agent_registry.get_agent(agent_id)
+            agent.reviews = reviews
+
+            # Retrieve the agent's ratings and reviews
+            resp = client.get(f"/v1/stronghold/agents/{agent_id}/reviews", headers=AUTH_HEADER)
+            assert resp.status_code == 200
+            data = resp.json()
+
+            # Verify the response includes the average rating 4.2
+            assert "ratings" in data
+            assert "average_rating" in data["ratings"]
+            assert data["ratings"]["average_rating"] == 4.2
+
+            # Verify the response includes all 5 reviews
+            assert "reviews" in data
+            assert len(data["reviews"]) == 5
+
+            # Verify each review has the required fields
+            for review in data["reviews"]:
+                assert "rating" in review
+                assert "comment" in review
+                assert "reviewer" in review
+                assert "name" in review["reviewer"]
+                assert "id" in review["reviewer"]
