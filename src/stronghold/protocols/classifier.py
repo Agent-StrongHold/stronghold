@@ -29,3 +29,10 @@ class IntentClassifier(Protocol):
     ) -> list[str]:
         """Returns list of task_type strings if compound request, else empty."""
         ...
+
+    def __init__(self) -> None:
+        """Initialize the intent classifier."""
+        ...
+
+    classify: Intent
+    detect_multi_intent: list[str]
