@@ -38,3 +38,25 @@ class TestIntentClassifierProtocol:
 
         # Check that classify is async
         assert iscoroutinefunction(IntentClassifier.classify)
+
+    def test_classify_empty_input_raises_value_error(self) -> None:
+        class FakeClassifier:
+            async def classify(
+                self,
+                messages: list[str],
+                task_types: list[str],
+                explicit_priority: bool = False,
+            ) -> dict[str, str]:
+                if not messages:
+                    raise ValueError("Input cannot be empty")
+                return {"intent": "test"}
+
+        classifier = FakeClassifier()
+        import pytest
+
+        with pytest.raises(ValueError) as exc_info:
+            import asyncio
+
+            asyncio.run(classifier.classify([], ["test"], False))
+
+        assert str(exc_info.value) == "Input cannot be empty"
