@@ -26,8 +26,6 @@ def container() -> Container:
     )
     return Container(
         config=config,
-        llm_client=None,
-        embedding_client=None,
         agent_registry=None,
         context_builder=None,
         strategy_selector=None,
@@ -83,3 +81,25 @@ class TestUserPointsModel:
 
         # And the level should be recalculated based on the new XP
         assert user_points.level == 2
+
+    def test_update_xp_with_negative_value_raises_error(self) -> None:
+        """Update XP with negative value should raise error and not update XP."""
+        # Given an existing UserPoints record with total_xp: 50
+        user_points = UserPoints(
+            user_id="user-123",
+            total_xp=50,
+            level=1,
+            issues_solved=0,
+            reviews=0,
+            streaks=0,
+        )
+
+        # When the update_xp method is called with -100 XP
+        with pytest.raises(ValueError, match="XP cannot be negative"):
+            user_points.update_xp(-100)
+
+        # Then the XP should not be updated
+        assert user_points.total_xp == 50
+
+        # And the level should remain unchanged
+        assert user_points.level == 1
