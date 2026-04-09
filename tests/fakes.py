@@ -2,13 +2,29 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Protocol
 
 from stronghold.types.auth import SYSTEM_AUTH, AuthContext
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator
     from types import TracebackType
+
+
+class FeedbackExtractor(Protocol):
+    """Protocol defining the FeedbackExtractor interface."""
+
+    def extract_feedback(self, data: dict[str, Any]) -> dict[str, Any]:
+        """Extract feedback from data."""
+        ...
+
+
+class FakeFeedbackExtractor:
+    """Fake feedback extractor for testing."""
+
+    def extract_feedback(self, data: dict[str, Any]) -> dict[str, Any]:
+        """Extract feedback from data with sensible defaults."""
+        return {"feedback": "ok", "score": 0.5}
 
 
 class FakeLLMClient:
@@ -218,7 +234,11 @@ class FakeRateLimiter:
 
     async def check(self, key: str) -> tuple[bool, dict[str, str]]:
         self.calls.append(key)
-        headers = {"X-RateLimit-Limit": "60", "X-RateLimit-Remaining": "59", "X-RateLimit-Reset": "60"}
+        headers = {
+            "X-RateLimit-Limit": "60",
+            "X-RateLimit-Remaining": "59",
+            "X-RateLimit-Reset": "60",
+        }
         return self._always_allow, headers
 
     async def record(self, key: str) -> None:
