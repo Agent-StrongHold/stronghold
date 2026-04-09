@@ -27,5 +27,9 @@ class IntentClassifier(Protocol):
         user_text: str,
         task_types: dict[str, TaskTypeConfig],
     ) -> list[str]:
-        """Returns list of task_type strings if compound request, else empty."""
+        """Detect multiple intents in a compound request.
+
+        Returns a list of task_type strings if a compound request is detected,
+        otherwise returns an empty list.
+        """
         ...
