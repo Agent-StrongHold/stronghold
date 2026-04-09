@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
-from stronghold.types.user_points import UserPoints
+import pytest
+
+from stronghold.models.user_points import UserPoints
 
 
 class TestUserPointsModel:
@@ -42,3 +44,22 @@ class TestUserPointsModel:
         # Then total_xp should be 150 and level should be recalculated based on XP thresholds
         assert user_points.total_xp == 150
         assert user_points.level == 6
+
+    def test_negative_xp_update_raises_error(self) -> None:
+        # Given an existing UserPoints record with total_xp = 100
+        user_points = UserPoints(
+            user_id="user-789",
+            total_xp=100,
+            level=5,
+            issues_solved=10,
+            reviews=2,
+            streaks=1,
+        )
+
+        # When an attempt is made to update XP with a negative value (-20)
+        initial_xp = user_points.total_xp
+        with pytest.raises(ValueError, match="XP cannot be negative"):
+            user_points.total_xp -= 20
+
+        # Then the XP should remain unchanged at 100
+        assert user_points.total_xp == initial_xp
