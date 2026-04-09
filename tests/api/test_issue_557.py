@@ -177,3 +177,11 @@ class TestDeleteTask:
             # Verify task no longer exists
             get_resp = client.get(f"/v1/tasks/{task_id}", headers=AUTH_HEADER)
             assert get_resp.status_code == 404
+
+
+class TestNonExistentTask:
+    def test_retrieve_nonexistent_task_returns_not_found(self, app: FastAPI) -> None:
+        with TestClient(app) as client:
+            task_id = "task-nonexistent"
+            get_resp = client.get(f"/v1/tasks/{task_id}", headers=AUTH_HEADER)
+            assert get_resp.status_code == 404
