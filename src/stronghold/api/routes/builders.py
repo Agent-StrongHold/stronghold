@@ -1101,6 +1101,85 @@ async def _post_auditor_verdict_to_issue(
     )
 
 
+async def _post_stage_failure_to_issue(
+    container: Any,
+    owner: str,
+    repo: str,
+    issue_number: int,
+    run_id: str,
+    stage: str,
+    attempt: int,
+    *,
+    failure_kind: str,
+    summary: str,
+    traceback_text: str = "",
+) -> None:
+    """Post a stage-handler failure as a GitHub issue comment.
+
+    The previous behaviour swallowed handler failures into stderr only,
+    which left the issue's comment trail showing the prior approved
+    stage followed by 'BLOCKED, waiting for human guidance' with zero
+    diagnostic context. This helper makes the failure visible on the
+    issue itself so operators can see *why* a run stalled without
+    needing container log access.
+
+    failure_kind is one of:
+      - 'handler_returned_failure': handler returned StageResult(success=False)
+      - 'handler_exception':        handler raised an unhandled exception
+    """
+    # Truncate to keep GitHub comments readable. The full text is in
+    # container stderr if anyone needs the long form.
+    summary_excerpt = summary[:1500] if summary else "(no summary)"
+    body_parts = [
+        f"## Stage `{stage}` failed (attempt {attempt})",
+        "",
+        f"**Failure kind:** `{failure_kind}`",
+        f"**Run id:** `{run_id}`",
+        "",
+        "### Summary",
+        "",
+        summary_excerpt,
+    ]
+    if traceback_text:
+        body_parts += [
+            "",
+            "### Traceback",
+            "",
+            "```",
+            traceback_text[:2000],
+            "```",
+        ]
+    body_parts += [
+        "",
+        "---",
+        (
+            "_The Builders pipeline will retry from `acceptance_defined` "
+            "on the next outer loop. If this failure repeats across all "
+            "outer loops the run will exit BLOCKED and wait for human "
+            "guidance — see the comments above for the failure history._"
+        ),
+    ]
+    comment_body = "\n".join(body_parts)
+    try:
+        await container.tool_dispatcher.execute(
+            "github",
+            {
+                "action": "post_pr_comment",
+                "owner": owner,
+                "repo": repo,
+                "issue_number": issue_number,
+                "body": comment_body,
+            },
+        )
+    except Exception as e:
+        # Best-effort posting — never let a comment failure mask the
+        # original stage failure.
+        logger.warning(
+            "Failed to post stage-failure comment for run %s stage %s: %s",
+            run_id, stage, e,
+        )
+
+
 _STAGE_REQUIREMENTS: dict[str, str] = {
     "issue_analyzed": (
         "Must provide: 1) Clear problem statement, 2) List of requirements, "
@@ -1218,19 +1297,35 @@ async def _execute_one_stage(run_id: str, orch: Any, container: Any, service_aut
         print(f"[BUILDERS] Stage {stage} attempt {attempt}/{MAX_STAGE_RETRIES} for run {run_id}", flush=True)
 
         # 1. Runtime executes the stage — pass Auditor feedback from prior rejection
+        failure_kind: str | None = None
+        failure_traceback: str = ""
         try:
             handler = getattr(pipeline, handler_name)
             result = await handler(run, feedback=auditor_feedback)
             print(f"[BUILDERS] Stage {stage} result: success={result.success}, summary={result.summary[:200]}", flush=True)
         except Exception as e:
             import traceback
-            tb = traceback.format_exc()
-            print(f"[BUILDERS] Pipeline {stage} EXCEPTION: {e}\n{tb}", flush=True)
+            failure_traceback = traceback.format_exc()
+            print(f"[BUILDERS] Pipeline {stage} EXCEPTION: {e}\n{failure_traceback}", flush=True)
             result = None
+            failure_kind = "handler_exception"
 
         if result is None or not result.success:
             summary = result.summary if result else f"Stage {stage} failed"
             logger.error("Stage %s failed: %s", stage, summary)
+            if failure_kind is None:
+                failure_kind = "handler_returned_failure"
+            # Make the failure visible on the GitHub issue. Without this
+            # the issue's comment trail jumps from the previous stage's
+            # auditor verdict directly to "BLOCKED, waiting for human"
+            # with no diagnostic context.
+            await _post_stage_failure_to_issue(
+                container, owner, repo_name, run.issue_number,
+                run_id, stage, attempt,
+                failure_kind=failure_kind,
+                summary=summary,
+                traceback_text=failure_traceback,
+            )
             break
 
         # 2. Auditor reviews concrete evidence (stage-aware prompt)
