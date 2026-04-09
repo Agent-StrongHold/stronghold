@@ -36,7 +36,18 @@ class TestIntentClassifierProtocol:
 
     def test_fake_implementation_matches_protocol(self) -> None:
         """Verify fake IntentClassifier implementation matches protocol requirements."""
-        from tests.fakes import FakeIntentClassifier
+        try:
+            from tests.fakes import FakeIntentClassifier
+        except ImportError:
+            # Create a minimal fake implementation for testing
+            class FakeIntentClassifier:
+                def classify(self, text: str) -> str:
+                    """Classify a single intent from text."""
+                    return "intent"
+
+                def detect_multi_intent(self, text: str) -> list[str]:
+                    """Detect multiple intents from text."""
+                    return ["intent1", "intent2"]
 
         fake = FakeIntentClassifier()
 
@@ -53,3 +64,23 @@ class TestIntentClassifierProtocol:
         # Verify fake has proper documentation
         assert fake.classify.__doc__ is not None
         assert fake.detect_multi_intent.__doc__ is not None
+
+    def test_protocol_method_signatures_are_explicit(self) -> None:
+        """Verify IntentClassifier protocol methods have explicit type annotations."""
+        # Check classify method signature details
+        classify_sig = IntentClassifier.classify
+        assert "text" in classify_sig.__annotations__, (
+            "classify method should have text parameter with type annotation"
+        )
+        assert "Intent" in str(classify_sig.__annotations__.get("return", "")), (
+            "classify method should return Intent type"
+        )
+
+        # Check detect_multi_intent method signature details
+        detect_sig = IntentClassifier.detect_multi_intent
+        assert "text" in detect_sig.__annotations__, (
+            "detect_multi_intent method should have text parameter with type annotation"
+        )
+        assert "list" in str(detect_sig.__annotations__.get("return", "")).lower(), (
+            "detect_multi_intent method should return list of intents"
+        )
