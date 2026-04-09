@@ -56,3 +56,21 @@ class TestFakeOutcomeStoreSkeleton:
         from tests.fakes import FakeOutcomeStore  # noqa: F401
 
         assert FakeOutcomeStore is not None
+
+    def test_fake_outcome_store_has_no_method_implementations(self) -> None:
+        """Verify FakeOutcomeStore has no method implementations in skeleton."""
+        source = FAKES_PY_PATH.read_text()
+        assert "class FakeOutcomeStore" in source
+        # Find the class definition and check that no methods are defined
+        lines = source.splitlines()
+        in_class = False
+        for line in lines:
+            if line.strip().startswith("class FakeOutcomeStore"):
+                in_class = True
+            elif in_class:
+                if line.strip().startswith(("def ", "async def ")):
+                    raise AssertionError(
+                        f"FakeOutcomeStore should not have method implementations: {line}"
+                    )
+                if line.strip() and not line.strip().startswith(("#", '"', "'")):
+                    break
