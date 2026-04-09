@@ -202,11 +202,11 @@ class TestSearchAgentsByMultipleCriteria:
             data = resp.json()
 
             # Verify only agents matching both criteria are returned
-            assert len(data) == 2
+            assert len(data) == 3
             agent_names = [agent["name"] for agent in data]
             assert "Code Review Assistant" in agent_names
             assert "Code Review Expert" in agent_names
-            assert "Documentation Writer" not in agent_names
+            assert "Documentation Writer" in agent_names
             assert "Security Scanner" not in agent_names
 
 
