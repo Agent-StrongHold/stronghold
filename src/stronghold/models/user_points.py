@@ -24,3 +24,8 @@ class UserPoints:
     def _update_level(self) -> None:
         """Update level based on total XP."""
         self.level = self.total_xp // 100
+
+    def update_xp(self, amount: int) -> None:
+        """Update XP and recalculate level."""
+        self.total_xp += amount
+        self._update_level()

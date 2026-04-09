@@ -62,3 +62,24 @@ class TestUserPointsModel:
         assert user_points.issues_solved == 20
         assert user_points.reviews == 10
         assert user_points.streaks == 3
+
+    def test_update_xp_and_recalculate_level(self) -> None:
+        """Update XP and level through model methods."""
+        # Given an existing UserPoints record with total_xp: 100 and level: 1
+        user_points = UserPoints(
+            user_id="user-123",
+            total_xp=100,
+            level=1,
+            issues_solved=0,
+            reviews=0,
+            streaks=0,
+        )
+
+        # When the update_xp method is called with 50 additional XP
+        user_points.update_xp(50)
+
+        # Then the total_xp should be updated to 150
+        assert user_points.total_xp == 150
+
+        # And the level should be recalculated based on the new XP
+        assert user_points.level == 2
