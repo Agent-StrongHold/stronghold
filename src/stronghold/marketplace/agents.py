@@ -123,7 +123,11 @@ async def search_agents(
     agents = container.agent_registry.list_agents()
 
     if capability:
-        agents = [agent for agent in agents if capability in agent.capabilities]
+        agents = [
+            agent
+            for agent in agents
+            if capability in agent.capabilities or capability in agent.tools
+        ]
 
     if trust_tier:
         agents = [agent for agent in agents if agent.trust_tier == trust_tier]

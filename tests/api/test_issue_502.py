@@ -646,3 +646,52 @@ class TestAgentCreationScenario:
             assert retrieved_agent["tools"] == ["pandas", "numpy"]
             assert retrieved_agent["trust_tier"] == "high"
             assert retrieved_agent["install_count"] == 0
+
+
+class TestSearchAgentsByToolCapability:
+    def test_search_agents_by_tool_capability(self, app: FastAPI) -> None:
+        with TestClient(app) as client:
+            # Create agents with different tool capabilities
+            agent1 = {
+                "name": "Data Analyst",
+                "description": "Analyzes datasets with pandas",
+                "strategy": "ML",
+                "tools": ["pandas", "scikit-learn"],
+                "trust_tier": "high",
+                "install_count": 0,
+            }
+            agent2 = {
+                "name": "Visualization Expert",
+                "description": "Creates visualizations",
+                "strategy": "visualize",
+                "tools": ["numpy", "matplotlib"],
+                "trust_tier": "medium",
+                "install_count": 0,
+            }
+            agent3 = {
+                "name": "ML Engineer",
+                "description": "Machine learning engineer",
+                "strategy": "ML",
+                "tools": ["pandas", "numpy", "scikit-learn"],
+                "trust_tier": "high",
+                "install_count": 0,
+            }
+
+            # Create all agents
+            client.post("/v1/stronghold/agents", json=agent1, headers=AUTH_HEADER)
+            client.post("/v1/stronghold/agents", json=agent2, headers=AUTH_HEADER)
+            client.post("/v1/stronghold/agents", json=agent3, headers=AUTH_HEADER)
+
+            # Search for agents with pandas tool capability
+            resp = client.get(
+                "/v1/stronghold/agents", params={"capability": "pandas"}, headers=AUTH_HEADER
+            )
+            assert resp.status_code == 200
+            data = resp.json()
+
+            # Verify only agents containing "pandas" in their tools are returned
+            assert len(data) == 2
+            agent_names = [agent["name"] for agent in data]
+            assert "Data Analyst" in agent_names
+            assert "ML Engineer" in agent_names
+            assert "Visualization Expert" not in agent_names
