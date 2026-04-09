@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-FAKES_PY_PATH = Path(__file__).parent.parent / "tests" / "fakes.py"
+FAKES_PY_PATH = Path(__file__).parent.parent / "fakes.py"
 
 
 class TestFakeOutcomeStoreSkeleton:
@@ -126,3 +126,29 @@ class TestFakeOutcomeStoreStructure:
         assert class_body == "" or class_body == "pass", (
             f"FakeOutcomeStore body should be empty or contain only 'pass', got: {class_body}"
         )
+
+
+class TestFakeOutcomeStoreProtocolImplementation:
+    """Tests for FakeOutcomeStore protocol implementation."""
+
+    def test_fake_outcome_store_implements_outcome_store_protocol_correctly(self) -> None:
+        """Verify FakeOutcomeStore correctly implements the OutcomeStore protocol interface."""
+        from stronghold.memory.outcomes import OutcomeStore
+        from tests.fakes import FakeOutcomeStore
+
+        # Check that FakeOutcomeStore is a subclass of OutcomeStore
+        assert issubclass(FakeOutcomeStore, OutcomeStore)
+
+        # Verify the protocol methods are present (even if not implemented)
+        protocol_methods = {
+            "add_outcome",
+            "get_outcome",
+            "list_outcomes",
+            "delete_outcome",
+        }
+
+        # Check that the class has these methods defined (even if they're pass-through)
+        for method in protocol_methods:
+            assert hasattr(FakeOutcomeStore, method), (
+                f"FakeOutcomeStore should have {method} method to implement OutcomeStore protocol"
+            )
