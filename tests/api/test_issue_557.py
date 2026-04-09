@@ -125,3 +125,25 @@ class TestUpdateTask:
             assert data["callback_url"] == initial_payload["callback_url"]
             assert data["created_at"] == initial_payload["created_at"]
             assert data["updated_at"] == update_payload["updated_at"]
+
+
+class TestTaskValidation:
+    def test_missing_task_id_returns_validation_error(self, app: FastAPI) -> None:
+        with TestClient(app) as client:
+            payload = {
+                # Missing task_id
+                "status": "pending",
+                "progress": 0,
+                "result": None,
+                "usage": {"prompt_tokens": 0, "completion_tokens": 0},
+                "callback_url": "https://example.com/callback",
+                "created_at": "2024-01-01T00:00:00Z",
+                "updated_at": "2024-01-01T00:00:00Z",
+            }
+            resp = client.post("/v1/tasks", json=payload, headers=AUTH_HEADER)
+            assert resp.status_code == 422  # Validation error
+            data = resp.json()
+            assert "detail" in data
+            assert any(
+                "task_id" in str(err["loc"]) and err["type"] == "missing" for err in data["detail"]
+            )
