@@ -96,3 +96,33 @@ class TestFakeOutcomeStoreImportability:
         from tests.fakes import FakeOutcomeStore
 
         assert FakeOutcomeStore is not None
+
+
+class TestFakeOutcomeStoreStructure:
+    """Tests for FakeOutcomeStore structural requirements."""
+
+    def test_fake_outcome_store_has_only_pass_statement_or_empty_body(self) -> None:
+        """Verify FakeOutcomeStore class body contains only pass or is empty."""
+        source = FAKES_PY_PATH.read_text()
+        assert "class FakeOutcomeStore" in source
+
+        # Extract class body
+        lines = source.splitlines()
+        in_class = False
+        class_body_lines = []
+        for line in lines:
+            if line.strip().startswith("class FakeOutcomeStore"):
+                in_class = True
+                continue
+            if in_class:
+                if line.strip().startswith("class ") or (
+                    line.strip() and not line.strip().startswith((" ", "\t", "#", '"', "'"))
+                ):
+                    break
+                if line.strip():
+                    class_body_lines.append(line.strip())
+
+        class_body = "\n".join(class_body_lines)
+        assert class_body == "" or class_body == "pass", (
+            f"FakeOutcomeStore body should be empty or contain only 'pass', got: {class_body}"
+        )
