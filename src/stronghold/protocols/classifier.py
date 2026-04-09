@@ -31,7 +31,7 @@ class IntentClassifier(Protocol):
 class FakeIntentClassifier:
     """Fake implementation of IntentClassifier protocol for testing."""
 
-    async def classify(self, query: str) -> str:
+    def classify(self, query: str) -> str:
         """Classify a single intent from a query.
 
         Args:
@@ -42,7 +42,7 @@ class FakeIntentClassifier:
         """
         return "default_intent"
 
-    async def detect_multi_intent(self, query: str) -> list[str]:
+    def detect_multi_intent(self, query: str) -> list[str]:
         """Detect multiple intents from a query.
 
         Args:
