@@ -2128,11 +2128,22 @@ class RuntimePipeline:
                 summary=f"Triage: {strategy} produced no steps",
             )
 
-        # Enumerable strategies are uncapped; agentic capped at 10
-        if strategy == "agentic" and len(steps) > 10:
+        # Enumerable strategies are uncapped; agentic capped at 25.
+        # The cap exists because LLM decompositions tend to either over-split
+        # (50 trivial steps) or under-split (3 huge steps); the cap is a
+        # heuristic ceiling that says "if you produced more than this, your
+        # parent epic is genuinely too broad and a human should split it
+        # first." 25 fits real-world v0.9 epics like 'populate priority_tier
+        # in 15+ agent.yaml files'; the prior 10 was rejecting them as
+        # 'too broad' when they were actually correctly enumerated.
+        AGENTIC_CAP = 25
+        if strategy == "agentic" and len(steps) > AGENTIC_CAP:
             return StageResult(
                 success=False,
-                summary=f"Too many steps ({len(steps)}) — parent is too broad",
+                summary=(
+                    f"Too many steps ({len(steps)} > {AGENTIC_CAP}) — "
+                    f"parent is too broad. Split it into narrower epics first."
+                ),
             )
 
         # Hard safety cap to prevent runaway issue creation
