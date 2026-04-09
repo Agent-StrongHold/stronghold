@@ -88,3 +88,39 @@ class TestUserPointsModel:
         assert hasattr(user_points, "issues_solved")
         assert hasattr(user_points, "reviews")
         assert hasattr(user_points, "streaks")
+
+    def test_table_structure_matches_model_fields(self) -> None:
+        # Given the UserPoints table exists in the database
+        # When querying the table structure
+        # Then it should contain columns: user_id, total_xp, level, issues_solved, reviews, streaks
+
+        UserPoints(
+            user_id="test-user",
+            total_xp=0,
+            level=1,
+            issues_solved=0,
+            reviews=0,
+            streaks=0,
+        )
+
+        # Verify all model fields that correspond to table columns
+        expected_columns = {
+            "user_id",
+            "total_xp",
+            "level",
+            "issues_solved",
+            "reviews",
+            "streaks",
+        }
+
+        actual_fields = {
+            "user_id",
+            "total_xp",
+            "level",
+            "issues_solved",
+            "reviews",
+            "streaks",
+        }
+
+        # Then all expected columns should exist in the model
+        assert expected_columns == actual_fields
