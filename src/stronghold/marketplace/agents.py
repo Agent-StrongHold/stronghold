@@ -22,6 +22,7 @@ class AgentCreateRequest(BaseModel):
     description: str
     strategy: str
     tools: list[str]
+    capabilities: list[str] = Field(default_factory=list, description="Capabilities of the agent")
     trust_tier: str = Field(..., description="Trust tier of the agent")
     install_count: int = Field(default=0, description="Number of times installed")
 
@@ -32,6 +33,7 @@ class AgentResponse(BaseModel):
     description: str
     strategy: str
     tools: list[str]
+    capabilities: list[str]
     trust_tier: str
     install_count: int
     rating: float | None = None
@@ -58,6 +60,7 @@ async def create_agent(
         description=request.description,
         strategy=request.strategy,
         tools=request.tools,
+        capabilities=request.capabilities,
         trust_tier=request.trust_tier,
         install_count=request.install_count,
     )
@@ -71,7 +74,36 @@ async def create_agent(
         description=stored_agent.description,
         strategy=stored_agent.strategy,
         tools=stored_agent.tools,
+        capabilities=stored_agent.capabilities,
         trust_tier=stored_agent.trust_tier,
         install_count=stored_agent.install_count,
         rating=stored_agent.rating,
     )
+
+
+@router.get("/agents", response_model=list[AgentResponse])
+async def search_agents(
+    capability: str | None = None,
+    container: Container = Depends(lambda: None),
+    auth: AuthContext = Depends(StaticKeyAuthProvider().authenticate),
+) -> list[AgentResponse]:
+    """Search agents by capability."""
+    agents = container.agents_store.list()
+
+    if capability:
+        agents = [agent for agent in agents if capability in agent.capabilities]
+
+    return [
+        AgentResponse(
+            id=str(agent.id),
+            name=agent.name,
+            description=agent.description,
+            strategy=agent.strategy,
+            tools=agent.tools,
+            capabilities=agent.capabilities,
+            trust_tier=agent.trust_tier,
+            install_count=agent.install_count,
+            rating=agent.rating,
+        )
+        for agent in agents
+    ]
