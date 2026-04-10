@@ -90,7 +90,15 @@ omit = ["src/stronghold/persistence/pg_*.py"]
 
 [tool.coverage.report]
 fail_under = 95
-exclude_lines = ["pragma: no cover", "if TYPE_CHECKING:"]
+exclude_lines = [
+    "pragma: no cover",
+    "if TYPE_CHECKING:",
+    # Protocol method body stubs (just `...`)
+    "^\\s*\\.\\.\\.\\s*$",
+    # Abstract/protocol class definitions
+    "@(abc\\.)?abstractmethod",
+    "raise NotImplementedError",
+]
 
 [tool.bandit]
 targets = ["src/stronghold"]
