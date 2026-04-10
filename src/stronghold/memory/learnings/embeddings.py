@@ -85,7 +85,7 @@ class FakeEmbeddingClient:
     async def embed(self, text: str) -> list[float]:
         import hashlib
 
-        digest = hashlib.md5(text.encode("utf-8")).digest()
+        digest = hashlib.md5(text.encode("utf-8"), usedforsecurity=False).digest()  # noqa: S324
         # Pull bits from the digest deterministically. The +0.001
         # ensures the vector is never strict-all-zero (which would
         # trip the noop-client check in find_relevant).
