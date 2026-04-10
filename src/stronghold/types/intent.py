@@ -1,6 +1,6 @@
 """Intent classification types.
 
-An Intent represents the classified purpose, complexity, and tier
+An Intent represents the classified purpose, complexity, and priority
 of a user's message. Produced by the classifier, consumed by the router.
 """
 
@@ -24,7 +24,7 @@ class Intent:
 
     task_type: str = "chat"
     complexity: Literal["simple", "moderate", "complex"] = "simple"
-    tier: Literal["P0", "P1", "P2", "P3", "P4", "P5"] = "P2"
+    priority: Literal["low", "normal", "high", "critical"] = "normal"
     min_tier: str = "small"
     max_tier: str | None = None
     preferred_strengths: tuple[str, ...] = ("chat",)

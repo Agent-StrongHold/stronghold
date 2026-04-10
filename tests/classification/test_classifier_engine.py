@@ -173,9 +173,9 @@ class TestClassifyEdgeCases:
         intent = await engine.classify(
             [{"role": "user", "content": "hello"}],
             _task_types(),
-            explicit_priority="P0",
+            explicit_priority="critical",
         )
-        assert intent.tier == "P0"
+        assert intent.priority == "critical"
 
     @pytest.mark.asyncio
     async def test_classified_by_keywords(self) -> None:
@@ -279,34 +279,34 @@ class TestPriorityInference:
             [{"role": "user", "content": "urgent the server is down help"}],
             _task_types(),
         )
-        assert intent.tier == "P0"
+        assert intent.priority == "critical"
 
     @pytest.mark.asyncio
-    async def test_important_is_p1(self) -> None:
+    async def test_important_is_high(self) -> None:
         engine = ClassifierEngine()
         intent = await engine.classify(
             [{"role": "user", "content": "this is important for the client demo"}],
             _task_types(),
         )
-        assert intent.tier == "P1"
+        assert intent.priority == "high"
 
     @pytest.mark.asyncio
-    async def test_no_rush_is_p4(self) -> None:
+    async def test_no_rush_is_low(self) -> None:
         engine = ClassifierEngine()
         intent = await engine.classify(
             [{"role": "user", "content": "just curious about something no rush"}],
             _task_types(),
         )
-        assert intent.tier == "P4"
+        assert intent.priority == "low"
 
     @pytest.mark.asyncio
-    async def test_normal_message_p2_tier(self) -> None:
+    async def test_normal_message_normal_priority(self) -> None:
         engine = ClassifierEngine()
         intent = await engine.classify(
             [{"role": "user", "content": "hello how are you"}],
             _task_types(),
         )
-        assert intent.tier == "P2"
+        assert intent.priority == "normal"
 
 
 class TestMultiIntentDetection:

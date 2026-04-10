@@ -641,7 +641,7 @@ class TestRouterFilterPaygoEdge:
         from stronghold.types.intent import Intent
         from stronghold.types.model import ModelConfig, ProviderConfig
 
-        intent = Intent(task_type="chat", min_tier="small", tier="P2")
+        intent = Intent(task_type="chat", min_tier="small", priority="normal")
         models = {
             "m1": ModelConfig(provider="p1", tier="small", quality=0.5),
         }
@@ -653,7 +653,7 @@ class TestRouterFilterPaygoEdge:
             ),
         }
 
-        # usage_pct = 0.96 >= (1.0 - 0.05), tier != P0, no paygo
+        # usage_pct = 0.96 >= (1.0 - 0.05), priority != critical, no paygo
         result = filter_candidates(
             intent, models, providers, usage_pcts={"p1": 0.96}
         )
@@ -665,7 +665,7 @@ class TestRouterFilterPaygoEdge:
         from stronghold.types.intent import Intent
         from stronghold.types.model import ModelConfig, ProviderConfig
 
-        intent = Intent(task_type="chat", min_tier="small", tier="P0")
+        intent = Intent(task_type="chat", min_tier="small", priority="critical")
         models = {
             "m1": ModelConfig(provider="p1", tier="small", quality=0.5),
         }

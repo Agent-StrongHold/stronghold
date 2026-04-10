@@ -67,7 +67,7 @@ class RouterEngine:
             if all_candidates:
                 raise QuotaReserveError(
                     f"All {len(all_candidates)} eligible models are in quota reserve. "
-                    "Use tier=P0 to override."
+                    "Use priority=critical to override."
                 )
             # Absolute fallback — highest quality active model
             return self._fallback(models, providers)
@@ -141,7 +141,7 @@ class RouterEngine:
         parts = [
             f"task={intent.task_type}",
             f"complexity={intent.complexity}",
-            f"tier={intent.tier}",
+            f"priority={intent.priority}",
         ]
         if isinstance(best, ModelCandidate):
             parts.append(f"quality={best.quality}")
