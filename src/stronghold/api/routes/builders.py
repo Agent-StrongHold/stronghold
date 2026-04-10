@@ -17,6 +17,8 @@ from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import JSONResponse
 
 logger = logging.getLogger("stronghold.api.builders")
+workflow_logger = logging.getLogger("stronghold.builders.workflow")
+outer_logger = logging.getLogger("stronghold.builders.outer")
 
 router = APIRouter(prefix="/v1/stronghold/builders", tags=["builders"])
 
@@ -1309,6 +1311,9 @@ async def _execute_one_stage(run_id: str, orch: Any, container: Any, service_aut
     4. If approved → advance. If rejected → retry with feedback (max 3).
     """
     from stronghold.builders import ArtifactRef, RunResult, RunStatus, WorkerName
+    from stronghold.log_context import RunLoggerAdapter
+
+    wf_log = RunLoggerAdapter(workflow_logger, run_id)
 
     run = orch._runs[run_id]
     stage = run.current_stage
@@ -1328,7 +1333,7 @@ async def _execute_one_stage(run_id: str, orch: Any, container: Any, service_aut
     auditor_feedback = ""
 
     for attempt in range(1, MAX_STAGE_RETRIES + 1):
-        print(f"[BUILDERS] Stage {stage} attempt {attempt}/{MAX_STAGE_RETRIES} for run {run_id}", flush=True)
+        wf_log.info("[BUILDERS] stage %s attempt %d/%d", stage, attempt, MAX_STAGE_RETRIES)
 
         # 1. Runtime executes the stage — pass Auditor feedback from prior rejection
         failure_kind: str | None = None
@@ -1336,11 +1341,11 @@ async def _execute_one_stage(run_id: str, orch: Any, container: Any, service_aut
         try:
             handler = getattr(pipeline, handler_name)
             result = await handler(run, feedback=auditor_feedback)
-            print(f"[BUILDERS] Stage {stage} result: success={result.success}, summary={result.summary[:200]}", flush=True)
+            wf_log.info("[BUILDERS] stage %s result: success=%s summary=%s", stage, result.success, result.summary[:200])
         except Exception as e:
             import traceback
             failure_traceback = traceback.format_exc()
-            print(f"[BUILDERS] Pipeline {stage} EXCEPTION: {e}\n{failure_traceback}", flush=True)
+            wf_log.error("[BUILDERS] pipeline %s EXCEPTION: %s\n%s", stage, e, failure_traceback)
             result = None
             failure_kind = "handler_exception"
 
@@ -1450,7 +1455,11 @@ async def _execute_one_stage(run_id: str, orch: Any, container: Any, service_aut
 async def _execute_full_workflow(run_id: str, orch: Any, container: Any, service_auth: Any) -> None:
     """Execute all stages in sequence until completion or failure."""
     from stronghold.builders import RunStatus
+    from stronghold.log_context import RunLoggerAdapter
     import json as _json
+
+    wf_log = RunLoggerAdapter(workflow_logger, run_id)
+    outer_log = RunLoggerAdapter(outer_logger, run_id)
 
     run = orch._runs.get(run_id)
     if not run:
@@ -1552,7 +1561,7 @@ async def _execute_full_workflow(run_id: str, orch: Any, container: Any, service
             "command": "cp /app/tests/fakes.py tests/fakes.py && cp /app/ONBOARDING.md ONBOARDING.md 2>/dev/null; true",
             "workspace": ws_path,
         })
-        print(f"[BUILDERS] Onboarding loaded: {len(run._onboarding)} chars, platform tooling copied", flush=True)
+        wf_log.info("[BUILDERS] onboarding loaded: %d chars, platform tooling copied", len(run._onboarding))
 
     except Exception as e:
         logger.error("Workflow setup failed for run %s: %s", run_id, e)
@@ -1569,7 +1578,7 @@ async def _execute_full_workflow(run_id: str, orch: Any, container: Any, service
         run = orch._runs.get(run_id)
         if run:
             run._mason_model_override = mason_model
-        print(f"[OUTER] Loop {outer + 1}/{MAX_OUTER_LOOPS} for run {run_id}, mason_model={mason_model}", flush=True)
+        outer_log.info("[OUTER] loop %d/%d mason_model=%s", outer + 1, MAX_OUTER_LOOPS, mason_model)
 
         # Reset run to acceptance_defined if this is a retry (not the first pass)
         if outer > 0:
@@ -1632,7 +1641,7 @@ async def _execute_full_workflow(run_id: str, orch: Any, container: Any, service
 
         # If TDD stalled (not a hard failure) → try another outer loop
         if outer < MAX_OUTER_LOOPS - 1:
-            print(f"[OUTER] Loop {outer + 1} did not complete — retrying with Frank re-evaluation", flush=True)
+            outer_log.info("[OUTER] loop %d did not complete — retrying with Frank re-evaluation", outer + 1)
             # Reset status so the loop continues
             run.status = RunStatus.RUNNING
             continue
@@ -1653,7 +1662,7 @@ async def _execute_full_workflow(run_id: str, orch: Any, container: Any, service
                 f"then re-trigger the run."
             ),
         })
-        print(f"[OUTER] All {MAX_OUTER_LOOPS} loops exhausted — BLOCKED, waiting for human", flush=True)
+        outer_log.info("[OUTER] all %d loops exhausted — BLOCKED, waiting for human", MAX_OUTER_LOOPS)
 
     logger.info("Workflow complete for run %s", run_id)
 
