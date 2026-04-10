@@ -173,7 +173,7 @@ class Conduit:
                         "task_type": intent.task_type,
                         "classified_by": intent.classified_by,
                         "complexity": intent.complexity,
-                        "priority": intent.priority,
+                        "tier": intent.tier,
                     }
                 )
 
@@ -209,7 +209,7 @@ class Conduit:
                 {
                     "task_type": intent.task_type,
                     "complexity": intent.complexity,
-                    "priority": intent.priority,
+                    "tier": intent.tier,
                     "classified_by": intent.classified_by,
                     "user_id": auth.user_id,
                     "session_id": session_id or "",
@@ -519,6 +519,17 @@ class Conduit:
 
             # Sufficient — filter context and route to specialist
             agent = c.agents[target_agent_name]
+
+            # Access control (migration 012)
+            from stronghold.security.access_control import check_agent_access  # noqa: PLC0415
+
+            check_agent_access(
+                agent_name=agent.identity.name,
+                visibility=agent.identity.visibility,
+                access_grant=agent.identity.access_grant,
+                auth=auth,
+            )
+
             from stronghold.agents.context_filter import extract_task_context
 
             messages = extract_task_context(messages, task_type=intent.task_type)
@@ -591,7 +602,7 @@ class Conduit:
                 "agent": agent.identity.name,
                 "intent": intent.task_type,
                 "complexity": intent.complexity,
-                "priority": intent.priority,
+                "tier": intent.tier,
                 "total_latency_ms": str(_elapsed_ms),
                 "session_id": session_id or "",
                 "is_sticky_followup": str(
@@ -624,7 +635,7 @@ class Conduit:
                 "intent": {
                     "task_type": intent.task_type,
                     "complexity": intent.complexity,
-                    "priority": intent.priority,
+                    "tier": intent.tier,
                     "classified_by": intent.classified_by,
                 },
                 "model": model_to_use,
