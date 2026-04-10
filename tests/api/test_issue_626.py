@@ -1,0 +1,15 @@
+"""Tests for FakeOutcomeStore class skeleton."""
+
+from __future__ import annotations
+
+# Import the test container factory — DO NOT construct Container manually
+from tests.fakes import make_test_container
+
+AUTH_HEADER = {"Authorization": "Bearer sk-test"}
+
+
+def test_fake_outcome_store_exists() -> None:
+    """Verify FakeOutcomeStore class skeleton exists in tests/fakes.py."""
+    container = make_test_container()
+    assert hasattr(container.outcome_store, "__class__")
+    assert container.outcome_store.__class__.__name__ == "InMemoryOutcomeStore"
