@@ -296,7 +296,15 @@ async def create_container(config: StrongholdConfig) -> Container:
     router = RouterEngine(quota_tracker)
     classifier = ClassifierEngine()
     warden = Warden()
-    strike_tracker = InMemoryStrikeTracker()
+    strike_tracker: Any
+    if db_pool is not None:
+        from stronghold.persistence.pg_strikes import PostgresStrikeTracker  # noqa: PLC0415
+
+        strike_tracker = PostgresStrikeTracker(db_pool)
+        logger.info("Strike tracker: PostgreSQL (persistent, multi-replica safe)")
+    else:
+        strike_tracker = InMemoryStrikeTracker()
+        logger.info("Strike tracker: InMemory (no DATABASE_URL set)")
     gate = Gate(warden=warden, strike_tracker=strike_tracker)
     sentinel = Sentinel(
         warden=warden,

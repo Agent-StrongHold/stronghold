@@ -273,6 +273,56 @@ class FakeViolationStore:
         return []
 
 
+class FakeStrikeTracker:
+    """Fake strike tracker for tests that don't want a real Postgres connection.
+
+    Thin wrapper around :class:`InMemoryStrikeTracker` so test code that
+    imports ``FakeStrikeTracker`` from ``tests.fakes`` stays independent of
+    the production module's import path.  Semantics are identical to the
+    in-memory implementation; no DB calls, no async lock contention, no I/O.
+    """
+
+    def __init__(self) -> None:
+        from stronghold.security.strikes import InMemoryStrikeTracker  # noqa: PLC0415
+
+        self._impl = InMemoryStrikeTracker()
+
+    async def get(self, user_id: str) -> Any:
+        return await self._impl.get(user_id)
+
+    async def record_violation(
+        self,
+        *,
+        user_id: str,
+        org_id: str,
+        flags: tuple[str, ...],
+        boundary: str = "user_input",
+        detail: str = "",
+    ) -> Any:
+        return await self._impl.record_violation(
+            user_id=user_id,
+            org_id=org_id,
+            flags=flags,
+            boundary=boundary,
+            detail=detail,
+        )
+
+    async def submit_appeal(self, user_id: str, appeal_text: str) -> bool:
+        return await self._impl.submit_appeal(user_id, appeal_text)
+
+    async def remove_strikes(self, user_id: str, count: int | None = None) -> Any:
+        return await self._impl.remove_strikes(user_id, count)
+
+    async def unlock(self, user_id: str) -> Any:
+        return await self._impl.unlock(user_id)
+
+    async def enable(self, user_id: str) -> Any:
+        return await self._impl.enable(user_id)
+
+    async def get_all_for_org(self, org_id: str) -> list[Any]:
+        return await self._impl.get_all_for_org(org_id)
+
+
 # ── Test container factory ───────────────────────────────────────────
 # Use these instead of constructing Container manually.
 
