@@ -129,6 +129,7 @@ async def create_run(request: Request) -> JSONResponse:
     Set execute=true to run the full workflow synchronously.
     """
     from stronghold.builders import RunStatus, WorkerName
+    from stronghold.builders.trace_context import parse_traceparent
 
     auth = await _require_auth(request)
     container = request.app.state.container
@@ -150,6 +151,13 @@ async def create_run(request: Request) -> JSONResponse:
 
     run_id = f"run-{uuid.uuid4().hex[:8]}"
     orch = _get_orchestrator()
+
+    # ── Identity dimensions (inherited from upstream caller) ─────────
+    hdrs = request.headers
+    intent_mode = body.get("intent_mode") or hdrs.get("x-intent-mode") or "autonomous_build"
+    session_id = hdrs.get("x-session-id", "")
+    parent_trace_id = parse_traceparent(hdrs.get("traceparent", ""))
+    request_id = hdrs.get("x-request-id") or uuid.uuid4().hex
 
     # Detect UI issues by signals in title/body
     ui_signals = [
@@ -175,6 +183,10 @@ async def create_run(request: Request) -> JSONResponse:
         workspace_ref=f"ws_{run_id}",
         initial_stage=initial_stage,
         initial_worker=initial_worker,
+        intent_mode=intent_mode,
+        session_id=session_id,
+        parent_trace_id=parent_trace_id,
+        request_id=request_id,
     )
 
     logger.info("Builders run created: run_id=%s repo=%s", run_id, f"{owner}/{repo}")
