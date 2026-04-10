@@ -157,11 +157,74 @@ jobs:
 
       - name: "innerHTML / XSS patterns (templates)"
         run: |
-          FOUND=0
           if grep -rn 'innerHTML\s*=' src/stronghold/ --include='*.py' --include='*.html' | grep -v 'textContent\|esc(\|# safe:'; then
             echo "::warning::innerHTML usage found — verify XSS safety"
           fi
           echo "XSS scan complete."
+
+      - name: "SSRF patterns (unvalidated URLs)"
+        run: |
+          if grep -rn --include='*.py' -E 'httpx\.(get|post|put|delete)\(.*\bf["\x27]' src/stronghold/ | grep -v 'test_\|# ssrf-safe'; then
+            echo "::warning::Potential SSRF — httpx call with f-string URL"
+          fi
+          echo "SSRF scan complete."
+
+      - name: "Privileged container check (docker-compose)"
+        run: |
+          if grep -n 'privileged:\s*true' docker-compose.yml 2>/dev/null; then
+            echo "::error::privileged: true found in docker-compose.yml (R1/R2)"
+            exit 1
+          fi
+          echo "No privileged containers."
+
+      - name: "Weak crypto check"
+        run: |
+          FOUND=0
+          if grep -rn --include='*.py' -E 'md5\(|sha1\(' src/stronghold/ | grep -v 'hashlib.sha256\|# non-crypto'; then
+            echo "::warning::Weak hash (MD5/SHA1) found — use SHA-256+"
+          fi
+          if grep -rn --include='*.py' 'algorithm.*HS256' src/stronghold/ | grep -v 'test_\|# HS256-ok'; then
+            echo "::warning::HS256 JWT — consider RS256 for production (R18)"
+          fi
+          echo "Crypto scan complete."
+
+      - name: "Eval/exec check"
+        run: |
+          if grep -rn --include='*.py' -E '^\s*(eval|exec)\(' src/stronghold/ | grep -v 'test_\|# safe-eval'; then
+            echo "::error::eval()/exec() found in production code"
+            exit 1
+          fi
+          echo "No eval/exec found."
+
+      - name: "CDN SRI hash check (D3)"
+        run: |
+          MISSING=0
+          for f in src/stronghold/dashboard/*.html; do
+            if grep -q '<script.*src=.*cdn' "$f" 2>/dev/null; then
+              if ! grep -q 'integrity=' "$f"; then
+                echo "::warning::$f has CDN scripts without SRI integrity hashes (D3)"
+                MISSING=1
+              fi
+            fi
+          done
+          if [ "$MISSING" -eq 1 ]; then
+            echo "::warning::Some CDN scripts lack SRI hashes — see BACKLOG.md D3"
+          fi
+          echo "SRI scan complete."
+
+      - name: "Unauthenticated route check (D6)"
+        run: |
+          if grep -rn --include='*.py' 'app\.mount.*static\|StaticFiles' src/stronghold/api/ | grep -v 'test_'; then
+            echo "::warning::Static file mounts found — verify auth gating (D6)"
+          fi
+          echo "Auth route scan complete."
+
+      - name: "Lock file presence check (D2)"
+        run: |
+          if [ ! -f requirements.txt ] && [ ! -f requirements.lock ] && [ ! -f uv.lock ]; then
+            echo "::warning::No lock file (requirements.txt/uv.lock) — supply chain risk (D2)"
+          fi
+          echo "Lock file check complete."
 
   test:
     name: Tests
