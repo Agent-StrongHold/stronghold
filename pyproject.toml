@@ -46,6 +46,7 @@ dev = [
     "types-PyYAML>=6.0.0",
     "respx>=0.22.0",
     "hypothesis>=6.0.0",
+    "fakeredis>=2.20.0",
     "diff-cover>=9.0.0",
 ]
 
