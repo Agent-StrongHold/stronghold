@@ -43,3 +43,31 @@ def test_auditlog_protocol_methods() -> None:
     assert "agent_id" in entries_sig.parameters
     assert "org_id" in entries_sig.parameters
     assert "limit" in entries_sig.parameters
+
+
+def test_auditlog_protocol_is_readable() -> None:
+    """Verify AuditLog protocol definition is accessible and readable."""
+
+    # Import the protocol directly
+    from typing import Protocol
+
+    from stronghold.security.sentinel.audit import InMemoryAuditLog
+
+    # Verify the protocol exists and is a proper Protocol type
+    assert isinstance(InMemoryAuditLog, type(Protocol))
+
+    # Verify the protocol has the expected methods defined
+    assert hasattr(InMemoryAuditLog, "log")
+    assert hasattr(InMemoryAuditLog, "get_entries")
+
+    # Verify method signatures in the protocol
+    import inspect
+
+    log_sig = inspect.signature(InMemoryAuditLog.log)
+    assert "entry" in log_sig.parameters
+
+    entries_sig = inspect.signature(InMemoryAuditLog.get_entries)
+    assert "user_id" in entries_sig.parameters
+    assert "agent_id" in entries_sig.parameters
+    assert "org_id" in entries_sig.parameters
+    assert "limit" in entries_sig.parameters
