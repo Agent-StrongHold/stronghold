@@ -572,3 +572,23 @@ def make_test_container(
     }
     fields.update(overrides)
     return Container(**fields)
+
+
+class FakeToolPolicy:
+    """In-memory tool policy for testing (ADR-K8S-019)."""
+
+    def __init__(self) -> None:
+        self._denied_tool_calls: set[tuple[str, str, str]] = set()
+        self._denied_task_creates: set[tuple[str, str, str]] = set()
+
+    def deny_tool_call(self, user_id: str, org_id: str, tool_name: str) -> None:
+        self._denied_tool_calls.add((user_id, org_id, tool_name))
+
+    def deny_task_creation(self, user_id: str, org_id: str, agent_name: str) -> None:
+        self._denied_task_creates.add((user_id, org_id, agent_name))
+
+    def check_tool_call(self, user_id: str, org_id: str, tool_name: str) -> bool:
+        return (user_id, org_id, tool_name) not in self._denied_tool_calls
+
+    def check_task_creation(self, user_id: str, org_id: str, agent_name: str) -> bool:
+        return (user_id, org_id, agent_name) not in self._denied_task_creates
