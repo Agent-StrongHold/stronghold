@@ -13,3 +13,10 @@ def test_fake_outcome_store_exists() -> None:
     container = make_test_container()
     assert hasattr(container.outcome_store, "__class__")
     assert container.outcome_store.__class__.__name__ == "InMemoryOutcomeStore"
+
+
+def test_fake_outcome_store_is_initially_empty() -> None:
+    """Verify FakeOutcomeStore class is initially empty."""
+    container = make_test_container()
+    outcome_store = container.outcome_store
+    assert outcome_store._outcomes == {}
