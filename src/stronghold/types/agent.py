@@ -30,6 +30,7 @@ class AgentIdentity:
     skills: tuple[str, ...] = ()
     rules: tuple[str, ...] = ()
     trust_tier: str = "t4"
+    priority_tier: str = ""  # P0-P5 scheduling priority from ADR-K8S-014
     max_tool_rounds: int = 3
     delegation_mode: str = "none"
     sub_agents: tuple[str, ...] = ()
