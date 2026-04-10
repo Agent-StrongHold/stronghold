@@ -95,3 +95,12 @@ def test_fake_intent_classifier_is_class() -> None:
     # Check if the instance implements the protocol by checking for required methods
     assert hasattr(instance, "classify")
     assert callable(instance.classify)
+
+
+class TestFakeIntentClassifierDefaultValues:
+    async def test_classify_returns_expected_default_values(self) -> None:
+        """Test that classify returns expected default values for intent and confidence."""
+        classifier = FakeIntentClassifier()
+        result = await classifier.classify("test input")
+
+        assert result == {"intent": "unknown", "confidence": 0.5}
