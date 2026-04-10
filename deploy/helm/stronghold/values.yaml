@@ -208,12 +208,15 @@ strongholdApi:
   probes:
     liveness:
       path: /health
-      initialDelaySeconds: 15
-      periodSeconds: 20
+      initialDelaySeconds: 30
+      periodSeconds: 30
+      timeoutSeconds: 5
+      failureThreshold: 5
     readiness:
       path: /health
-      initialDelaySeconds: 5
+      initialDelaySeconds: 10
       periodSeconds: 10
+      timeoutSeconds: 5
   config:
     routerApiKeySecretName: stronghold-secrets
     strongholdConfigPath: /app/config/example.yaml

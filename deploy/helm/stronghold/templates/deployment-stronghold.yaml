@@ -75,12 +75,15 @@ spec:
               port: http
             initialDelaySeconds: {{ .Values.strongholdApi.probes.liveness.initialDelaySeconds }}
             periodSeconds: {{ .Values.strongholdApi.probes.liveness.periodSeconds }}
+            timeoutSeconds: {{ .Values.strongholdApi.probes.liveness.timeoutSeconds | default 5 }}
+            failureThreshold: {{ .Values.strongholdApi.probes.liveness.failureThreshold | default 5 }}
           readinessProbe:
             httpGet:
               path: {{ .Values.strongholdApi.probes.readiness.path }}
               port: http
             initialDelaySeconds: {{ .Values.strongholdApi.probes.readiness.initialDelaySeconds }}
             periodSeconds: {{ .Values.strongholdApi.probes.readiness.periodSeconds }}
+            timeoutSeconds: {{ .Values.strongholdApi.probes.readiness.timeoutSeconds | default 5 }}
           resources:
             {{- toYaml .Values.strongholdApi.resources | nindent 12 }}
           securityContext:
