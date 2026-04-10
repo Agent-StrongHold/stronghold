@@ -18,3 +18,18 @@ def test_fake_intent_classifier_implements_protocol() -> None:
     classifier = FakeIntentClassifier()
     assert isinstance(classifier, type)
     assert isinstance(classifier(), IntentClassifier)
+
+
+class TestFakeIntentClassifierHappyPath:
+    async def test_classify_intent_returns_default_with_confidence(self) -> None:
+        """Test happy path: classify_intent returns default intent with confidence."""
+        classifier = FakeIntentClassifier()
+        result = await classifier().classify("any text input")
+
+        assert isinstance(result, dict)
+        assert "intent" in result
+        assert "confidence" in result
+        assert isinstance(result["intent"], str)
+        assert result["intent"] == "unknown"
+        assert isinstance(result["confidence"], float)
+        assert 0.0 <= result["confidence"] <= 1.0
