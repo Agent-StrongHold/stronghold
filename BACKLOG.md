@@ -332,6 +332,9 @@ bypass all application-level security controls.
 - [ ] **Canvas compositor service** — layer assembly (background + characters + objects + text), position/scale/rotate per layer, PNG/WebP output.
 - [ ] **Wire Fabulist agent** — children's storybook creator, uses canvas tool, add `storybook` task type to classifier.
 
+### Naming / Identity
+- [ ] **Rename Frank → Archie** — `WorkerName.FRANK` → `WorkerName.ARCHIE` across contracts, orchestrator, pipeline, routes, tests, prompts, ARCHITECTURE.md, CLAUDE.md, agent roster. Update `_STAGE_WORKER` maps, issue type registry, prompt library names (`builders.frank.*` → `builders.archie.*`), and any GitHub issue comments that reference Frank by name.
+
 ### Documentation
 - [ ] Update SECURITY.md with L2.5/L3 descriptions
 - [ ] API documentation (OpenAPI spec review)
