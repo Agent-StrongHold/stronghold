@@ -152,6 +152,11 @@ serviceAccounts:
 rbac:
   create: true
 
+# PodDisruptionBudgets for P0/P1 workloads (ADR-K8S-014, ADR-K8S-015).
+# Only rendered when the component's replica count exceeds 1.
+podDisruptionBudgets:
+  enabled: true
+
 # -----------------------------------------------------------------------------
 # PR-7..PR-10 additions: workload templates (Deployments, StatefulSet,
 # Services, Routes/Ingress, ConfigMaps, Secrets). These extend the PR-6
@@ -353,6 +358,28 @@ mcp:
       limits:
         cpu: 500m
         memory: 512Mi
+
+# -----------------------------------------------------------------------------
+# NetworkPolicy (ADR-K8S-004: default-deny baseline + explicit allow rules)
+# -----------------------------------------------------------------------------
+
+# Network policies are disabled by default. Enable per-environment (e.g.,
+# in values-production.yaml) once a CNI plugin that supports NetworkPolicy
+# enforcement is installed (Calico, Cilium, etc.).
+networkPolicy:
+  enabled: false
+  # When true, the stronghold-api ingress rule allows traffic from any source
+  # (empty `from` selector). When false, only pods in namespaces labelled
+  # networking.k8s.io/ingress=true are allowed (typical for ingress-nginx,
+  # Contour, etc.). Set to true for dev clusters without a labelled ingress NS.
+  ingressOpen: false
+  litellm:
+    # Restrict LiteLLM egress to specific CIDRs (port 443). When empty, all
+    # external IPs are allowed (RFC1918 excluded). Example:
+    #   egressCIDRs:
+    #     - 104.18.0.0/16    # Cloudflare (OpenAI, Anthropic CDN)
+    #     - 142.250.0.0/15   # Google (Vertex AI)
+    egressCIDRs: []
 
 # OpenShift Routes (rendered when openshift.enabled=true).
 route:
