@@ -262,3 +262,23 @@ class TestConfigTypes:
     def test_stronghold_config_defaults(self) -> None:
         sc = StrongholdConfig()
         assert sc.litellm_url == "http://litellm:4000"
+
+
+class TestAgentPriorityTier:
+    """Tests for AgentIdentity.priority_tier (issue #892)."""
+
+    def test_default_priority_tier_is_p2(self) -> None:
+        ai = AgentIdentity(name="test")
+        assert ai.priority_tier == "P2"
+
+    def test_explicit_priority_tier(self) -> None:
+        for tier in ("P0", "P1", "P2", "P3", "P4", "P5"):
+            ai = AgentIdentity(name="test", priority_tier=tier)
+            assert ai.priority_tier == tier
+
+    def test_priority_tier_in_frozen_identity(self) -> None:
+        ai = AgentIdentity(name="test", priority_tier="P0")
+        import pytest
+
+        with pytest.raises(AttributeError):
+            ai.priority_tier = "P1"  # type: ignore[misc]
