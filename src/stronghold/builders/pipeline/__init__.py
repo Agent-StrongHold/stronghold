@@ -330,37 +330,13 @@ class RuntimePipeline:
 
     @staticmethod
     def _detect_issue_type(run: Any) -> IssueType:
-        """Match issue signals against registry. Highest priority match wins."""
-        title = getattr(run, "_issue_title", "").lower()
-        content = getattr(run, "_issue_content", "").lower()
-        affected = getattr(run, "_analysis", {}).get("affected_files", [])
-        search_text = f"{title} {content} {' '.join(affected)}"
-
-        for itype in sorted(ISSUE_TYPE_REGISTRY, key=lambda t: -t.priority):
-            if not itype.signals:
-                continue
-            if any(signal in search_text for signal in itype.signals):
-                return itype
-
-        return min(ISSUE_TYPE_REGISTRY, key=lambda t: t.priority)
+        from stronghold.builders.pipeline.context import OnboardingContext
+        return OnboardingContext.detect_issue_type(run)
 
     @staticmethod
     def _parse_onboarding_sections(text: str) -> dict[str, str]:
-        """Split ONBOARDING.md into sections by ## and ### headers."""
-        sections: dict[str, str] = {}
-        current_name = ""
-        current_lines: list[str] = []
-        for line in text.splitlines():
-            if line.startswith("## ") or line.startswith("### "):
-                if current_name:
-                    sections[current_name] = "\n".join(current_lines)
-                current_name = line.lstrip("#").strip()
-                current_lines = [line]
-            else:
-                current_lines.append(line)
-        if current_name:
-            sections[current_name] = "\n".join(current_lines)
-        return sections
+        from stronghold.builders.pipeline.context import OnboardingContext
+        return OnboardingContext.parse_sections(text)
 
     def _prepend_onboarding(self, prompt: str, run: Any) -> str:
         """Inject ONLY the relevant onboarding sections based on issue type."""
@@ -2886,16 +2862,9 @@ class RuntimePipeline:
         )
 
         text = await self._llm_call(prompt, self._auditor_model)
-        # Parse verdict — scan lines for first clear verdict keyword
-        approved = True  # default approve if no verdict found
-        for line in (text or "").splitlines():
-            stripped = line.strip().upper().lstrip("#").strip()
-            if stripped.startswith("APPROVED") or stripped.startswith("VERDICT: APPROVED") or stripped.startswith("VERDICT:APPROVED"):
-                approved = True
-                break
-            if stripped.startswith("CHANGES_REQUESTED") or stripped.startswith("VERDICT: CHANGES") or stripped.startswith("VERDICT:CHANGES"):
-                approved = False
-                break
+        from stronghold.builders.pipeline.stages.auditor import parse_verdict
+
+        approved = parse_verdict(text)
         auditor_logger.info(
             "[AUDITOR] stage=%s approved=%s first80=%s",
             stage, approved, text[:80] if text else "EMPTY",
