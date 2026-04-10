@@ -89,3 +89,65 @@ resources:
   requests:
     cpu: 500m
     memory: 512Mi
+
+# -----------------------------------------------------------------------------
+# PR-6 additions: chart skeleton (namespace, SAs, RBAC, PriorityClasses, SCC)
+# -----------------------------------------------------------------------------
+
+# OpenShift / OKD specific behavior.
+# When enabled, the chart renders SecurityContextConstraints bindings so that
+# each ServiceAccount runs under the named SCC (ADR-K8S-002, ADR-K8S-006).
+# Set to false for vanilla Kubernetes distros (EKS, GKE, AKS, RKE2, k3s).
+openshift:
+  enabled: true
+  # SCC each Stronghold ServiceAccount gets bound to. restricted-v2 is the
+  # OpenShift 4.14+ default and is the only SCC referenced by the chart
+  # baseline per ADR-K8S-002 §4. Do not change unless you know what you're
+  # doing; "anyuid" or "privileged" will be rejected by Phase 4 lint.
+  scc: restricted-v2
+
+# Namespace creation is opt-in. In most installs the namespace is supplied via
+# `--namespace` on `helm install`. Enable this only when the chart itself is
+# responsible for creating the platform namespace (see ADR-K8S-001).
+namespace:
+  create: false
+  name: stronghold-platform
+
+# Six-tier priority system (ADR-K8S-014). PriorityClasses are cluster-scoped,
+# so they should only be installed once per cluster. Disable this on
+# secondary releases that share a cluster with an existing Stronghold install.
+priorityClasses:
+  create: true
+  values:
+    p0: 1000000
+    p1: 800000
+    p2: 600000
+    p3: 400000
+    p4: 200000
+    p5: 100000
+
+# Per-component ServiceAccounts (ADR-K8S-002). Each workload pod in
+# PR-7..PR-12 will set `serviceAccountName` to one of these; no pod uses the
+# cluster `default` ServiceAccount.
+serviceAccounts:
+  strongholdApi:
+    name: stronghold-api
+    annotations: {}
+  mcpDeployer:
+    name: mcp-deployer
+    annotations: {}
+  postgres:
+    name: postgres
+    annotations: {}
+  litellm:
+    name: litellm
+    annotations: {}
+  phoenix:
+    name: phoenix
+    annotations: {}
+
+# Render RBAC resources (Roles + RoleBindings). Disable only if your cluster
+# manages RBAC out-of-band (for example, GitOps repos that apply RBAC
+# separately from workloads).
+rbac:
+  create: true

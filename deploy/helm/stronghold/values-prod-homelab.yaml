@@ -1,0 +1,28 @@
+# values-prod-homelab.yaml
+#
+# Targets the OKD/CRC development cluster running on the homelab.
+# This overlay enables OpenShift-specific resources (SCC bindings, Routes in
+# later PRs) and installs the cluster-scoped PriorityClasses exactly once.
+#
+# PR-6 is chart skeleton only — ServiceAccounts, RBAC, PriorityClasses, and
+# SCC bindings. Workload values (image tags, replicas, resources, storage)
+# are added in PR-7..PR-12 as the individual component templates land.
+#
+# Usage:
+#   helm install stronghold deploy/helm/stronghold \
+#     --namespace stronghold-platform \
+#     -f deploy/helm/stronghold/values-prod-homelab.yaml
+
+openshift:
+  enabled: true
+  scc: restricted-v2
+
+priorityClasses:
+  create: true
+
+namespace:
+  create: false
+  name: stronghold-platform
+
+rbac:
+  create: true
