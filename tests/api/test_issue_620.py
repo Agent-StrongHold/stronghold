@@ -119,3 +119,19 @@ class TestFakeIntentClassifierEmptyStringEdgeCase:
         assert result["intent"] == "unknown"
         assert isinstance(result["confidence"], float)
         assert 0.0 <= result["confidence"] <= 1.0
+
+
+class TestFakeIntentClassifierProtocolSignature:
+    def test_has_classify_method(self) -> None:
+        """Verify FakeIntentClassifier has a classify method."""
+        assert hasattr(FakeIntentClassifier, "classify")
+
+    def test_classify_method_accepts_one_parameter(self) -> None:
+        """Verify classify method accepts exactly one parameter (self excluded)."""
+        import inspect
+
+        sig = inspect.signature(FakeIntentClassifier.classify)
+        params = list(sig.parameters.keys())
+        # self is implicit, so we expect only 'text' as the explicit parameter
+        assert len(params) == 1
+        assert params[0] == "text"
