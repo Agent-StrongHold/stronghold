@@ -104,3 +104,18 @@ class TestFakeIntentClassifierDefaultValues:
         result = await classifier.classify("test input")
 
         assert result == {"intent": "unknown", "confidence": 0.5}
+
+
+class TestFakeIntentClassifierEmptyStringEdgeCase:
+    async def test_classify_empty_string_returns_valid_structure(self) -> None:
+        """Test edge case: empty string input returns valid dictionary structure."""
+        classifier = FakeIntentClassifier()
+        result = await classifier.classify("")
+
+        assert isinstance(result, dict)
+        assert "intent" in result
+        assert "confidence" in result
+        assert isinstance(result["intent"], str)
+        assert result["intent"] == "unknown"
+        assert isinstance(result["confidence"], float)
+        assert 0.0 <= result["confidence"] <= 1.0
