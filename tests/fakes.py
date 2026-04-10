@@ -372,3 +372,111 @@ def make_test_container(
     }
     fields.update(overrides)
     return Container(**fields)
+
+
+# ── Recording tracing backend (PR 10) ────────────────────────────────
+
+
+class RecordingSpan:
+    """Span that records every method call for test assertions."""
+
+    def __init__(self, name: str, parent: "RecordingTrace") -> None:
+        self.name = name
+        self.parent = parent
+        self.calls: list[tuple[str, Any]] = []
+
+    def __enter__(self) -> "RecordingSpan":
+        self.calls.append(("__enter__", None))
+        return self
+
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_val: BaseException | None,
+        exc_tb: Any | None,
+    ) -> None:
+        if exc_type is not None:
+            self.calls.append(("__exit__", {"error_type": exc_type.__name__, "error_message": str(exc_val)[:500]}))
+        else:
+            self.calls.append(("__exit__", None))
+
+    def set_input(self, data: Any) -> "RecordingSpan":
+        self.calls.append(("set_input", data))
+        return self
+
+    def set_output(self, data: Any) -> "RecordingSpan":
+        self.calls.append(("set_output", data))
+        return self
+
+    def set_usage(self, input_tokens: int = 0, output_tokens: int = 0, model: str = "") -> "RecordingSpan":
+        self.calls.append(("set_usage", {"input_tokens": input_tokens, "output_tokens": output_tokens, "model": model}))
+        return self
+
+    def set_attributes(self, attrs: dict[str, Any]) -> "RecordingSpan":
+        self.calls.append(("set_attributes", dict(attrs)))
+        return self
+
+    def get_attributes(self) -> dict[str, Any]:
+        """Merge all set_attributes calls into a single dict for assertions."""
+        merged: dict[str, Any] = {}
+        for op, payload in self.calls:
+            if op == "set_attributes" and isinstance(payload, dict):
+                merged.update(payload)
+        return merged
+
+
+class RecordingTrace:
+    """Trace that records span creation and metadata updates."""
+
+    def __init__(self, name: str, kwargs: dict[str, Any]) -> None:
+        self.name = name
+        self.kwargs = kwargs
+        self.spans: list[RecordingSpan] = []
+        self.metadata_updates: list[dict[str, Any]] = []
+        self.ended = False
+
+    @property
+    def trace_id(self) -> str:
+        return f"trace-{id(self)}"
+
+    def span(self, name: str) -> RecordingSpan:
+        s = RecordingSpan(name, self)
+        self.spans.append(s)
+        return s
+
+    def score(self, name: str, value: float, comment: str = "") -> None:
+        pass
+
+    def update(self, metadata: dict[str, Any]) -> None:
+        self.metadata_updates.append(metadata)
+
+    def end(self) -> None:
+        self.ended = True
+
+
+class RecordingTracingBackend:
+    """Tracing backend that records every create_trace call + returns
+    RecordingTrace instances. Use in propagation tests to introspect
+    what spans were emitted with which attributes.
+    """
+
+    def __init__(self) -> None:
+        self.traces: list[RecordingTrace] = []
+
+    def create_trace(
+        self,
+        *,
+        user_id: str = "",
+        session_id: str = "",
+        name: str = "",
+        parent_trace_id: str = "",
+        metadata: dict[str, Any] | None = None,
+    ) -> RecordingTrace:
+        trace = RecordingTrace(name, {
+            "user_id": user_id,
+            "session_id": session_id,
+            "parent_trace_id": parent_trace_id,
+            "metadata": metadata or {},
+        })
+        self.traces.append(trace)
+        return trace

@@ -66,6 +66,12 @@ class RunState:
     events: list[StageEvent] = field(default_factory=list)
     retries: dict[str, int] = field(default_factory=dict)
     updated_at: datetime = field(default_factory=_utc_now)
+    # Identity fields (PR 10) — inherited from upstream caller at run creation
+    intent_mode: str = "autonomous_build"
+    session_id: str = ""
+    parent_trace_id: str = ""
+    request_id: str = ""
+    issue_type: str = ""  # filled in after analyze stage
 
 
 @dataclass
@@ -128,6 +134,10 @@ class BuildersOrchestrator:
         initial_stage: str = "queued",
         initial_worker: WorkerName = WorkerName.FRANK,
         runtime_version: str | None = None,
+        intent_mode: str = "autonomous_build",
+        session_id: str = "",
+        parent_trace_id: str = "",
+        request_id: str = "",
     ) -> RunState:
         assigned_runtime_version = runtime_version or self.select_runtime_version()
         run = RunState(
@@ -139,6 +149,10 @@ class BuildersOrchestrator:
             current_stage=initial_stage,
             current_worker=initial_worker,
             runtime_version=assigned_runtime_version,
+            intent_mode=intent_mode,
+            session_id=session_id,
+            parent_trace_id=parent_trace_id,
+            request_id=request_id,
         )
         run.events.append(
             StageEvent(

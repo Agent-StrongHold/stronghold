@@ -27,6 +27,7 @@ class Span(Protocol):
         output_tokens: int = 0,
         model: str = "",
     ) -> Span: ...
+    def set_attributes(self, attrs: dict[str, Any]) -> Span: ...
 
 
 @runtime_checkable
@@ -52,6 +53,7 @@ class TracingBackend(Protocol):
         user_id: str = "",
         session_id: str = "",
         name: str = "",
+        parent_trace_id: str = "",
         metadata: dict[str, Any] | None = None,
     ) -> Trace:
         """Create a new trace for a request."""

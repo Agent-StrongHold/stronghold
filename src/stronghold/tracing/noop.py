@@ -36,6 +36,9 @@ class NoopSpan:
     ) -> NoopSpan:
         return self
 
+    def set_attributes(self, attrs: dict[str, Any]) -> NoopSpan:
+        return self
+
 
 class NoopTrace:
     """No-op trace."""
@@ -66,6 +69,7 @@ class NoopTracingBackend:
         user_id: str = "",
         session_id: str = "",
         name: str = "",
+        parent_trace_id: str = "",
         metadata: dict[str, Any] | None = None,
     ) -> NoopTrace:
         return NoopTrace()

@@ -69,6 +69,20 @@ class PhoenixSpan:
             self._span.set_attribute("llm.model_name", model)
         return self
 
+    def set_attributes(self, attrs: dict[str, Any]) -> Span:
+        import json as _json
+
+        for k, v in attrs.items():
+            if isinstance(v, dict):
+                self._span.set_attribute(k, _json.dumps(v))
+            elif isinstance(v, list):
+                self._span.set_attribute(k, _json.dumps(v))
+            elif isinstance(v, (str, int, float, bool)):
+                self._span.set_attribute(k, v)
+            else:
+                self._span.set_attribute(k, str(v))
+        return self
+
 
 class PhoenixTrace:
     """A real trace that sends spans to Phoenix.
@@ -135,6 +149,7 @@ class PhoenixTracingBackend:
         user_id: str = "",
         session_id: str = "",
         name: str = "",
+        parent_trace_id: str = "",
         metadata: dict[str, Any] | None = None,
     ) -> Trace:
         attributes: dict[str, str] = {"user.id": user_id, "session.id": session_id}
