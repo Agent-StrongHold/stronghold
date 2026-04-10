@@ -20,6 +20,9 @@ from stronghold.builders.extractors import (
 )
 
 logger = logging.getLogger("stronghold.builders.pipeline")
+tdd_logger = logging.getLogger("stronghold.builders.tdd")
+auditor_logger = logging.getLogger("stronghold.builders.auditor")
+onboarding_logger = logging.getLogger("stronghold.builders.onboarding")
 
 MAX_LLM_RETRIES = 3
 
@@ -372,10 +375,10 @@ class RuntimePipeline:
             return f"## Codebase Context\n\n{onboarding}\n\n---\n\n{prompt}"
 
         context = "\n\n---\n\n".join(parts)
-        print(
-            f"[ONBOARDING] Issue type: {issue_type.name}, injecting {len(parts)} sections "
-            f"({len(context)} chars, vs {len(onboarding)} full doc)",
-            flush=True,
+        onboarding_logger.info(
+            "[ONBOARDING] issue_type=%s injecting %d sections (%d chars vs %d full)",
+            issue_type.name, len(parts), len(context), len(onboarding),
+            extra={"run_id": getattr(run, "run_id", "-")},
         )
         return f"## Codebase Context\n\n{context}\n\n---\n\n{prompt}"
 
@@ -1001,14 +1004,25 @@ class RuntimePipeline:
             existing_passing = self._count_passing(existing_output)
             if existing_passing > 0:
                 tracker.record_test_result(existing_passing)
-            print(f"[TDD] Preserving existing test file ({existing_passing} passing, {len(existing_test_code)} chars)", flush=True)
+            tdd_logger.info(
+                "[TDD] preserving existing test file (%d passing, %d chars)",
+                existing_passing, len(existing_test_code),
+                extra={"run_id": run.run_id},
+            )
 
         for i, criterion in enumerate(criteria):
             if i in locked_criteria:
-                print(f"[TDD] Criterion {i + 1}/{len(criteria)}: LOCKED (tests pass) — skipping", flush=True)
+                tdd_logger.info(
+                    "[TDD] criterion %d/%d: LOCKED — skipping",
+                    i + 1, len(criteria), extra={"run_id": run.run_id},
+                )
                 criteria_completed += 1
                 continue
-            print(f"[TDD] Criterion {i + 1}/{len(criteria)}: {criterion[:80]}", flush=True)
+            tdd_logger.info(
+                "[TDD] criterion %d/%d: %s",
+                i + 1, len(criteria), criterion[:80],
+                extra={"run_id": run.run_id},
+            )
 
             # ── Test phase: write ONE test ──────────────────────────
             if not has_existing_tests and i == 0:
@@ -1072,10 +1086,10 @@ class RuntimePipeline:
                 passing = self._count_passing(output)
                 failing = self._count_failing(output)
 
-                print(
-                    f"[TDD] Criterion {i + 1} impl attempt {impl_attempt + 1}: "
-                    f"{passing} passed, {failing} failed, hwm={tracker.high_water_mark}",
-                    flush=True,
+                tdd_logger.info(
+                    "[TDD] criterion %d impl attempt %d: %d passed, %d failed, hwm=%d",
+                    i + 1, impl_attempt + 1, passing, failing,
+                    tracker.high_water_mark, extra={"run_id": run.run_id},
                 )
 
                 # All tests pass (including previous criteria) → done with this criterion
@@ -1196,7 +1210,10 @@ class RuntimePipeline:
             # Lock this criterion if all tests pass so far
             if check_failing == 0 and check_passing > 0:
                 locked_criteria.add(i)
-                print(f"[TDD] Criterion {i + 1} LOCKED ({check_passing} tests pass)", flush=True)
+                tdd_logger.info(
+                    "[TDD] criterion %d LOCKED (%d tests pass)",
+                    i + 1, check_passing, extra={"run_id": run.run_id},
+                )
 
             # Post progress
             final_output = await self._run_pytest(ws, test_file)
@@ -1218,7 +1235,11 @@ class RuntimePipeline:
 
         # Record model performance stats
         RuntimePipeline.record_model_result(self._mason_model, len(locked_criteria))
-        print(f"[MODEL STATS] {self._mason_model}: {len(locked_criteria)} criteria locked. All stats: {RuntimePipeline.get_model_stats()}", flush=True)
+        tdd_logger.info(
+            "[MODEL STATS] %s: %d criteria locked. all stats: %s",
+            self._mason_model, len(locked_criteria),
+            RuntimePipeline.get_model_stats(), extra={"run_id": run.run_id},
+        )
 
         # Final summary
         final_output = await self._run_pytest(ws, test_file)
@@ -1237,7 +1258,10 @@ class RuntimePipeline:
                 current_onboarding = await self._read_file("ONBOARDING.md", ws)
                 if current_onboarding:
                     await self._write_file("ONBOARDING.md", current_onboarding + learning, ws)
-                    print(f"[ONBOARDING] Updated with learning from issue #{run.issue_number}", flush=True)
+                    onboarding_logger.info(
+                        "[ONBOARDING] updated with learning from issue #%d",
+                        run.issue_number, extra={"run_id": run.run_id},
+                    )
 
         summary = (
             f"## TDD Complete\n\n"
@@ -2869,7 +2893,11 @@ class RuntimePipeline:
             if stripped.startswith("CHANGES_REQUESTED") or stripped.startswith("VERDICT: CHANGES") or stripped.startswith("VERDICT:CHANGES"):
                 approved = False
                 break
-        print(f"[AUDITOR] stage={stage} approved={approved} first80={text[:80] if text else 'EMPTY'}", flush=True)
+        auditor_logger.info(
+            "[AUDITOR] stage=%s approved=%s first80=%s",
+            stage, approved, text[:80] if text else "EMPTY",
+            extra={"run_id": "-"},
+        )
         return approved, text
 
     # ── Utilities ────────────────────────────────────────────────────
