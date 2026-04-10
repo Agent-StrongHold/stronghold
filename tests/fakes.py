@@ -185,8 +185,8 @@ class FakeQuotaTracker:
         self,
         provider: str,
         billing_cycle: str,
-        input_tokens: int = 0,
-        output_tokens: int = 0,
+        input_tokens: int,
+        output_tokens: int,
     ) -> dict[str, object]:
         self.recorded.append(
             {
@@ -218,11 +218,7 @@ class FakeRateLimiter:
 
     async def check(self, key: str) -> tuple[bool, dict[str, str]]:
         self.calls.append(key)
-        headers = {
-            "X-RateLimit-Limit": "60",
-            "X-RateLimit-Remaining": "59",
-            "X-RateLimit-Reset": "60",
-        }
+        headers = {"X-RateLimit-Limit": "60", "X-RateLimit-Remaining": "59", "X-RateLimit-Reset": "60"}
         return self._always_allow, headers
 
     async def record(self, key: str) -> None:
@@ -235,13 +231,155 @@ class FakeAuthProvider:
     def __init__(self, auth_context: AuthContext | None = None) -> None:
         self.auth_context = auth_context or SYSTEM_AUTH
 
-    async def authenticate(self, token: str) -> AuthContext:
+    async def authenticate(
+        self,
+        authorization: str | None,
+        headers: dict[str, str] | None = None,
+    ) -> AuthContext:
+        if not authorization:
+            msg = "Missing Authorization header"
+            raise ValueError(msg)
         return self.auth_context
 
 
+class FakeViolationStore:
+    """Fake violation store for testing the RLHF feedback loop."""
+
+    def __init__(self) -> None:
+        self.findings: list[tuple[Any, str]] = []
+        self.reviews: list[Any] = []
+
+    def record_finding(self, finding: Any, *, agent_id: str) -> None:
+        self.findings.append((finding, agent_id))
+
+    def record_review(self, result: Any) -> None:
+        self.reviews.append(result)
+
+    def get_metrics(self, agent_id: str) -> Any:
+        from stronghold.types.feedback import ViolationMetrics
+
+        return ViolationMetrics(
+            agent_id=agent_id,
+            total_prs_reviewed=len(self.reviews),
+            total_findings=len(self.findings),
+        )
+
+    def get_top_violations(
+        self,
+        agent_id: str,
+        *,
+        limit: int = 5,
+    ) -> list[tuple[Any, int]]:
+        return []
+
+
+# ── Test container factory ───────────────────────────────────────────
+# Use these instead of constructing Container manually.
+
+
+def make_test_config(**overrides: Any) -> Any:
+    """Minimal valid StrongholdConfig for tests."""
+    from stronghold.types.config import StrongholdConfig, TaskTypeConfig
+
+    defaults: dict[str, Any] = {
+        "providers": {
+            "test": {"status": "active", "billing_cycle": "monthly", "free_tokens": 1_000_000},
+        },
+        "models": {
+            "test-model": {
+                "provider": "test",
+                "litellm_id": "test/model",
+                "tier": "medium",
+                "quality": 0.7,
+                "speed": 500,
+                "strengths": ["code", "chat"],
+            },
+        },
+        "task_types": {
+            "chat": TaskTypeConfig(keywords=["hello"], preferred_strengths=["chat"]),
+        },
+        "permissions": {"admin": ["*"]},
+        "router_api_key": "sk-test",
+    }
+    defaults.update(overrides)
+    return StrongholdConfig(**defaults)
+
+
+def make_test_container(
+    fake_llm: FakeLLMClient | None = None,
+    **overrides: Any,
+) -> Any:
+    """Build a complete test Container with all required fields. No async needed.
+
+    Usage:
+        from tests.fakes import make_test_container, FakeLLMClient
+        container = make_test_container()
+        # or with custom LLM:
+        container = make_test_container(fake_llm=FakeLLMClient())
+    """
+    from stronghold.agents.context_builder import ContextBuilder
+    from stronghold.agents.intents import IntentRegistry
+    from stronghold.classifier.engine import ClassifierEngine
+    from stronghold.container import Container
+    from stronghold.memory.learnings.extractor import ToolCorrectionExtractor
+    from stronghold.memory.learnings.store import InMemoryLearningStore
+    from stronghold.memory.outcomes import InMemoryOutcomeStore
+    from stronghold.prompts.store import InMemoryPromptManager
+    from stronghold.quota.tracker import InMemoryQuotaTracker
+    from stronghold.router.selector import RouterEngine
+    from stronghold.security.auth_static import StaticKeyAuthProvider
+    from stronghold.security.gate import Gate
+    from stronghold.security.sentinel.audit import InMemoryAuditLog
+    from stronghold.security.sentinel.policy import Sentinel
+    from stronghold.security.warden.detector import Warden
+    from stronghold.sessions.store import InMemorySessionStore
+    from stronghold.tools.executor import ToolDispatcher
+    from stronghold.tools.registry import InMemoryToolRegistry
+    from stronghold.tracing.noop import NoopTracingBackend
+    from stronghold.types.auth import PermissionTable
+
+    llm = fake_llm or FakeLLMClient()
+    config = make_test_config()
+    warden = Warden()
+    audit_log = InMemoryAuditLog()
+
+    fields: dict[str, Any] = {
+        "config": config,
+        "auth_provider": StaticKeyAuthProvider(api_key="sk-test"),
+        "permission_table": PermissionTable.from_config({"admin": ["*"]}),
+        "router": RouterEngine(InMemoryQuotaTracker()),
+        "classifier": ClassifierEngine(),
+        "quota_tracker": InMemoryQuotaTracker(),
+        "prompt_manager": InMemoryPromptManager(),
+        "learning_store": InMemoryLearningStore(),
+        "learning_extractor": ToolCorrectionExtractor(),
+        "outcome_store": InMemoryOutcomeStore(),
+        "session_store": InMemorySessionStore(),
+        "audit_log": audit_log,
+        "warden": warden,
+        "gate": Gate(warden=warden),
+        "sentinel": Sentinel(
+            warden=warden,
+            permission_table=PermissionTable.from_config(config.permissions),
+            audit_log=audit_log,
+        ),
+        "tracer": NoopTracingBackend(),
+        "context_builder": ContextBuilder(),
+        "intent_registry": IntentRegistry(),
+        "llm": llm,
+        "tool_registry": InMemoryToolRegistry(),
+        "tool_dispatcher": ToolDispatcher(InMemoryToolRegistry()),
+    }
+    fields.update(overrides)
+    return Container(**fields)
+
+
+# ── Stub from issue #626 (additive — Mason originally rewrote the whole
+# file and dropped the helpers below; restored from main + this skeleton)
 class FakeOutcomeStore:
-    """Fake outcome store for testing."""
+    """Fake outcome store for testing — skeleton per issue #626.
 
-    """Fake outcome store for testing."""
-
+    To be expanded by follow-up issues that decompose the OutcomeStore
+    protocol into per-method stubs.
+    """
     pass
