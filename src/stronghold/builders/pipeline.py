@@ -495,10 +495,26 @@ class RuntimePipeline:
         *,
         exclude_run_id: str = "",
     ) -> list[dict[str, str]]:
-        """Fetch prior Builders Run comments from the issue.
+        """Fetch prior Builders Run + Gatekeeper Verdict comments.
 
-        Returns list of dicts with run_id and summary for each prior run.
-        Filters to only comments starting with '## Builders Run'.
+        Returns a list of dicts with `run_id` and `summary` for each prior
+        signal Mason should learn from when re-running this issue:
+
+        1. Prior `## Builders Run` comments — ID can be either
+           `run-<hex>` (manual /runs flow) or `sched-<hex>` (scheduler-
+           dispatched flow). The previous version of this regex only
+           matched `run-`, so scheduler-dispatched runs were silently
+           invisible to Frank's prior-history lookup and the
+           "learn from prior failures" feedback loop never closed for
+           anything the scheduler picked up.
+
+        2. Prior `## Gatekeeper Verdict on PR #N` comments — these
+           carry the changes-requested feedback Mason needs to see on
+           the next outer loop. Without this, Mason would re-run the
+           same issue, produce the same broken PR, and Gatekeeper would
+           reject again forever. With this, Mason's analysis sees the
+           verdict in its prior-history block and can adjust.
+
         Excludes the current run if exclude_run_id is set.
         """
         import json as _json
@@ -523,17 +539,39 @@ class RuntimePipeline:
         if not isinstance(comments, list):
             return []
 
-        prior_runs = []
-        run_id_pattern = _re.compile(r"##\s*Builders Run\s*`?(run-[a-f0-9]+)`?")
+        prior_runs: list[dict[str, str]] = []
+        # Accept both manual `run-` and scheduler `sched-` ID prefixes.
+        run_id_pattern = _re.compile(
+            r"##\s*Builders Run\s*`?((?:run|sched)-[a-f0-9]+)`?"
+        )
+        # Gatekeeper verdicts use a different shape and don't carry a
+        # run id — synthesize a stable id from the PR number so Mason
+        # can deduplicate verdicts when re-running.
+        gatekeeper_pattern = _re.compile(
+            r"##\s*Gatekeeper Verdict on PR\s*#(\d+)",
+            _re.IGNORECASE,
+        )
+
         for comment in comments:
             body = comment.get("body", "") if isinstance(comment, dict) else ""
-            match = run_id_pattern.search(body)
-            if not match:
+
+            run_match = run_id_pattern.search(body)
+            if run_match:
+                run_id = run_match.group(1)
+                if run_id == exclude_run_id:
+                    continue
+                prior_runs.append({"run_id": run_id, "summary": body})
                 continue
-            run_id = match.group(1)
-            if run_id == exclude_run_id:
-                continue
-            prior_runs.append({"run_id": run_id, "summary": body})
+
+            gk_match = gatekeeper_pattern.search(body)
+            if gk_match:
+                pr_number = gk_match.group(1)
+                prior_runs.append(
+                    {
+                        "run_id": f"gatekeeper-pr{pr_number}",
+                        "summary": body,
+                    }
+                )
 
         return prior_runs
 
