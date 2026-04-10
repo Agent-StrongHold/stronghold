@@ -194,8 +194,11 @@ async def create_run(request: Request) -> JSONResponse:
     if execute:
         import asyncio
 
+        from stronghold.builders.workflow import BuildersWorkflow
+
         service_auth = _build_service_auth(container)
-        asyncio.create_task(_execute_full_workflow(run_id, orch, container, service_auth))
+        wf = BuildersWorkflow(orch, container)
+        asyncio.create_task(wf.execute_full_workflow(run_id, service_auth=service_auth))
 
         run = orch._runs[run_id]
         return JSONResponse(status_code=202, content=_serialize_run(run))
@@ -213,6 +216,7 @@ async def execute_stage(request: Request, run_id: str) -> JSONResponse:
     implementation_started -> implementation_ready -> quality_checks_passed -> completed
     """
     from stronghold.builders import RunStatus
+    from stronghold.builders.workflow import BuildersWorkflow
 
     await _require_auth(request)
     container = request.app.state.container
@@ -226,7 +230,8 @@ async def execute_stage(request: Request, run_id: str) -> JSONResponse:
         raise HTTPException(status_code=409, detail=f"Run is already {run.status.value}")
 
     service_auth = _build_service_auth(container)
-    await _execute_one_stage(run_id, orch, container, service_auth)
+    wf = BuildersWorkflow(orch, container)
+    await wf.execute_one_stage(run_id, service_auth=service_auth)
 
     run = orch._runs[run_id]
     return JSONResponse(content=_serialize_run(run))
