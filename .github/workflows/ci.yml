@@ -1,22 +1,29 @@
 name: CI
 
-# Tiers 1-3: progressively stricter quality gates
+# Tiers 1-4: progressively stricter quality gates
 #
 # Tier 1: push to working branches     → lint + tests (no coverage)
 # Tier 2: PR to feature/*              → lint + tests + 85% coverage
+# Tier 2: PR to integration            → lint + tests + 85% coverage
 # Tier 3: PR to develop                → lint + tests + integration + e2e + manual approval
-# Tier 4: PR to main                   → see release.yml
+# Tier 4: PR to main                   → see release.yml (95% coverage + deploy)
+#
+# `integration` is Stronghold's long-lived staging branch — Mason's
+# per-issue PRs land here first and only the eventual integration → main
+# promotion goes through release.yml's strict gate.
 
 on:
   push:
     branches-ignore:
       - main
       - develop
+      - integration
       - 'feature/**'
   pull_request:
     branches:
       - 'feature/**'
       - develop
+      - integration
 
 concurrency:
   group: ci-${{ github.ref }}
@@ -103,9 +110,11 @@ jobs:
             --ignore=tests/performance \
             -m "not perf and not e2e"
 
-      # Tier 2: PR to feature/* — 85% coverage gate
-      - name: "Tier 2: Tests + 85% coverage (PR to feature)"
-        if: github.event_name == 'pull_request' && startsWith(github.base_ref, 'feature/')
+      # Tier 2: PR to feature/* or integration — 85% coverage gate
+      # (Mason's per-issue PRs target integration; the 95% gate only
+      # applies at the integration → main promotion via release.yml)
+      - name: "Tier 2: Tests + 85% coverage (PR to feature/integration)"
+        if: github.event_name == 'pull_request' && (startsWith(github.base_ref, 'feature/') || github.base_ref == 'integration')
         run: |
           pytest tests/ -v --tb=short \
             --ignore=tests/e2e \
