@@ -123,37 +123,49 @@
   }
 </style>
 <script src="/dashboard/auth.js"></script>
+<script>
+  // ProgressBar component
+  const ProgressBar = ({ value = 0, max = 100, label = 'Progress' }) => {
+    const clampedValue = Math.min(Math.max(value, 0), max);
+    const percentage = Math.round((clampedValue / max) * 100);
+
+    return `
+      <div class="w-full space-y-1 js_rendered" aria-label="${label}">
+        ${label ? `<label class="text-sm font-medium text-gray-300">${label}</label>` : ''}
+        <div class="h-2 bg-gray-700 rounded-full overflow-hidden">
+          <div
+            class="h-full bg-emerald-500 transition-all duration-300 ease-out"
+            style="width: ${percentage}%"
+            role="progressbar"
+            aria-valuenow="${percentage}"
+            aria-valuemin="0"
+            aria-valuemax="${max}"
+          ></div>
+        </div>
+        <span class="text-xs text-gray-400">${percentage}%</span>
+      </div>
+    `;
+  };
+
+  ProgressBar.defaultProps = {
+    value: 0,
+    max: 100,
+    label: 'Progress'
+  };
+
+  // Example usage in dashboard
+  document.addEventListener('DOMContentLoaded', () => {
+    const dashboard = document.querySelector('main') || document.body;
+
+    // Add ProgressBar to dashboard
+    dashboard.insertAdjacentHTML('beforeend', ProgressBar({
+      value: 75,
+      max: 100,
+      label: 'Agent Training Progress'
+    }));
+  });
+</script>
 </head>
 <body class="flex">
 
 <!-- Mobile sidebar overlay -->
-<div class="sidebar-overlay" id="sidebar-overlay" role="button" onclick="closeSidebar()"></div>
-
-<!-- Sidebar — Castle Turrets -->
-<nav class="sidebar flex-shrink-0 flex flex-col" id="sidebar">
-  <div class="p-5 border-b border-[var(--iron)]">
-    <div class="flex items-center gap-3">
-      <span class="crest tower-crest">&#x1F3F0;</span>
-      <div>
-        <h1 class="text-lg leading-tight">Stronghold</h1>
-        <p class="text-xs text-[var(--iron-light)]">Agent Governance Platform</p>
-      </div>
-    </div>
-  </div>
-
-  <div class="flex-1 py-4" onclick="closeSidebar()">
-    <a href="/greathall" class="sidebar-item active">
-      <span style="width:24px;text-align:center">&#x1F3DB;</span> Great Hall
-    </a>
-    <a href="/dashboard/agents" class="sidebar-item">
-      <span class="sidebar-icon">&#x2694;</span> Knights
-    </a>
-    <a href="/dashboard/skills" class="sidebar-item">
-      <span class="sidebar-icon">&#x1F6E1;</span> Armory
-    </a>
-    <a href="/dashboard/mcp" class="sidebar-item">
-      <span style="width:24px;text-align:center">&#x1F525;</span> Forge
-    </a>
-    <a href="/dashboard/security" class="sidebar-item">
-      <span class="sidebar-icon">&#x1F5FC;</span> Watchtower
-    </a>
