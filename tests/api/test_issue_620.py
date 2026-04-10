@@ -78,11 +78,20 @@ class TestFakeIntentClassifierProtocolMethod:
 try:
     from tests.fakes import FakeIntentClassifier
 except ImportError:
-    from typing import Protocol as TypingProtocol
 
-    class FakeIntentClassifier(TypingProtocol):
+    class FakeIntentClassifier:
         """Fake implementation of IntentClassifier protocol."""
 
         async def classify(self, text: str) -> dict[str, Any]:
             """Classify the given text and return a default intent with confidence."""
             return {"intent": "unknown", "confidence": 0.5}
+
+
+def test_fake_intent_classifier_is_class() -> None:
+    """Verify FakeIntentClassifier is a class and implements IntentClassifier protocol."""
+
+    assert isinstance(FakeIntentClassifier, type)
+    instance = FakeIntentClassifier()
+    # Check if the instance implements the protocol by checking for required methods
+    assert hasattr(instance, "classify")
+    assert callable(instance.classify)
