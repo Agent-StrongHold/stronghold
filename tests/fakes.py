@@ -10,6 +10,8 @@ if TYPE_CHECKING:
     from collections.abc import AsyncIterator
     from types import TracebackType
 
+    from stronghold.protocols.secrets import SecretResult
+
 
 class FakeLLMClient:
     """Fake LLM that returns predetermined responses."""
@@ -271,6 +273,200 @@ class FakeViolationStore:
         limit: int = 5,
     ) -> list[tuple[Any, int]]:
         return []
+
+
+class FakeSecretBackend:
+    """In-memory `SecretBackend` for tests.
+
+    Pre-populate via `set_secret` or `set_permission_denied`. The `watch_changes`
+    iterator yields the seeded value once, then yields any further values pushed
+    via `push_change` until `close` is called.
+    """
+
+    def __init__(self) -> None:
+        from collections import defaultdict
+
+        self._values: dict[str, SecretResult] = {}
+        self._denied: set[str] = set()
+        self._closed = False
+        self._pending_changes: dict[str, list[SecretResult]] = defaultdict(list)
+        self.get_calls: list[str] = []
+        self.close_calls = 0
+
+    def set_secret(self, ref: str, value: str, version: str | None = None) -> None:
+        from stronghold.protocols.secrets import SecretResult
+
+        self._values[ref] = SecretResult(value=value, version=version)
+
+    def set_permission_denied(self, ref: str) -> None:
+        self._denied.add(ref)
+
+    def push_change(self, ref: str, value: str, version: str | None = None) -> None:
+        from stronghold.protocols.secrets import SecretResult
+
+        self._pending_changes[ref].append(SecretResult(value=value, version=version))
+
+    async def get_secret(self, ref: str) -> Any:
+        if self._closed:
+            raise RuntimeError("FakeSecretBackend is closed")
+        self.get_calls.append(ref)
+        if "/" not in ref or not ref.strip("/"):
+            raise ValueError(f"Malformed secret ref: {ref!r}")
+        if ref in self._denied:
+            raise PermissionError(f"Cedar PDP denied access to {ref!r}")
+        if ref not in self._values:
+            raise LookupError(f"No secret at {ref!r}")
+        return self._values[ref]
+
+    async def watch_changes(self, ref: str) -> AsyncIterator[Any]:
+        if self._closed:
+            raise RuntimeError("FakeSecretBackend is closed")
+        if "/" not in ref or not ref.strip("/"):
+            raise ValueError(f"Malformed secret ref: {ref!r}")
+        if ref in self._denied:
+            raise PermissionError(f"Cedar PDP denied access to {ref!r}")
+        if ref not in self._values:
+            raise LookupError(f"No secret at {ref!r}")
+        # Always yield the seeded value first.
+        yield self._values[ref]
+        # Then drain any explicitly-pushed changes.
+        for result in self._pending_changes.pop(ref, []):
+            yield result
+
+    async def close(self) -> None:
+        self.close_calls += 1
+        self._closed = True
+
+
+class FakeAgentPodDiscovery:
+    """In-memory `AgentPodDiscovery` for tests.
+
+    State is keyed by ``(tenant_id, user_id, agent_type)``. Use
+    ``set_permission_denied_for_tenant`` to assert tenant isolation.
+    """
+
+    def __init__(self) -> None:
+        from stronghold.protocols.agent_pod import AgentPodInfo
+
+        self._pods: dict[tuple[str, str, str], AgentPodInfo] = {}
+        self._denied_tenants: set[str] = set()
+        self._closed = False
+        self.get_calls: list[tuple[str, str, str]] = []
+        self.register_calls: list[tuple[str, str, str, str, str, int]] = []
+        self.unregister_calls: list[tuple[str, str, str, str]] = []
+        self.close_calls = 0
+
+    def set_permission_denied_for_tenant(self, tenant_id: str) -> None:
+        self._denied_tenants.add(tenant_id)
+
+    async def get_user_pod(
+        self,
+        tenant_id: str,
+        user_id: str,
+        agent_type: str,
+    ) -> Any:
+        self.get_calls.append((tenant_id, user_id, agent_type))
+        if tenant_id in self._denied_tenants:
+            raise PermissionError(f"Cedar denied discovery for tenant {tenant_id!r}")
+        return self._pods.get((tenant_id, user_id, agent_type))
+
+    async def register_pod(
+        self,
+        tenant_id: str,
+        user_id: str,
+        agent_type: str,
+        pod_name: str,
+        ip: str,
+        generation: int,
+    ) -> None:
+        from stronghold.protocols.agent_pod import AgentPodInfo
+
+        self.register_calls.append(
+            (tenant_id, user_id, agent_type, pod_name, ip, generation),
+        )
+        if tenant_id in self._denied_tenants:
+            raise PermissionError(f"Cedar denied register for tenant {tenant_id!r}")
+        key = (tenant_id, user_id, agent_type)
+        existing = self._pods.get(key)
+        if existing is not None and existing.generation > generation:
+            return  # Out-of-order callback — keep the newer generation.
+        self._pods[key] = AgentPodInfo(ip=ip, generation=generation, pod_name=pod_name)
+
+    async def unregister_pod(
+        self,
+        tenant_id: str,
+        user_id: str,
+        agent_type: str,
+        pod_name: str,
+    ) -> None:
+        self.unregister_calls.append((tenant_id, user_id, agent_type, pod_name))
+        if tenant_id in self._denied_tenants:
+            raise PermissionError(f"Cedar denied unregister for tenant {tenant_id!r}")
+        key = (tenant_id, user_id, agent_type)
+        existing = self._pods.get(key)
+        # Only evict if the pod_name matches — protects against the
+        # delete-then-respawn race documented on #770.
+        if existing is not None and existing.pod_name == pod_name:
+            self._pods.pop(key, None)
+
+    async def close(self) -> None:
+        self.close_calls += 1
+        self._closed = True
+
+
+class FakeMcpDeployer:
+    """In-memory `McpDeployerClient` for tests.
+
+    Records every call so test assertions can pin the exact sequence
+    of deployer requests Mason produced. Use ``set_unhealthy``,
+    ``set_unreachable_for_deploy``, and ``set_denied_for_tool`` to
+    drive the failure paths.
+    """
+
+    def __init__(self) -> None:
+        self.deploy_calls: list[tuple[str, str]] = []
+        self.stop_calls: list[str] = []
+        self.health_calls = 0
+        self._deployments: dict[str, str] = {}  # name -> tool_name
+        self._healthy = True
+        self._unreachable_deploy = False
+        self._denied_tools: set[str] = set()
+
+    def set_unhealthy(self) -> None:
+        self._healthy = False
+
+    def set_unreachable_for_deploy(self) -> None:
+        self._unreachable_deploy = True
+
+    def set_denied_for_tool(self, tool_name: str) -> None:
+        self._denied_tools.add(tool_name)
+
+    async def deploy_tool_mcp(self, tool_name: str, image: str) -> str:
+        self.deploy_calls.append((tool_name, image))
+        if not tool_name:
+            raise ValueError("tool_name must not be empty")
+        if not image:
+            raise ValueError("image must not be empty")
+        if ":" not in image:
+            raise ValueError(f"image must include a tag: {image!r}")
+        if tool_name in self._denied_tools:
+            raise PermissionError(f"Role denies deploy for tool {tool_name!r}")
+        if self._unreachable_deploy:
+            raise RuntimeError("deployer unreachable")
+        deployment_name = f"mcp-{tool_name}-{len(self._deployments)}"
+        self._deployments[deployment_name] = tool_name
+        return deployment_name
+
+    async def stop_tool_mcp(self, deployment_name: str) -> None:
+        self.stop_calls.append(deployment_name)
+        if not deployment_name:
+            raise ValueError("deployment_name must not be empty")
+        # Idempotent — unknown name is a no-op, not an error.
+        self._deployments.pop(deployment_name, None)
+
+    async def health(self) -> bool:
+        self.health_calls += 1
+        return self._healthy
 
 
 # ── Test container factory ───────────────────────────────────────────
