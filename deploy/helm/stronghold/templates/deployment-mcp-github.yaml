@@ -1,8 +1,23 @@
-{{- if .Values.mcp.github.enabled }}
-# GitHub MCP server Deployment.
+{{- if and .Values.mcp.github.enabled .Values.mcp.github.devMode }}
+# WARNING: SHARED-PAT SECURITY MODEL — DEV CLUSTERS ONLY
 #
-# Replaces the raw manifest at deploy/k8s/github-mcp.yaml. Lives in the
-# stronghold-mcp namespace per ADR-K8S-001. The PAT is loaded from a
+# This template deploys github-mcp with a SINGLE shared PAT for ALL Stronghold
+# users. Every user who hits this pod acts as the same GitHub identity (whoever
+# owns the PAT in the secretKeyRef). This means: wrong identity in audit logs,
+# permission escalation, no per-user revocation, no per-user rate limits.
+#
+# Per ADR-K8S-018 (per-user credential vault), ADR-K8S-019 (tool policy layer),
+# ADR-K8S-020 (Stronghold as MCP server/gateway), and ADR-K8S-025 (sandboxed
+# MCP guests pattern), the production path is for github to be a Stronghold
+# in-process tool with per-user vault credential injection — NOT a shared MCP
+# server pod. This template exists only as a dev convenience and is gated behind
+# `.Values.mcp.github.devMode: true` (default false).
+#
+# The v0.9.1 Tool Catalog PR will remove this template entirely and replace it
+# with an in-process tool at src/stronghold/tools/github.py.
+#
+# Original description: Replaces the raw manifest at deploy/k8s/github-mcp.yaml.
+# Lives in the stronghold-mcp namespace per ADR-K8S-001. The PAT is loaded from a
 # Secret by name only (never an inline env value) — matches the raw
 # manifest and satisfies baseline rule 6 (no env-var secrets).
 #

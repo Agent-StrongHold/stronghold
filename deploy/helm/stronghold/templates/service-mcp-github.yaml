@@ -1,4 +1,4 @@
-{{- if .Values.mcp.github.enabled }}
+{{- if and .Values.mcp.github.enabled .Values.mcp.github.devMode }}
 apiVersion: v1
 kind: Service
 metadata:
