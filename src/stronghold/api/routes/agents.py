@@ -160,8 +160,6 @@ async def _require_admin(request: Request) -> Any:
 @router.get("/agents")
 async def list_agents(request: Request) -> JSONResponse:
     """List all registered agents."""
-    from stronghold.security.access_control import is_agent_visible  # noqa: PLC0415
-
     auth = await _require_auth(request)
     container = request.app.state.container
     org_id = auth.org_id if hasattr(auth, "org_id") else ""
@@ -178,8 +176,7 @@ async def list_agents(request: Request) -> JSONResponse:
                 "trust_tier": agent.identity.trust_tier,
             }
             for agent in container.agents.values()
-            if (not org_id or not agent.identity.org_id or agent.identity.org_id == org_id)
-            and is_agent_visible(agent.identity.visibility, agent.identity.access_grant, auth)
+            if not org_id or not agent.identity.org_id or agent.identity.org_id == org_id
         ]
     return JSONResponse(content=agents_list)
 
@@ -193,14 +190,6 @@ async def get_agent(name: str, request: Request) -> JSONResponse:
     detail = await container.agent_store.get(name, org_id=org_id)
     if not detail:
         raise HTTPException(status_code=404, detail=f"Agent '{name}' not found")
-
-    from stronghold.security.access_control import is_agent_visible  # noqa: PLC0415
-
-    if not is_agent_visible(
-        detail.get("visibility", "public"), detail.get("access_grant", {}), auth
-    ):
-        raise HTTPException(status_code=404, detail=f"Agent '{name}' not found")
-
     return JSONResponse(content=detail)
 
 

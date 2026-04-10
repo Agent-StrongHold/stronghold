@@ -150,8 +150,6 @@ def _build_identity_from_manifest(manifest: dict[str, Any]) -> AgentIdentity:
         reasoning_strategy=reasoning.get("strategy", "direct"),
         memory_config=manifest.get("memory", {}),
         phases=tuple(reasoning.get("phases", ())),
-        visibility=manifest.get("visibility", "public"),
-        access_grant=manifest.get("access_grant", {}),
     )
 
 
@@ -172,8 +170,6 @@ def _build_identity_from_record(record: Any) -> AgentIdentity:
         max_tool_rounds=record.max_tool_rounds,
         reasoning_strategy=record.reasoning_strategy,
         memory_config=record.memory_config or {},
-        visibility=getattr(record, "visibility", "public"),
-        access_grant=getattr(record, "access_grant", {}),
     )
 
 
@@ -378,8 +374,6 @@ async def create_agents(
                     org_id="",
                     preamble=True,
                     active=True,
-                    visibility=manifest.get("visibility", "public"),
-                    access_grant=manifest.get("access_grant", {}),
                 )
                 await persist_registry.upsert(record)
             except Exception:
