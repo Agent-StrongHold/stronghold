@@ -123,37 +123,35 @@
   }
 </style>
 <script src="/dashboard/auth.js"></script>
-</head>
-<body class="flex">
+<script>
+  // ProgressBar component
+  function ProgressBar({ value = 0, max = 100, label = "Progress" }) {
+    const percentage = Math.min(Math.max(value, 0), max);
+    const percentText = `${Math.round((percentage / max) * 100)}%`;
 
-<!-- Mobile sidebar overlay -->
-<div class="sidebar-overlay" id="sidebar-overlay" role="button" onclick="closeSidebar()"></div>
+    const progressBar = document.createElement('div');
+    progressBar.setAttribute('role', 'progressbar');
+    progressBar.setAttribute('aria-valuemin', '0');
+    progressBar.setAttribute('aria-valuemax', max);
+    progressBar.setAttribute('aria-valuenow', percentage);
+    progressBar.setAttribute('aria-label', label);
 
-<!-- Sidebar — Castle Turrets -->
-<nav class="sidebar flex-shrink-0 flex flex-col" id="sidebar">
-  <div class="p-5 border-b border-[var(--iron)]">
-    <div class="flex items-center gap-3">
-      <span class="crest tower-crest">&#x1F3F0;</span>
-      <div>
-        <h1 class="text-lg leading-tight">Stronghold</h1>
-        <p class="text-xs text-[var(--iron-light)]">Agent Governance Platform</p>
-      </div>
-    </div>
-  </div>
+    progressBar.className = 'w-full bg-gray-700 rounded-full h-4';
+    const progressFill = document.createElement('div');
+    progressFill.className = 'bg-emerald-500 h-4 rounded-full transition-all duration-300 ease-out';
+    progressFill.style.width = `${percentage}%`;
 
-  <div class="flex-1 py-4" onclick="closeSidebar()">
-    <a href="/greathall" class="sidebar-item active">
-      <span style="width:24px;text-align:center">&#x1F3DB;</span> Great Hall
-    </a>
-    <a href="/dashboard/agents" class="sidebar-item">
-      <span class="sidebar-icon">&#x2694;</span> Knights
-    </a>
-    <a href="/dashboard/skills" class="sidebar-item">
-      <span class="sidebar-icon">&#x1F6E1;</span> Armory
-    </a>
-    <a href="/dashboard/mcp" class="sidebar-item">
-      <span style="width:24px;text-align:center">&#x1F525;</span> Forge
-    </a>
-    <a href="/dashboard/security" class="sidebar-item">
-      <span class="sidebar-icon">&#x1F5FC;</span> Watchtower
-    </a>
+    progressBar.appendChild(progressFill);
+
+    const percentageText = document.createElement('span');
+    percentageText.className = 'text-xs text-gray-300 mt-1 block text-center';
+    percentageText.textContent = percentText;
+
+    const container = document.createElement('div');
+    container.className = 'w-full max-w-sm mx-auto';
+    container.appendChild(progressBar);
+    container.appendChild(percentageText);
+
+    return container;
+  }
+</script>
