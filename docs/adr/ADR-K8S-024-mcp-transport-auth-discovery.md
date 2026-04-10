@@ -58,20 +58,32 @@ accurately so clients know what they can request and what they cannot.
 
 ## Decision
 
-**Stronghold exposes MCP over HTTP+SSE as the primary remote transport,
-with OAuth 2.1 + PKCE + Dynamic Client Registration as the primary auth
-flow and API token auth as a fallback. Stdio transport is supported for
-local clients connecting via SSH tunnel. Capability negotiation declares
-the affordances Stronghold supports at initialization time.**
+**Stronghold exposes MCP over Streamable HTTP as the primary remote
+transport, with OAuth 2.1 + PKCE + Dynamic Client Registration as the
+primary auth flow and API token auth as a fallback. Stdio transport is
+supported for local clients. Capability negotiation declares the
+affordances Stronghold supports at initialization time.**
 
-### Transport
+### Transport: Streamable HTTP (MCP 2025-03-26)
 
-HTTP+SSE is the only remote transport Stronghold serves. The endpoint
-lives at `/mcp/v1` on the Stronghold-API service, behind the same
-Ingress and TLS termination as the rest of the API. SSE (Server-Sent
-Events) handles the server-to-client streaming channel; standard HTTP
-POST handles client-to-server requests. This matches the MCP
-specification's Streamable HTTP transport.
+Stronghold implements the **Streamable HTTP** transport from the
+MCP 2025-03-26 specification revision, which replaced the deprecated
+HTTP+SSE dual-endpoint model. Key differences from the old transport:
+
+- **Single endpoint** at `/mcp/v1` on the Stronghold-API service,
+  behind the same Ingress and TLS termination as the rest of the API.
+  Clients send JSON-RPC requests via HTTP POST to this single endpoint.
+- **Server-chosen streaming**: the server decides per-response whether
+  to return a regular HTTP JSON response or upgrade to an SSE stream.
+  Short tool calls return synchronously; long-running operations
+  (resource subscriptions, streaming tool output) upgrade to SSE.
+- **Session management** via the `Mcp-Session-Id` header. The server
+  assigns a session ID on the first request; the client includes it on
+  subsequent requests. This replaces the implicit session binding of
+  the old persistent SSE connection.
+- **Batch JSON-RPC**: multiple JSON-RPC requests can be sent in a
+  single HTTP POST per the JSON-RPC batch specification, reducing
+  round-trips for clients that need to call multiple tools.
 
 Stdio transport is available for local clients. An operator who SSHs
 into the cluster (or uses `kubectl exec` into a Stronghold-API pod) can
@@ -142,7 +154,9 @@ During the MCP `initialize` handshake, Stronghold declares these
 capabilities:
 
 - **tools** — supported; the server exposes tools via `tools/list` and
-  executes them via `tools/call`
+  executes them via `tools/call`. Tool responses may include
+  `structuredContent` (machine-readable JSON) alongside human-readable
+  content per the 2025-03-26 spec.
 - **prompts** — supported; the server exposes prompt templates via
   `prompts/list` and renders them via `prompts/get`
 - **resources** — supported; the server exposes resources via
@@ -150,6 +164,16 @@ capabilities:
 - **sampling** — not supported in v0.9; planned for a future release
   when Stronghold adds the ability for tools to request LLM completions
   back through the MCP channel
+
+Content types supported: `text`, `image`, and `audio` (added in the
+2025-03-26 revision). Tool responses and resource content may contain
+any of these types.
+
+Tool annotations (also 2025-03-26) are emitted on every tool in
+`tools/list`: `readOnlyHint`, `destructiveHint`, and `openWorldHint`.
+These annotations let MCP clients make UI and safety decisions (e.g.,
+confirming before invoking a destructive tool). The Tool Catalog
+(ADR-K8S-021) stores these annotations as part of the tool metadata.
 
 The declared capabilities are static per Stronghold version. They do not
 vary per user or per tenant — tenant-specific restrictions are enforced
@@ -236,8 +260,9 @@ capabilities in the handshake; policy determines what actually executes.
 
 ## References
 
-- MCP specification: "Transports" (Streamable HTTP, stdio)
-- MCP specification: "Authorization" (OAuth 2.0 framework for MCP)
+- MCP specification 2025-03-26: "Transports" (Streamable HTTP, stdio)
+- MCP specification 2025-03-26: "Authorization" (OAuth 2.1 framework)
+- MCP specification 2025-03-26: "Tool Annotations", "Structured Content"
 - OAuth 2.1 Authorization Framework, RFC 9728 (consolidates RFC 6749 +
   PKCE RFC 7636 + BCP 212 security best practices)
 - OAuth 2.0 Dynamic Client Registration Protocol, RFC 7591
