@@ -35,12 +35,16 @@ single-tenant-only (one shared API key, one set of credentials, one
 policy). Neither is acceptable for a multi-tenant governance platform.
 
 The MCP specification's 2025-03 revision added an authorization
-framework built on OAuth 2.0 with Dynamic Client Registration (DCR).
-This means MCP clients that implement the spec can negotiate an OAuth
-flow automatically: the client discovers the authorization server
-metadata, registers itself dynamically, obtains tokens, and presents
-them on every request. This is the "golden path" for desktop AI clients
-that support it.
+framework built on OAuth 2.1 with Dynamic Client Registration (DCR).
+OAuth 2.1 (RFC 9728, consolidating RFC 6749 + BCP updates) mandates
+PKCE for all public clients, drops the implicit grant entirely, and
+requires exact redirect URI matching — all of which align with
+Stronghold's security posture. MCP clients that implement the spec can
+negotiate an OAuth flow automatically: the client discovers the
+authorization server metadata, registers itself dynamically, obtains
+tokens via the authorization code + PKCE flow, and presents them on
+every request. This is the "golden path" for desktop AI clients that
+support it.
 
 However, not every client supports DCR today. Some clients only know how
 to present a static API token. Stronghold must support both flows
@@ -55,10 +59,10 @@ accurately so clients know what they can request and what they cannot.
 ## Decision
 
 **Stronghold exposes MCP over HTTP+SSE as the primary remote transport,
-with OAuth 2.0 + Dynamic Client Registration as the primary auth flow
-and API token auth as a fallback. Stdio transport is supported for local
-clients connecting via SSH tunnel. Capability negotiation declares the
-affordances Stronghold supports at initialization time.**
+with OAuth 2.1 + PKCE + Dynamic Client Registration as the primary auth
+flow and API token auth as a fallback. Stdio transport is supported for
+local clients connecting via SSH tunnel. Capability negotiation declares
+the affordances Stronghold supports at initialization time.**
 
 ### Transport
 
@@ -77,10 +81,10 @@ network. Stdio sessions still require authentication — the client must
 present a valid API token via an environment variable or CLI flag, which
 the stdio handler validates before accepting commands.
 
-### Authentication: OAuth 2.0 with DCR (primary)
+### Authentication: OAuth 2.1 with PKCE + DCR (primary)
 
 When a remote MCP client connects, the Stronghold MCP endpoint
-advertises its OAuth 2.0 authorization server metadata at the
+advertises its OAuth 2.1 authorization server metadata at the
 well-known discovery URL. Clients that support DCR follow this flow:
 
 1. The client fetches `/.well-known/oauth-authorization-server` from
@@ -89,9 +93,10 @@ well-known discovery URL. Clients that support DCR follow this flow:
    declared in the metadata, receiving a `client_id` and
    `client_secret`.
 3. The client redirects the user to the authorization endpoint for
-   consent.
-4. On successful consent, the client receives an access token (and
-   optionally a refresh token).
+   consent, using the authorization code flow with PKCE
+   (`code_challenge_method=S256`). The implicit grant is not supported.
+4. On successful consent, the client exchanges the authorization code
+   (with PKCE verifier) for an access token and a refresh token.
 5. The client presents the access token as a Bearer token on every
    subsequent MCP request.
 6. Stronghold validates the token, extracts the user identity, and
@@ -165,11 +170,12 @@ capabilities in the handshake; policy determines what actually executes.
 **B) API key only, no OAuth / DCR.**
 
 - Rejected: API keys alone have no standard token refresh mechanism, no
-  dynamic client registration, and no consent flow. Revoking access
-  means rotating the key and distributing the new one manually. DCR
-  gives clients a self-service registration path, short-lived tokens,
-  and per-client revocation — all critical for a multi-tenant platform
-  where many clients connect on behalf of many users.
+  dynamic client registration, no consent flow, and no PKCE protection
+  against authorization code interception. Revoking access means rotating
+  the key and distributing the new one manually. OAuth 2.1 with DCR gives
+  clients a self-service registration path, short-lived tokens, PKCE for
+  public clients, and per-client revocation — all critical for a
+  multi-tenant platform where many clients connect on behalf of many users.
 
 **C) mTLS client certificates for authentication.**
 
@@ -232,9 +238,11 @@ capabilities in the handshake; policy determines what actually executes.
 
 - MCP specification: "Transports" (Streamable HTTP, stdio)
 - MCP specification: "Authorization" (OAuth 2.0 framework for MCP)
-- OAuth 2.0 Authorization Framework, RFC 6749
+- OAuth 2.1 Authorization Framework, RFC 9728 (consolidates RFC 6749 +
+  PKCE RFC 7636 + BCP 212 security best practices)
 - OAuth 2.0 Dynamic Client Registration Protocol, RFC 7591
 - OAuth 2.0 Authorization Server Metadata, RFC 8414
+- PKCE (Proof Key for Code Exchange), RFC 7636
 - Kubernetes documentation: "Ingress" and "Services"
 - ADR-K8S-018 (vault — per-user credential storage)
 - ADR-K8S-019 (tool policy — per-user permission enforcement)
