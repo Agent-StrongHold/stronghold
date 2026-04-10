@@ -191,6 +191,7 @@ strongholdApi:
     pullPolicy: IfNotPresent
   containerPort: 8100
   mcpDeployerSidecar:
+    enabled: false
     image:
       registry: ghcr.io
       repository: agent-stronghold/mcp-deployer

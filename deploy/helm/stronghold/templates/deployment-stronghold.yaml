@@ -62,8 +62,10 @@ spec:
               value: http://{{ include "stronghold.fullname" . }}-phoenix:{{ .Values.phoenixSvc.containerPort }}
             - name: STRONGHOLD_CONFIG
               value: {{ .Values.strongholdApi.config.strongholdConfigPath | quote }}
+            {{- if .Values.strongholdApi.mcpDeployerSidecar.enabled }}
             - name: MCP_DEPLOYER_SOCKET
               value: {{ .Values.strongholdApi.mcpDeployerSidecar.socketPath | quote }}
+            {{- end }}
           envFrom:
             - secretRef:
                 name: {{ if .Values.postgresql.existingSecret }}{{ .Values.postgresql.existingSecret }}{{ else }}{{ include "stronghold.fullname" . }}-postgres-credentials{{ end }}
@@ -91,10 +93,13 @@ spec:
             - name: config
               mountPath: /app/config
               readOnly: true
+            {{- if .Values.strongholdApi.mcpDeployerSidecar.enabled }}
             - name: mcp-deployer-socket
               mountPath: /run/stronghold
+            {{- end }}
             - name: tmp
               mountPath: /tmp
+        {{- if .Values.strongholdApi.mcpDeployerSidecar.enabled }}
         # Sidecar: mcp-deployer. Runs under its own SA (mcp-deployer)
         # which has the namespace-scoped Role to deploy MCP servers in
         # stronghold-mcp. The main container never sees this token.
@@ -124,17 +129,20 @@ spec:
               mountPath: /run/stronghold
             - name: mcp-deployer-tmp
               mountPath: /tmp
+        {{- end }}
       volumes:
         - name: config
           configMap:
             name: {{ include "stronghold.fullname" . }}-config
+        - name: tmp
+          emptyDir:
+            sizeLimit: 64Mi
+        {{- if .Values.strongholdApi.mcpDeployerSidecar.enabled }}
         - name: mcp-deployer-socket
           emptyDir:
             medium: Memory
             sizeLimit: 16Mi
-        - name: tmp
-          emptyDir:
-            sizeLimit: 64Mi
         - name: mcp-deployer-tmp
           emptyDir:
             sizeLimit: 32Mi
+        {{- end }}
