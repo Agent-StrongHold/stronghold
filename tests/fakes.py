@@ -220,7 +220,11 @@ class FakeRateLimiter:
 
     async def check(self, key: str) -> tuple[bool, dict[str, str]]:
         self.calls.append(key)
-        headers = {"X-RateLimit-Limit": "60", "X-RateLimit-Remaining": "59", "X-RateLimit-Reset": "60"}
+        headers = {
+            "X-RateLimit-Limit": "60",
+            "X-RateLimit-Remaining": "59",
+            "X-RateLimit-Reset": "60",
+        }
         return self._always_allow, headers
 
     async def record(self, key: str) -> None:
