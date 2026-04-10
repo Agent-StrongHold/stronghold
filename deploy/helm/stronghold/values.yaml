@@ -25,6 +25,33 @@ ingress:
 # PostgreSQL (bundled or external)
 postgresql:
   enabled: true
+  image:
+    repository: pgvector/pgvector
+    tag: "pg17"
+    digest: ""
+  containerPort: 5432
+  username: stronghold
+  database: stronghold
+  existingSecret: ""
+  persistence:
+    size: 10Gi
+    accessModes:
+      - ReadWriteOnce
+    storageClassName: ""
+  probes:
+    readiness:
+      initialDelaySeconds: 5
+      periodSeconds: 10
+    liveness:
+      initialDelaySeconds: 30
+      periodSeconds: 10
+  resources:
+    limits:
+      cpu: "2"
+      memory: 2Gi
+    requests:
+      cpu: 250m
+      memory: 256Mi
   auth:
     username: stronghold
     password: stronghold
@@ -99,7 +126,7 @@ resources:
 # each ServiceAccount runs under the named SCC (ADR-K8S-002, ADR-K8S-006).
 # Set to false for vanilla Kubernetes distros (EKS, GKE, AKS, RKE2, k3s).
 openshift:
-  enabled: true
+  enabled: false
   # SCC each Stronghold ServiceAccount gets bound to. restricted-v2 is the
   # OpenShift 4.14+ default and is the only SCC referenced by the chart
   # baseline per ADR-K8S-002 §4. Do not change unless you know what you're
@@ -151,3 +178,165 @@ serviceAccounts:
 # separately from workloads).
 rbac:
   create: true
+
+# -----------------------------------------------------------------------------
+# PR-7..PR-12 additions: workload templates
+# -----------------------------------------------------------------------------
+
+# Stronghold API server
+strongholdApi:
+  replicas: 1
+  image:
+    repository: ghcr.io/agent-stronghold/stronghold
+    tag: "0.1.0"
+    digest: ""
+  containerPort: 8100
+  config:
+    strongholdConfigPath: /etc/stronghold/config.yaml
+  probes:
+    readiness:
+      path: /health
+      initialDelaySeconds: 5
+      periodSeconds: 10
+    liveness:
+      path: /health
+      initialDelaySeconds: 15
+      periodSeconds: 20
+  resources:
+    limits:
+      cpu: "2"
+      memory: 2Gi
+    requests:
+      cpu: 500m
+      memory: 512Mi
+  mcpDeployerSidecar:
+    image:
+      repository: ghcr.io/agent-stronghold/mcp-deployer
+      tag: "0.1.0"
+      digest: ""
+    socketPath: /var/run/mcp-deployer/deployer.sock
+
+litellmProxy:
+  replicas: 1
+  image:
+    repository: ghcr.io/berriai/litellm
+    tag: "main-latest"
+    digest: ""
+  containerPort: 4000
+  exposed: true
+  createStubSecret: true
+  envSecretName: ""
+  probes:
+    readiness:
+      path: /health/readiness
+      initialDelaySeconds: 5
+      periodSeconds: 10
+    liveness:
+      path: /health/liveliness
+      initialDelaySeconds: 10
+      periodSeconds: 20
+  resources:
+    limits:
+      cpu: "1"
+      memory: 1Gi
+    requests:
+      cpu: 250m
+      memory: 256Mi
+
+phoenixSvc:
+  replicas: 1
+  image:
+    repository: arizephoenix/phoenix
+    tag: "latest"
+    digest: ""
+  containerPort: 6006
+  exposed: true
+  probes:
+    readiness:
+      path: /healthz
+      initialDelaySeconds: 5
+      periodSeconds: 10
+    liveness:
+      path: /healthz
+      initialDelaySeconds: 15
+      periodSeconds: 20
+  resources:
+    limits:
+      cpu: "1"
+      memory: 1Gi
+    requests:
+      cpu: 100m
+      memory: 128Mi
+
+mcp:
+  devTools:
+    enabled: true
+    replicas: 1
+    image:
+      repository: ghcr.io/agent-stronghold/mcp-dev-tools
+      tag: "0.1.0"
+      digest: ""
+    containerPort: 3100
+    workspacePvcName: workspace-pvc
+    resources:
+      limits:
+        cpu: 500m
+        memory: 512Mi
+      requests:
+        cpu: 100m
+        memory: 128Mi
+  github:
+    enabled: true
+    replicas: 1
+    image:
+      repository: ghcr.io/agent-stronghold/mcp-github
+      tag: "0.1.0"
+      digest: ""
+    containerPort: 3200
+    patSecretName: github-pat
+    devMode: false
+    resources:
+      limits:
+        cpu: 500m
+        memory: 512Mi
+      requests:
+        cpu: 100m
+        memory: 128Mi
+
+networkPolicy:
+  enabled: true
+  ingressOpen: false
+  litellm:
+    egressCIDRs:
+      - 0.0.0.0/0
+
+podDisruptionBudgets:
+  enabled: true
+
+extraNamespaces:
+  create: false
+  data:
+    name: stronghold-data
+  mcp:
+    name: stronghold-mcp
+
+route:
+  stronghold:
+    host: stronghold.apps.example.com
+    tlsTermination: edge
+  litellm:
+    host: litellm.apps.example.com
+    tlsTermination: edge
+  phoenix:
+    host: phoenix.apps.example.com
+    tlsTermination: edge
+
+ingressRoutes:
+  enabled: false
+  className: ""
+  stronghold:
+    host: stronghold.example.com
+  litellm:
+    host: litellm.example.com
+  phoenix:
+    host: phoenix.example.com
