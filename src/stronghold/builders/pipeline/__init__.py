@@ -32,19 +32,10 @@ MAX_LLM_RETRIES = 3
 
 # `## Builders Run \`(run|sched)-<hex>\`` — header comment that Mason
 # posts at the start of every run. The id prefix is `run-` for manual
-# /runs flow and `sched-` for scheduler-dispatched flow. Both must
-# match so _fetch_prior_runs sees scheduler-dispatched history.
-BUILDERS_RUN_PATTERN = re.compile(
-    r"##\s*Builders Run\s*`?((?:run|sched)-[a-f0-9]+)`?"
-)
-
-# `## Gatekeeper Verdict on PR #N` — comment that review_pr posts to
-# the parent issue when Gatekeeper approves or requests changes on a
-# Mason PR. _fetch_prior_runs picks these up so Mason can learn from
-# rejections on the next outer-loop attempt.
-GATEKEEPER_VERDICT_PATTERN = re.compile(
-    r"##\s*Gatekeeper Verdict on PR\s*#(\d+)",
-    re.IGNORECASE,
+# Re-export from extracted module for backward compat (tests import these)
+from stronghold.builders.pipeline.github_helpers import (  # noqa: E402
+    BUILDERS_RUN_PATTERN,
+    GATEKEEPER_VERDICT_PATTERN,
 )
 
 
@@ -492,152 +483,20 @@ class RuntimePipeline:
         return await self._workspace.git_command(command, workspace)
 
     async def _fetch_prior_runs(
-        self,
-        owner: str,
-        repo: str,
-        issue_number: int,
-        *,
-        exclude_run_id: str = "",
+        self, owner: str, repo: str, issue_number: int,
+        *, exclude_run_id: str = "",
     ) -> list[dict[str, str]]:
-        """Fetch prior Builders Run + Gatekeeper Verdict comments.
-
-        Returns a list of dicts with `run_id` and `summary` for each prior
-        signal Mason should learn from when re-running this issue:
-
-        1. Prior `## Builders Run` comments — ID can be either
-           `run-<hex>` (manual /runs flow) or `sched-<hex>` (scheduler-
-           dispatched flow). The previous version of this regex only
-           matched `run-`, so scheduler-dispatched runs were silently
-           invisible to Frank's prior-history lookup and the
-           "learn from prior failures" feedback loop never closed for
-           anything the scheduler picked up.
-
-        2. Prior `## Gatekeeper Verdict on PR #N` comments — these
-           carry the changes-requested feedback Mason needs to see on
-           the next outer loop. Without this, Mason would re-run the
-           same issue, produce the same broken PR, and Gatekeeper would
-           reject again forever. With this, Mason's analysis sees the
-           verdict in its prior-history block and can adjust.
-
-        Excludes the current run if exclude_run_id is set.
-        """
-        import json as _json
-
-        result = await self._td.execute(
-            "github",
-            {
-                "action": "list_issue_comments",
-                "owner": owner,
-                "repo": repo,
-                "issue_number": issue_number,
-            },
+        from stronghold.builders.pipeline.github_helpers import fetch_prior_runs
+        return await fetch_prior_runs(
+            self._td, owner, repo, issue_number, exclude_run_id=exclude_run_id,
         )
-        if result.startswith("Error:"):
-            return []
-
-        try:
-            comments = _json.loads(result)
-        except Exception:
-            return []
-        if not isinstance(comments, list):
-            return []
-
-        prior_runs: list[dict[str, str]] = []
-
-        for comment in comments:
-            if not isinstance(comment, dict):
-                continue
-            body = comment.get("body", "") or ""
-
-            # Builders Run header — accepts both manual and scheduler
-            # ID prefixes (see BUILDERS_RUN_PATTERN module docstring).
-            run_match = BUILDERS_RUN_PATTERN.search(body)
-            if run_match:
-                run_id = run_match.group(1)
-                if run_id == exclude_run_id:
-                    continue
-                prior_runs.append({"run_id": run_id, "summary": body})
-                continue
-
-            # Gatekeeper verdict — synthesize a stable id from the PR
-            # number AND the GitHub comment id so multiple verdicts on
-            # the same PR (e.g., three reject cycles) each get a unique
-            # entry in prior_runs instead of colliding on the same id.
-            gk_match = GATEKEEPER_VERDICT_PATTERN.search(body)
-            if gk_match:
-                pr_number = gk_match.group(1)
-                comment_id = comment.get("id", "x")
-                prior_runs.append(
-                    {
-                        "run_id": f"gatekeeper-pr{pr_number}-{comment_id}",
-                        "summary": body,
-                    }
-                )
-
-        return prior_runs
 
     async def _post_to_issue(
-        self,
-        owner: str,
-        repo: str,
-        issue_number: int,
-        body: str,
-        *,
-        run: Any = None,
+        self, owner: str, repo: str, issue_number: int, body: str,
+        *, run: Any = None,
     ) -> str:
-        """Post or update the single run comment on the issue.
-
-        First call creates the comment and stashes the ID on the run.
-        Subsequent calls edit the same comment, appending new content.
-        """
-        import json as _json
-
-        comment_id = getattr(run, "_comment_id", None) if run else None
-
-        if comment_id:
-            # Edit existing comment — append new section
-            old_body = getattr(run, "_comment_body", "")
-            new_body = old_body + "\n\n---\n\n" + body
-            # Trim if too long (GitHub limit ~65536)
-            if len(new_body) > 60000:
-                new_body = new_body[-60000:]
-            result = await self._td.execute(
-                "github",
-                {
-                    "action": "edit_comment",
-                    "owner": owner,
-                    "repo": repo,
-                    "comment_id": comment_id,
-                    "body": new_body,
-                },
-            )
-            if run:
-                run._comment_body = new_body
-            return result
-
-        # First call — create the comment
-        run_id = getattr(run, "run_id", "?") if run else "?"
-        header = f"## Builders Run `{run_id}`\n\n"
-        full_body = header + body
-        result = await self._td.execute(
-            "github",
-            {
-                "action": "post_pr_comment",
-                "owner": owner,
-                "repo": repo,
-                "issue_number": issue_number,
-                "body": full_body,
-            },
-        )
-        # Stash comment ID for future edits
-        if run and not result.startswith("Error:"):
-            try:
-                data = _json.loads(result)
-                run._comment_id = data.get("id")
-                run._comment_body = full_body
-            except Exception:
-                pass
-        return result
+        from stronghold.builders.pipeline.github_helpers import post_to_issue
+        return await post_to_issue(self._td, owner, repo, issue_number, body, run=run)
 
     # ── Stage 1: Issue Analysis ──────────────────────────────────────
 
