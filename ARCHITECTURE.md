@@ -476,7 +476,7 @@ class AuthProvider(Protocol):
 | Provider | Use Case | Claims |
 |----------|----------|--------|
 | Keycloak OIDC | Homelab, open-source default | realm_access.roles |
-| Entra ID | Enterprise (JedAI) | roles (app roles) |
+| Entra ID | Enterprise (Microsoft-shop customers) | roles (app roles) |
 | Static API key | Service-to-service, backward compat | Maps to system admin context |
 | OpenWebUI headers | Thin client passthrough | X-OpenWebUI-User-* headers |
 
@@ -601,8 +601,8 @@ Every external dependency behind a protocol interface. Implementations are swapp
 
 | Protocol | Methods | Current Impl | Swap Target |
 |----------|---------|-------------|-------------|
-| `ModelProxy` | complete(), stream(), list_models() | LiteLLM | Archestra, direct provider SDKs |
-| `ToolGateway` | list_tools(), call_tool(), register_*() | LiteLLM MCP gateway | Archestra, Kong, standalone |
+| `ModelProxy` | complete(), stream(), list_models() | LiteLLM | direct provider SDKs, alternative gateways |
+| `ToolGateway` | list_tools(), call_tool(), register_*() | LiteLLM MCP gateway | Kong, alternative MCP gateways, standalone |
 | `AuthProvider` | authenticate() | Keycloak, Entra ID | Any OIDC provider |
 | `PromptManager` | get(), get_with_config(), upsert() | PostgreSQL (stronghold.prompts) | Langfuse (legacy adapter) |
 | `TracingBackend` | create_trace() → Trace, Span | Arize Enterprise | Phoenix, PostgreSQL, noop |
