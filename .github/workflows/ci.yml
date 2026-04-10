@@ -73,6 +73,27 @@ jobs:
         if: steps.changed.outputs.files == ''
         run: echo "No Python files changed in this PR — skipping lint."
 
+      - name: Post failure report to PR
+        if: failure() && github.event_name == 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh pr comment ${{ github.event.pull_request.number }} --body "$(cat <<COMMENT
+          ## :warning: Lint & Type Check FAILED
+
+          **Job:** Lint & Type Check
+          **Run:** [${{ github.run_id }}](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})
+
+          Check which step failed:
+          - **Ruff check**: lint violation
+          - **Ruff format**: formatting issue (run \`ruff format\`)
+          - **Mypy strict**: type error
+          - **Bandit**: security pattern in changed files
+
+          **Action required:** Fix lint/type issues before this PR can merge.
+          COMMENT
+          )"
+
   security:
     name: Security Tests
     runs-on: [self-hosted, stronghold]
@@ -97,6 +118,24 @@ jobs:
         run: pytest tests/security/test_security_audit_2026_03_30.py tests/security/test_security_audit_round2.py tests/security/test_security_audit_round3.py tests/security/test_security_hardening.py tests/security/test_audit_regression.py -v --tb=short
       - name: "Schema validation + token optimization"
         run: pytest tests/security/test_schema_validation.py tests/security/test_schema_repair.py tests/security/test_token_optimization.py tests/security/test_flag_response.py -v --tb=short
+
+      - name: Post failure report to PR
+        if: failure() && github.event_name == 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh pr comment ${{ github.event.pull_request.number }} --body "$(cat <<COMMENT
+          ## :shield: Security Tests FAILED
+
+          **Job:** Security Tests
+          **Run:** [${{ github.run_id }}](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})
+
+          One or more security test categories failed. Check the run logs for details.
+          The failing step name indicates which category broke.
+
+          **Action required:** Fix the failing tests before this PR can merge.
+          COMMENT
+          )"
 
   sast:
     name: SAST & Supply Chain
@@ -226,6 +265,36 @@ jobs:
           fi
           echo "Lock file check complete."
 
+      - name: Post failure report to PR
+        if: failure() && github.event_name == 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh pr comment ${{ github.event.pull_request.number }} --body "$(cat <<COMMENT
+          ## :rotating_light: SAST & Supply Chain FAILED
+
+          **Job:** SAST & Supply Chain
+          **Run:** [${{ github.run_id }}](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})
+
+          Static analysis found issues. Check the failed step name for category:
+          - **Bandit**: code vulnerability (must fix)
+          - **pip-audit**: dependency CVE (update package)
+          - **Secret detection**: hardcoded credential (must remove)
+          - **Unsafe deserialization**: pickle/yaml.load (must fix)
+          - **SQL injection**: f-string SQL (must use parameterized)
+          - **innerHTML/XSS**: DOM injection risk (review)
+          - **SSRF**: unvalidated URL (review)
+          - **Privileged container**: docker-compose (must fix)
+          - **Weak crypto**: MD5/SHA1/HS256 (review)
+          - **eval/exec**: dynamic code execution (must fix)
+          - **CDN SRI**: missing integrity hash (review)
+          - **Auth routes**: unauthenticated static mount (review)
+          - **Lock file**: missing requirements.txt (add)
+
+          **Action required:** Fix blocking issues (marked "must fix") before merge.
+          COMMENT
+          )"
+
   test:
     name: Tests
     runs-on: [self-hosted, stronghold]
@@ -308,3 +377,20 @@ jobs:
         with:
           name: coverage-report
           path: coverage.xml
+
+      - name: Post failure report to PR
+        if: failure() && github.event_name == 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh pr comment ${{ github.event.pull_request.number }} --body "$(cat <<COMMENT
+          ## :x: Tests FAILED
+
+          **Job:** Tests
+          **Run:** [${{ github.run_id }}](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})
+
+          The test suite failed. Check the run logs for the specific test failures.
+
+          **Action required:** Fix failing tests before this PR can merge.
+          COMMENT
+          )"
