@@ -19,7 +19,7 @@ name: CI
 #   📦 pip-audit — dependency CVEs (BLOCKING)
 #   📜 pip-licenses — copyleft guard
 #   🧪 Trivy — container image CVE scan
-#   🧠 LLM Review — Gemini 2.5 Pro code smell analysis
+#   🧠 LLM Review — DeepSeek v3.2 code smell analysis
 #   📊 Xenon — cyclomatic complexity
 #   🧟 Vulture — dead code
 #   📖 Interrogate — docstring coverage
@@ -414,7 +414,7 @@ jobs:
 
   # ── LLM Code Review ─────────────────────────────────────────────────
   llm-review:
-    name: "🧠 LLM Review — Gemini 2.5 Pro code smell analysis"
+    name: "🧠 LLM Review — DeepSeek v3.2 code smell analysis"
     runs-on: [self-hosted, stronghold]
     needs: lint
     if: github.event_name == 'pull_request'
@@ -427,7 +427,7 @@ jobs:
         env:
           LITELLM_URL: http://localhost:4000
           LITELLM_MASTER_KEY: ${{ secrets.LITELLM_MASTER_KEY }}
-          REVIEW_MODEL: gemini-2.5-pro
+          REVIEW_MODEL: sambanova-deepseek-v3.2
           PR_NUMBER: ${{ github.event.pull_request.number }}
           GITHUB_TOKEN: ${{ github.token }}
         run: |

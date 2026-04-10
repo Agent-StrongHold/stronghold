@@ -17,7 +17,7 @@ Exit codes:
 Environment:
     LITELLM_URL          LiteLLM proxy URL (default: http://localhost:4000)
     LITELLM_MASTER_KEY   LiteLLM master key
-    REVIEW_MODEL         Model to use (default: gemini-2.5-pro)
+    REVIEW_MODEL         Model to use (default: sambanova-deepseek-v3.2)
     GITHUB_TOKEN         For posting PR comments (optional)
     PR_NUMBER            PR number (optional; posts comment if set)
 """
@@ -33,7 +33,7 @@ from typing import Any
 
 LITELLM_URL = os.environ.get("LITELLM_URL", "http://localhost:4000")
 LITELLM_KEY = os.environ.get("LITELLM_MASTER_KEY", "sk-ci-test-key-minimum-32-characters")
-REVIEW_MODEL = os.environ.get("REVIEW_MODEL", "gemini-2.5-pro")
+REVIEW_MODEL = os.environ.get("REVIEW_MODEL", "sambanova-deepseek-v3.2")
 MAX_DIFF_BYTES = 80_000  # ~20k tokens; above this we summarize per file
 
 REVIEW_SYSTEM_PROMPT = """\
