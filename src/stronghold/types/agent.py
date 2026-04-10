@@ -36,6 +36,7 @@ class AgentIdentity:
     reasoning_strategy: str = "direct"
     memory_config: dict[str, Any] = field(default_factory=dict)
     phases: tuple[dict[str, Any], ...] = ()
+    priority_tier: str = "P2"  # P0..P5 per ADR-K8S-014
     org_id: str = ""
 
     # Trust & review tracking

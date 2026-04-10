@@ -150,6 +150,7 @@ def _build_identity_from_manifest(manifest: dict[str, Any]) -> AgentIdentity:
         reasoning_strategy=reasoning.get("strategy", "direct"),
         memory_config=manifest.get("memory", {}),
         phases=tuple(reasoning.get("phases", ())),
+        priority_tier=manifest.get("priority_tier", "P2"),
     )
 
 
@@ -170,6 +171,7 @@ def _build_identity_from_record(record: Any) -> AgentIdentity:
         max_tool_rounds=record.max_tool_rounds,
         reasoning_strategy=record.reasoning_strategy,
         memory_config=record.memory_config or {},
+        priority_tier=getattr(record, "priority_tier", "P2"),
     )
 
 
