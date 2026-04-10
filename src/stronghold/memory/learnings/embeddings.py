@@ -86,10 +86,13 @@ class FakeEmbeddingClient:
         import hashlib
 
         digest = hashlib.md5(text.encode("utf-8")).digest()
-        # Pull bits from the digest deterministically. Add 1 to each
-        # output value so we never produce a strict-all-zero vector
-        # even in the (impossible) case where every selected bit is 0.
-        return [float(((digest[i % len(digest)] >> (i % 8)) & 1) + 0.001) for i in range(self._dimension)]
+        # Pull bits from the digest deterministically. The +0.001
+        # ensures the vector is never strict-all-zero (which would
+        # trip the noop-client check in find_relevant).
+        return [
+            float(((digest[i % len(digest)] >> (i % 8)) & 1) + 0.001)
+            for i in range(self._dimension)
+        ]
 
     async def embed_batch(self, texts: list[str]) -> list[list[float]]:
         return [await self.embed(t) for t in texts]
