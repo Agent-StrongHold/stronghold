@@ -501,189 +501,35 @@ class RuntimePipeline:
     # ── Stage 1: Issue Analysis ──────────────────────────────────────
 
     async def analyze_issue(self, run: Any, feedback: str = "") -> StageResult:
-        """Frank analyzes the issue. Runtime reads repo context, LLM produces analysis."""
-        owner, repo = run.repo.split("/")
-        ws = getattr(run, "_workspace_path", "")
-        issue_content = getattr(run, "_issue_content", "")
-        issue_title = getattr(run, "_issue_title", "")
-
-        # Runtime reads repo structure — give Frank visibility into the codebase
-        file_listing = await self._list_files("src/", ws)
-        test_listing = await self._list_files("tests/", ws)
-        dashboard_listing = await self._list_files("src/stronghold/dashboard/", ws)
-        architecture = await self._read_file("ARCHITECTURE.md", ws)
-        architecture_excerpt = architecture[:3000] if architecture else "(not found)"
-
-        # Store listings on run so later stages can use them
-        run._file_listing = file_listing
-        run._dashboard_listing = dashboard_listing
-
-        # Read prior run history from issue comments
-        prior_runs = await self._fetch_prior_runs(
-            owner, repo, run.issue_number, exclude_run_id=run.run_id,
+        from stronghold.builders.pipeline.stages.analyze import run_analyze_issue
+        from stronghold.builders.pipeline.github_helpers import (
+            extract_files_from_issue_body,
+            fetch_prior_runs,
         )
-
-        feedback_block = ""
-        if feedback:
-            feedback_block = f"Previous analysis rejected. Fix:\n{feedback}"
-
-        if prior_runs:
-            feedback_block += (
-                f"\n\n## Prior Run History\n\n"
-                f"This issue has been attempted {len(prior_runs)} time(s) before. "
-                f"Learn from prior failures:\n\n"
-            )
-            for pr in prior_runs[-5:]:  # Last 5 runs
-                feedback_block += f"### {pr['run_id']}\n{pr['summary'][:500]}\n\n"
-
-        template = await self._get_prompt("builders.frank.analyze_issue")
-        prompt = self._render(
-            template,
-            issue_number=str(run.issue_number),
-            issue_title=issue_title,
-            issue_content=issue_content,
-            file_listing=file_listing,
-            dashboard_listing=dashboard_listing,
-            test_listing=test_listing,
-            architecture_excerpt=architecture_excerpt,
-            feedback_block=feedback_block,
-        )
-
-        analysis = await self._llm_extract(
-            prompt, self._frank_model, extract_json, "issue analysis",
-        )
-
-        # Source-of-truth merge: if the issue body has an explicit
-        # '## Files' section (Quartermaster decompositions and well-
-        # formed human sub-issues do), trust those over Frank's LLM
-        # guess. The LLM tends to hallucinate plausible-but-wrong
-        # paths for "create new module" issues, picking an existing
-        # file that *sounds* related instead of the actual new module
-        # the issue body asks for. Files declared in the body are
-        # preferred; LLM-suggested files are appended if they don't
-        # collide.
-        body_files = self._extract_files_from_issue_body(issue_content)
-        if body_files:
-            llm_files = analysis.get("affected_files", []) or []
-            merged: list[str] = list(body_files)
-            for f in llm_files:
-                if f and f not in merged:
-                    merged.append(f)
-            analysis["affected_files"] = merged
-            analysis["affected_files_source"] = "issue_body" if not llm_files else "issue_body+llm"
-        else:
-            analysis.setdefault("affected_files_source", "llm")
-
-        # Post to issue
-        summary = (
-            f"## Issue Analysis\n\n"
-            f"**Problem:** {analysis.get('problem', '')}\n\n"
-            f"**Requirements:**\n"
-            + "\n".join(f"- {r}" for r in analysis.get("requirements", []))
-            + "\n\n**Edge Cases:**\n"
-            + "\n".join(f"- {e}" for e in analysis.get("edge_cases", []))
-            + f"\n\n**Affected Files** (source: {analysis.get('affected_files_source', 'llm')}):"
-            f" {', '.join(analysis.get('affected_files', []))}\n\n"
-            f"**Approach:** {analysis.get('approach', '')}\n"
-        )
-
-        await self._post_to_issue(owner, repo, run.issue_number, summary, run=run)
-
-        return StageResult(
-            success=True,
-            summary=summary,
-            evidence={"analysis": analysis},
-            artifacts={"analysis": analysis},
+        return await run_analyze_issue(
+            run,
+            workspace=self._workspace,
+            prompt_lib=self._prompt_lib,
+            llm_extract=self._llm_extract,
+            fetch_prior_runs=lambda o, r, i, **kw: fetch_prior_runs(self._td, o, r, i, **kw),
+            post_to_issue=self._post_to_issue,
+            extract_files_from_body=extract_files_from_issue_body,
+            frank_model=self._frank_model,
+            feedback=feedback,
         )
 
     # ── Stage 2: Acceptance Criteria ─────────────────────────────────
 
     async def define_acceptance_criteria(self, run: Any, feedback: str = "") -> StageResult:
-        """Frank writes Gherkin acceptance criteria."""
-        owner, repo = run.repo.split("/")
-        issue_content = getattr(run, "_issue_content", "")
-        issue_title = getattr(run, "_issue_title", "")
-
-        # Get analysis from prior stage artifacts
-        analysis = {}
-        for artifact in run.artifacts:
-            if artifact.type == "issue_analyzed_output":
-                analysis = getattr(run, "_analysis", {})
-                break
-
-        requirements = analysis.get("requirements", [issue_content])
-        edge_cases = analysis.get("edge_cases", [])
-
-        # Check for locked criteria from a previous outer loop pass
-        locked = getattr(run, "_locked_criteria", set())
-        old_criteria = getattr(run, "_criteria", [])
-
-        feedback_block = ""
-        if feedback:
-            feedback_block = f"Previous criteria rejected. Fix:\n{feedback}"
-
-        # Add issue-type-aware testing constraints
-        issue_type = self._detect_issue_type(run)
-        if issue_type.name == "ui_dashboard":
-            feedback_block += (
-                "\n\nTESTING CONSTRAINT: These criteria will be tested by "
-                "reading the HTML file with Python and checking for string "
-                "patterns. There is NO browser, NO JavaScript execution. "
-                "Criteria MUST be statically verifiable:\n"
-                "- GOOD: 'HTML contains a script that references "
-                "window.location.pathname'\n"
-                "- GOOD: 'HTML contains the class border-emerald-500'\n"
-                "- BAD: 'Non-active items should NOT have active "
-                "classes' (cannot test without a browser)\n"
-                "- BAD: 'Click on nav item and verify it becomes "
-                "active' (no browser available)\n"
-            )
-
-        if locked and old_criteria:
-            locked_info = "\n".join(
-                f"- Criterion {i + 1}: {'LOCKED (tests pass — do NOT change)' if i in locked else 'FAILED — must be rewritten'}: {c[:80]}"
-                for i, c in enumerate(old_criteria)
-            )
-            feedback_block += (
-                f"\n\nPREVIOUS ATTEMPT RESULTS:\n{locked_info}\n\n"
-                f"Keep the locked criteria EXACTLY as they are. "
-                f"Only rewrite the FAILED criteria. "
-                f"Return ALL criteria (locked + rewritten) in order.\n"
-            )
-
-        template = await self._get_prompt("builders.frank.acceptance_criteria")
-        prompt = self._render(
-            template,
-            issue_number=str(run.issue_number),
-            issue_title=issue_title,
-            requirements="\n".join(f"- {r}" for r in requirements),
-            edge_cases="\n".join(f"- {e}" for e in edge_cases),
-            feedback_block=feedback_block,
-        )
-
-        scenarios = await self._llm_extract(
-            prompt, self._frank_model, extract_gherkin_scenarios, "Gherkin scenarios",
-        )
-
-        # Post to issue
-        scenarios_text = "\n\n".join(scenarios)
-        summary = (
-            f"## Acceptance Criteria\n\n"
-            f"```gherkin\n{scenarios_text}\n```\n\n"
-            f"**Total scenarios:** {len(scenarios)}\n"
-        )
-
-        await self._post_to_issue(owner, repo, run.issue_number, summary, run=run)
-
-        # Stash for next stage
-        run._criteria = scenarios
-        run._analysis = analysis
-
-        return StageResult(
-            success=True,
-            summary=summary,
-            evidence={"scenario_count": len(scenarios), "scenarios": scenarios},
-            artifacts={"criteria": scenarios},
+        from stronghold.builders.pipeline.stages.acceptance import run_define_acceptance
+        return await run_define_acceptance(
+            run,
+            prompt_lib=self._prompt_lib,
+            llm_extract=self._llm_extract,
+            detect_issue_type=self._detect_issue_type,
+            post_to_issue=self._post_to_issue,
+            frank_model=self._frank_model,
+            feedback=feedback,
         )
 
     # ── Stage 3+4: One-at-a-time TDD ───────────────────────────────
@@ -1296,36 +1142,13 @@ class RuntimePipeline:
     # ── Stage 6: Final Verification ──────────────────────────────────
 
     async def final_verification(self, run: Any, feedback: str = "") -> StageResult:
-        """Final check — run issue's tests, verify commits exist."""
-        owner, repo = run.repo.split("/")
-        ws = getattr(run, "_workspace_path", "")
-
-        # Final pytest run — scoped to this issue's tests only (not full repo)
-        test_file = f"tests/api/test_issue_{run.issue_number}.py"
-        pytest_output = await self._run_pytest(ws, test_file)
-
-        # Git log to confirm commits
-        git_log = await self._git_command("log --oneline -10", ws)
-
-        # Diff against main
-        git_diff_stat = await self._git_command("diff main --stat", ws)
-
-        summary = (
-            f"## Final Verification\n\n"
-            f"**Pytest:**\n```\n{pytest_output[:1500]}\n```\n\n"
-            f"**Git log:**\n```\n{git_log}\n```\n\n"
-            f"**Changes vs main:**\n```\n{git_diff_stat}\n```\n"
-        )
-        await self._post_to_issue(owner, repo, run.issue_number, summary, run=run)
-
-        return StageResult(
-            success=True,
-            summary=summary,
-            evidence={
-                "pytest_output": pytest_output[:3000],
-                "git_log": git_log,
-                "diff_stat": git_diff_stat,
-            },
+        from stronghold.builders.pipeline.stages.final_verification import run_final_verification
+        return await run_final_verification(
+            run,
+            pytest_runner=self._pytest_runner,
+            workspace=self._workspace,
+            post_to_issue=self._post_to_issue,
+            feedback=feedback,
         )
 
     # ── UI Pipeline Methods (Piper + Glazier) ─────────────────────
