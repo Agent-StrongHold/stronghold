@@ -296,23 +296,21 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install pip-audit + project deps (pinned)
-        # Install pip-audit first, then project deps (but NOT stronghold
-        # itself as editable — pip-audit can't audit a distribution marked
-        # as editable and not published to PyPI). Use `--no-deps` on
-        # pip-audit then `pip install .` (regular wheel build) so stronghold
-        # is present as a normal distribution and its transitive deps get
-        # audited.
+      - name: Install pip-audit (pinned)
+        # Don't install the project into the venv — pip-audit can audit a
+        # pyproject.toml directly via its positional project_path argument.
+        # This avoids the "stronghold: Dependency not found on PyPI" error
+        # that we get when stronghold is present in `--local` discovery.
         run: |
           python3 -m venv /tmp/audit-venv
           /tmp/audit-venv/bin/pip install "pip-audit==${PIP_AUDIT_VERSION}"
-          /tmp/audit-venv/bin/pip install .
 
       - name: Audit dependencies (strict, blocking)
-        # `--desc` takes an optional value from {on,off,auto}; a bare `.` was
-        # consumed as the desc value and rejected. Use `--desc on` + `--local`
-        # to audit the venv, and `--ignore-vuln` the project self-reference.
-        run: /tmp/audit-venv/bin/pip-audit --strict --desc on --local
+        # `pip-audit .` audits the deps declared in pyproject.toml directly.
+        # `--desc on` shows vulnerability descriptions in output.
+        # `--strict` fails on any dependency collection error.
+        # Order: `--desc on` must precede `.` or `.` gets consumed as its value.
+        run: /tmp/audit-venv/bin/pip-audit --strict --desc on .
 
   pip-licenses:
     name: "📜 pip-licenses — copyleft guard (no GPL/AGPL/LGPL)"
