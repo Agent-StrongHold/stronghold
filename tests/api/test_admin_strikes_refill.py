@@ -180,3 +180,210 @@ def test_convert_non_integer_float(client: TestClient) -> None:
     assert resp.status_code == 400
     # Must be a clean error, not 500
     assert resp.status_code != 500
+
+
+# ── /admin/coins/convert full happy path ────────────────────────────
+
+
+def test_convert_no_daily_wallet(app: FastAPI) -> None:
+    """When wallets exist but no copper wallet, returns 404."""
+    from fastapi.testclient import TestClient
+    fake_pool = MagicMock()
+    async def fake_acquire():
+        class Ctx:
+            async def __aenter__(self): return MagicMock()
+            async def __aexit__(self, *a): return None
+        return Ctx()
+    fake_pool.acquire = lambda: Ctx()  # type: ignore[method-assign,assignment]
+
+    class Ctx:
+        async def __aenter__(self):
+            c = MagicMock()
+            c.execute = AsyncMock()
+            c.transaction = lambda: TxnCtx()
+            return c
+        async def __aexit__(self, *a): return None
+
+    class TxnCtx:
+        async def __aenter__(self): return None
+        async def __aexit__(self, *a): return None
+
+    app.state.container.db_pool = MagicMock()
+    app.state.container.db_pool.acquire = lambda: Ctx()
+    app.state.container.coin_ledger = MagicMock()
+    app.state.container.coin_ledger.get_banking_rate = AsyncMock(return_value=40)
+    app.state.container.coin_ledger.list_wallets = AsyncMock(return_value=[])
+
+    client = TestClient(app)
+    resp = client.post(
+        "/v1/stronghold/admin/coins/convert",
+        headers=AUTH, json={"copper_amount": 10},
+    )
+    assert resp.status_code == 404
+    assert "No daily wallet" in resp.json()["detail"]
+
+
+def test_convert_insufficient_balance(app: FastAPI) -> None:
+    """Balance below requested amount returns 400 with diagnostic."""
+    from fastapi.testclient import TestClient
+
+    class Ctx:
+        async def __aenter__(self):
+            c = MagicMock()
+            c.execute = AsyncMock()
+            c.transaction = lambda: TxnCtx()
+            return c
+        async def __aexit__(self, *a): return None
+
+    class TxnCtx:
+        async def __aenter__(self): return None
+        async def __aexit__(self, *a): return None
+
+    app.state.container.db_pool = MagicMock()
+    app.state.container.db_pool.acquire = lambda: Ctx()
+    app.state.container.coin_ledger = MagicMock()
+    app.state.container.coin_ledger.get_banking_rate = AsyncMock(return_value=40)
+    app.state.container.coin_ledger.list_wallets = AsyncMock(return_value=[
+        {
+            "id": 1, "denomination": "copper",
+            "remaining_microchips": 5000,  # 5 copper — less than the 10 requested
+        },
+    ])
+
+    client = TestClient(app)
+    resp = client.post(
+        "/v1/stronghold/admin/coins/convert",
+        headers=AUTH, json={"copper_amount": 10},
+    )
+    assert resp.status_code == 400
+    assert "Insufficient" in resp.json()["detail"]
+
+
+def test_convert_success_with_existing_silver_wallet(app: FastAPI) -> None:
+    """Full happy path with pre-existing silver wallet."""
+    from fastapi.testclient import TestClient
+
+    execute_calls = []
+
+    class Ctx:
+        async def __aenter__(self):
+            c = MagicMock()
+            async def exec_(sql, *args):
+                execute_calls.append((sql, args))
+            c.execute = AsyncMock(side_effect=exec_)
+            c.transaction = lambda: TxnCtx()
+            return c
+        async def __aexit__(self, *a): return None
+
+    class TxnCtx:
+        async def __aenter__(self): return None
+        async def __aexit__(self, *a): return None
+
+    app.state.container.db_pool = MagicMock()
+    app.state.container.db_pool.acquire = lambda: Ctx()
+    app.state.container.coin_ledger = MagicMock()
+    app.state.container.coin_ledger.get_banking_rate = AsyncMock(return_value=40)
+    app.state.container.coin_ledger.list_wallets = AsyncMock(return_value=[
+        {"id": 1, "denomination": "copper", "remaining_microchips": 100_000},
+        {"id": 2, "denomination": "silver", "remaining_microchips": 0},
+    ])
+
+    client = TestClient(app)
+    resp = client.post(
+        "/v1/stronghold/admin/coins/convert",
+        headers=AUTH, json={"copper_amount": 10},
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["copper_amount"] == 10
+    assert data["banking_rate_pct"] == 40
+    assert data["convert_id"].startswith("convert-")
+    # Two INSERT statements should have run (debit + credit)
+    assert len(execute_calls) == 2
+
+
+def test_convert_auto_creates_silver_wallet(app: FastAPI) -> None:
+    """If no silver wallet exists, one is auto-created."""
+    from fastapi.testclient import TestClient
+
+    class Ctx:
+        async def __aenter__(self):
+            c = MagicMock()
+            c.execute = AsyncMock()
+            c.transaction = lambda: TxnCtx()
+            return c
+        async def __aexit__(self, *a): return None
+
+    class TxnCtx:
+        async def __aenter__(self): return None
+        async def __aexit__(self, *a): return None
+
+    upsert_calls = []
+    async def fake_upsert(**kwargs):
+        upsert_calls.append(kwargs)
+        return {"id": 2, "denomination": "silver", "remaining_microchips": 0}
+
+    app.state.container.db_pool = MagicMock()
+    app.state.container.db_pool.acquire = lambda: Ctx()
+    app.state.container.coin_ledger = MagicMock()
+    app.state.container.coin_ledger.get_banking_rate = AsyncMock(return_value=50)
+    app.state.container.coin_ledger.list_wallets = AsyncMock(return_value=[
+        {"id": 1, "denomination": "copper", "remaining_microchips": 100_000},
+        # No silver wallet
+    ])
+    app.state.container.coin_ledger.upsert_wallet = AsyncMock(side_effect=fake_upsert)
+
+    client = TestClient(app)
+    resp = client.post(
+        "/v1/stronghold/admin/coins/convert",
+        headers=AUTH, json={"copper_amount": 10},
+    )
+    assert resp.status_code == 200
+    assert len(upsert_calls) == 1
+    assert upsert_calls[0]["denomination"] == "silver"
+    assert upsert_calls[0]["label"] == "Silver Exchange"
+
+
+# ── /admin/coins/refill happy path ──────────────────────────────────
+
+
+def test_refill_no_db(app: FastAPI) -> None:
+    """With no db_pool, spent_today defaults to 0."""
+    from fastapi.testclient import TestClient
+
+    # Need a coin_ledger that returns a banking rate
+    app.state.container.db_pool = None
+    app.state.container.coin_ledger = MagicMock()
+    app.state.container.coin_ledger.get_banking_rate = AsyncMock(return_value=40)
+
+    client = TestClient(app)
+    resp = client.get("/v1/stronghold/admin/coins/refill", headers=AUTH)
+    # Should succeed even without db_pool
+    assert resp.status_code == 200
+    data = resp.json()
+    assert "daily_allowance" in data
+    assert "banking_rate_pct" in data
+    assert data["banking_rate_pct"] == 40
+
+
+def test_refill_with_db_pool(app: FastAPI) -> None:
+    """With db_pool, query returns spent_today."""
+    from fastapi.testclient import TestClient
+
+    class Ctx:
+        async def __aenter__(self):
+            c = MagicMock()
+            c.fetchval = AsyncMock(return_value=12_000)  # 12 copper spent
+            return c
+        async def __aexit__(self, *a): return None
+
+    app.state.container.db_pool = MagicMock()
+    app.state.container.db_pool.acquire = lambda: Ctx()
+    app.state.container.coin_ledger = MagicMock()
+    app.state.container.coin_ledger.get_banking_rate = AsyncMock(return_value=40)
+
+    client = TestClient(app)
+    resp = client.get("/v1/stronghold/admin/coins/refill", headers=AUTH)
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["spent_today"]["microchips"] == 12_000
