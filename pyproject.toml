@@ -85,7 +85,18 @@ markers = [
 
 [tool.coverage.run]
 source = ["stronghold"]
-omit = ["src/stronghold/persistence/pg_*.py"]
+omit = [
+  # Postgres persistence uses asyncpg + live schemas; tested via e2e, not unit.
+  "src/stronghold/persistence/pg_*.py",
+  # Protocol definitions: typing.Protocol interface declarations whose method
+  # bodies are `...` / signature stubs and never execute. Concrete impls have
+  # their own coverage. Including these files inflates the miss count with
+  # ~180 lines of unreachable type-check-only declarations.
+  "src/stronghold/protocols/*.py",
+  # CLI entry point: `asyncio.run(main())` wrapper for the worker pod. Tested
+  # by launching the worker in integration, not by pytest. No business logic.
+  "src/stronghold/worker_main.py",
+]
 
 [tool.coverage.report]
 fail_under = 95
