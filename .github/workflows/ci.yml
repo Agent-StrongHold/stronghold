@@ -171,8 +171,8 @@ jobs:
             echo "::error::AWS access key found in source code"
             FOUND=1
           fi
-          # Private keys
-          if grep -rn --include='*.py' 'BEGIN.*PRIVATE KEY' src/stronghold/; then
+          # Private keys (skip regex patterns, type hints, and string literals that are obviously detection patterns)
+          if grep -rn --include='*.py' 'BEGIN.*PRIVATE KEY' src/stronghold/ | grep -v 're.compile\|Pattern\[\|# detection-pattern'; then
             echo "::error::Private key found in source code"
             FOUND=1
           fi
@@ -307,13 +307,16 @@ jobs:
           POSTGRES_USER: stronghold
           POSTGRES_PASSWORD: stronghold
           POSTGRES_DB: stronghold
+          # Use TCP-only — avoid Unix socket permission issues on self-hosted runner
+          PGHOST: ""
         ports:
           - 5433:5432
         options: >-
-          --health-cmd "pg_isready -U stronghold"
+          --health-cmd "pg_isready -U stronghold -h 127.0.0.1"
           --health-interval 5s
-          --health-timeout 5s
-          --health-retries 10
+          --health-timeout 10s
+          --health-retries 15
+          --tmpfs /var/run/postgresql:rw,uid=999,gid=999
 
     env:
       DATABASE_URL: postgresql://stronghold:stronghold@localhost:5433/stronghold
