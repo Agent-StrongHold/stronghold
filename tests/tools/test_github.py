@@ -221,3 +221,221 @@ class TestAuthHeaders:
         })
         auth = route.calls[0].request.headers.get("authorization")
         assert auth == "Bearer ghp_test123"
+
+
+class TestExecutorName:
+    """The ToolExecutor protocol's .name property."""
+
+    def test_name_is_github(self) -> None:
+        assert GitHubToolExecutor(token="t").name == "github"
+
+
+class TestExceptionWrapping:
+    """The try/except wrapper around handler calls in execute()."""
+
+    @respx.mock
+    async def test_http_failure_surfaces_as_tool_result_error(self) -> None:
+        """A 500 from raise_for_status propagates to the except handler
+        which wraps it as ToolResult(success=False, error=...)."""
+        respx.get("https://api.github.com/repos/org/repo/issues/42").mock(
+            return_value=httpx.Response(500, json={"message": "internal"})
+        )
+        executor = GitHubToolExecutor(token="t")
+        result = await executor.execute(
+            {
+                "action": "get_issue",
+                "owner": "org",
+                "repo": "repo",
+                "issue_number": 42,
+            }
+        )
+        assert result.success is False
+        assert result.error  # non-empty — stringified HTTPStatusError
+
+
+class TestListIssuesPagination:
+    """Pagination continuation — the page += 1 branch."""
+
+    @respx.mock
+    async def test_follows_pagination_until_short_page(self) -> None:
+        """Two full pages + a short third page must trigger page 2
+        and stop on page 3 (where len(batch) < per_page)."""
+        full = [
+            {
+                "number": i,
+                "title": f"Issue {i}",
+                "state": "open",
+                "labels": [],
+                "assignee": None,
+            }
+            for i in range(1, 101)  # exactly per_page = 100
+        ]
+        tail = [
+            {
+                "number": 101,
+                "title": "Last",
+                "state": "open",
+                "labels": [],
+                "assignee": None,
+            }
+        ]
+
+        route = respx.get("https://api.github.com/repos/org/repo/issues").mock(
+            side_effect=[
+                httpx.Response(200, json=full),
+                httpx.Response(200, json=tail),
+            ]
+        )
+        executor = GitHubToolExecutor(token="t")
+        result = await executor.execute(
+            {
+                "action": "list_issues",
+                "owner": "org",
+                "repo": "repo",
+                "per_page": 100,
+                "max_pages": 3,
+            }
+        )
+        assert result.success is True
+        data = json.loads(result.content)
+        assert len(data) == 101
+        assert route.call_count == 2
+
+
+class TestGetPrDiff:
+    """_get_pr_diff — fetches PR diff via accept: vnd.github.diff."""
+
+    @respx.mock
+    async def test_returns_diff_text(self) -> None:
+        diff_text = "diff --git a/x.py b/x.py\n@@ -1 +1 @@\n-a\n+b\n"
+        route = respx.get(
+            "https://api.github.com/repos/org/repo/pulls/77"
+        ).mock(return_value=httpx.Response(200, text=diff_text))
+        executor = GitHubToolExecutor(token="t")
+        result = await executor.execute(
+            {
+                "action": "get_pr_diff",
+                "owner": "org",
+                "repo": "repo",
+                "issue_number": 77,
+            }
+        )
+        assert result.success is True
+        data = json.loads(result.content)
+        assert data["diff"] == diff_text
+        accept = route.calls[0].request.headers.get("accept")
+        assert "vnd.github.diff" in accept
+
+
+class TestListPrComments:
+    """_list_pr_comments — fetch + flatten comment list."""
+
+    @respx.mock
+    async def test_returns_comments_flattened(self) -> None:
+        respx.get(
+            "https://api.github.com/repos/org/repo/issues/42/comments"
+        ).mock(
+            return_value=httpx.Response(
+                200,
+                json=[
+                    {
+                        "id": 1,
+                        "user": {"login": "alice"},
+                        "body": "looks good",
+                        "created_at": "2026-01-01T00:00:00Z",
+                    },
+                    {
+                        "id": 2,
+                        "user": {"login": "bob"},
+                        "body": "ship it",
+                        "created_at": "2026-01-02T00:00:00Z",
+                    },
+                ],
+            )
+        )
+        executor = GitHubToolExecutor(token="t")
+        result = await executor.execute(
+            {
+                "action": "list_pr_comments",
+                "owner": "org",
+                "repo": "repo",
+                "issue_number": 42,
+            }
+        )
+        assert result.success is True
+        data = json.loads(result.content)
+        assert len(data) == 2
+        assert data[0] == {
+            "id": 1,
+            "user": "alice",
+            "body": "looks good",
+            "created_at": "2026-01-01T00:00:00Z",
+        }
+        assert data[1]["user"] == "bob"
+
+
+class TestCreateIssue:
+    """_create_issue — POST to /issues with optional labels."""
+
+    @respx.mock
+    async def test_creates_issue_with_labels(self) -> None:
+        route = respx.post(
+            "https://api.github.com/repos/org/repo/issues"
+        ).mock(
+            return_value=httpx.Response(
+                201,
+                json={
+                    "number": 999,
+                    "html_url": "https://github.com/org/repo/issues/999",
+                    "state": "open",
+                },
+            )
+        )
+        executor = GitHubToolExecutor(token="t")
+        result = await executor.execute(
+            {
+                "action": "create_issue",
+                "owner": "org",
+                "repo": "repo",
+                "title": "Fix thing",
+                "body": "detailed body",
+                "labels": ["bug", "good first issue"],
+            }
+        )
+        assert result.success is True
+        data = json.loads(result.content)
+        assert data["number"] == 999
+        assert data["url"].endswith("/999")
+        assert data["state"] == "open"
+        # Verify the labels were forwarded
+        sent = json.loads(route.calls[0].request.content)
+        assert sent["labels"] == ["bug", "good first issue"]
+
+    @respx.mock
+    async def test_creates_issue_without_labels(self) -> None:
+        """Labels is optional — when omitted, the JSON body has no 'labels' key."""
+        route = respx.post(
+            "https://api.github.com/repos/org/repo/issues"
+        ).mock(
+            return_value=httpx.Response(
+                201,
+                json={
+                    "number": 1000,
+                    "html_url": "https://github.com/org/repo/issues/1000",
+                    "state": "open",
+                },
+            )
+        )
+        executor = GitHubToolExecutor(token="t")
+        result = await executor.execute(
+            {
+                "action": "create_issue",
+                "owner": "org",
+                "repo": "repo",
+                "title": "No labels",
+                "body": "",
+            }
+        )
+        assert result.success is True
+        sent = json.loads(route.calls[0].request.content)
+        assert "labels" not in sent
