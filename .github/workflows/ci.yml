@@ -418,7 +418,9 @@ jobs:
           /tmp/vulture-venv/bin/pip install "vulture==${VULTURE_VERSION}"
 
       - name: Scan for dead code (>=80% confidence)
-        run: /tmp/vulture-venv/bin/vulture src/stronghold/ --min-confidence 80
+        # The whitelist file covers Protocol stub params and PEP 343 __exit__
+        # args which vulture can't understand (see #1035).
+        run: /tmp/vulture-venv/bin/vulture src/stronghold/ .vulture_whitelist.py --min-confidence 80
 
   interrogate:
     name: "📖 Interrogate — docstring coverage (≥70%)"

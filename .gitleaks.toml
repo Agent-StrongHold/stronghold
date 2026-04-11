@@ -13,6 +13,12 @@ paths = [
     '''.claude/''',
     '''_archive/''',
     '''\.md$''',
+    # Adversarial test fixtures: dashboard security scanner docs and
+    # marketplace connector scan examples. These files contain intentional
+    # fake API keys and prompt injection strings to document what attacks
+    # look like. Flagging them creates churn every time we extend the docs.
+    '''src/stronghold/dashboard/scan-report\.js''',
+    '''src/stronghold/skills/connectors\.py''',
 ]
 regexes = [
     '''sk-example-[a-zA-Z0-9-]+''',
@@ -21,10 +27,16 @@ regexes = [
     '''ghp_example[a-zA-Z0-9]*''',
     '''ANTHROPIC_API_KEY=sk-ant-api03-''',
     '''# pragma: allowlist secret''',
+    # Dashboard doc examples: "REAL_KEY_HERE" and similar obviously-fake
+    # placeholders used in security scanner documentation.
+    '''sk-proj-REAL[A-Za-z0-9_-]*''',
+    '''ghp_1234567890abcdef[a-z]*''',
 ]
 stopwords = [
     "example",
     "placeholder",
     "your-key-here",
     "REPLACE_ME",
+    "REAL_KEY_HERE",
+    "1234567890abcdef",
 ]
