@@ -64,6 +64,27 @@ litellm:
   url: http://litellm:4000
   masterKey: ""
 
+# OpenBao / HashiCorp Vault (ADR-K8S-018)
+# Per-user credential vault with Kubernetes auth method.
+# For production, prefer the official OpenBao or Vault Helm chart; this
+# minimal deployment is for development and homelab use only. See #957.
+vault:
+  enabled: false
+  namespace: stronghold-system
+  image:
+    repository: openbao/openbao
+    tag: "2.0.0"
+  storage:
+    size: 10Gi
+    storageClass: ""
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
 # Auth
 auth:
   # Keycloak

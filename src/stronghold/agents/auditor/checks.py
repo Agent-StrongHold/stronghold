@@ -337,10 +337,26 @@ def check_bundled_changes(
                 severity=Severity.MEDIUM,
                 file_path="",
                 description=(
-                    f"PR touches {len(src_dirs)} distinct modules: {', '.join(sorted(src_dirs))}. "
+                    f"PR touches {len(src_dirs)} distinct modules in {commit_count} commit(s): "
+                    f"{', '.join(sorted(src_dirs))}. "
                     "This may indicate bundled unrelated changes."
                 ),
                 suggestion="Split into focused PRs, one per module or issue.",
+            ),
+        )
+    # Secondary heuristic: many commits touching few dirs is also suspicious
+    # (likely squash-merge artifacts or amended rebases rolled up into one PR).
+    if commit_count > 20 and len(changed_files) < 5:
+        findings.append(
+            ReviewFinding(
+                category=ViolationCategory.BUNDLED_CHANGES,
+                severity=Severity.LOW,
+                file_path="",
+                description=(
+                    f"PR has {commit_count} commits touching only {len(changed_files)} files. "
+                    "Consider squashing the commit history before merge."
+                ),
+                suggestion="Squash related commits with `git rebase -i`.",
             ),
         )
     return findings
