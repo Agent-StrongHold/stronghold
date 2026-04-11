@@ -316,8 +316,8 @@ phoenixSvc:
   image:
     registry: ""
     repository: arizephoenix/phoenix
-    tag: "latest"
-    pullPolicy: Always
+    tag: "version-8.19.0"
+    pullPolicy: IfNotPresent
   containerPort: 6006
   exposed: false
   resources:
@@ -353,8 +353,8 @@ mcp:
     image:
       registry: ghcr.io
       repository: modelcontextprotocol/server-github
-      tag: "latest"
-      pullPolicy: Always
+      tag: "v0.6.0"
+      pullPolicy: IfNotPresent
     containerPort: 3000
     patSecretName: github-pat
     resources:

@@ -44,9 +44,11 @@ Chart label (name-version).
 {{/*
 Common labels applied to every rendered resource's metadata.labels.
 
-Includes the stronghold.io/priority-tier placeholder which individual
-workload templates in PR-7..PR-12 will override with the component's
-actual tier (P0..P5) via `merge`.
+Workload templates add their own stronghold.io/priority-tier label
+AFTER including this helper. Do NOT set the priority-tier here as a
+placeholder — YAML does not allow duplicate keys in the same map, and
+kubeconform will reject rendered manifests with the error:
+  "key stronghold.io/priority-tier already set in map"
 */}}
 {{- define "stronghold.labels" -}}
 helm.sh/chart: {{ include "stronghold.chart" . }}
@@ -56,7 +58,6 @@ app.kubernetes.io/version: {{ .Chart.AppVersion | quote }}
 {{- end }}
 app.kubernetes.io/managed-by: {{ .Release.Service }}
 app.kubernetes.io/part-of: stronghold
-stronghold.io/priority-tier: none
 {{- end -}}
 
 {{/*

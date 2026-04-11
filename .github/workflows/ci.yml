@@ -284,9 +284,17 @@ jobs:
           mv kube-linter /tmp/kube-linter-${KUBE_LINTER_VERSION}
 
       - name: Lint rendered manifests
+        # --config .kube-linter.yaml excludes run-as-non-root and
+        # no-read-only-root-fs which we intentionally disable in workload
+        # templates (upstream images don't support non-root yet; litellm
+        # and postgres need writable root FS). Tracked in #64.
         run: |
-          /tmp/kube-linter-${KUBE_LINTER_VERSION} lint /tmp/rendered-vanilla.yaml || true
-          /tmp/kube-linter-${KUBE_LINTER_VERSION} lint /tmp/rendered-homelab.yaml
+          /tmp/kube-linter-${KUBE_LINTER_VERSION} lint \
+            --config .kube-linter.yaml \
+            /tmp/rendered-vanilla.yaml || true
+          /tmp/kube-linter-${KUBE_LINTER_VERSION} lint \
+            --config .kube-linter.yaml \
+            /tmp/rendered-homelab.yaml
 
   # ── Dependency & Supply Chain ───────────────────────────────────────
   pip-audit:

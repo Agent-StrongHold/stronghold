@@ -1,0 +1,21 @@
+# kube-linter configuration for Stronghold
+#
+# Exclude checks that are intentionally disabled in our workload templates.
+# See deploy/helm/stronghold/templates/*.yaml for inline `runAsNonRoot: false`
+# comments with rationale. The "non-root images" roadmap item is tracked in
+# the main helm hardening epic (#64) — these exclusions go away once the
+# upstream container images (stronghold, litellm, postgres, phoenix, mcp-*)
+# all support running as a non-root user.
+
+checks:
+  doNotAutoAddDefaults: false
+  exclude:
+    # stronghold/litellm/postgres/phoenix/mcp-* images currently run as root
+    # because their upstream Dockerfiles don't set USER. Flipping this on
+    # would require Dockerfile changes in each upstream image. Tracked in #64.
+    - run-as-non-root
+
+    # litellm writes Prisma migrations to site-packages at startup; postgres
+    # needs /var/lib/postgresql writable for initdb. Both are intentional
+    # per the live k3s debugging captured in PR #1004 commit message.
+    - no-read-only-root-fs
