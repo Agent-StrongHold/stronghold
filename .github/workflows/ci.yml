@@ -307,16 +307,14 @@ jobs:
           POSTGRES_USER: stronghold
           POSTGRES_PASSWORD: stronghold
           POSTGRES_DB: stronghold
-          # Use TCP-only — avoid Unix socket permission issues on self-hosted runner
-          PGHOST: ""
         ports:
           - 5433:5432
         options: >-
-          --health-cmd "pg_isready -U stronghold -h 127.0.0.1"
+          --security-opt apparmor=unconfined
+          --health-cmd "pg_isready -U stronghold"
           --health-interval 5s
-          --health-timeout 10s
-          --health-retries 15
-          --tmpfs /var/run/postgresql:rw,uid=999,gid=999
+          --health-timeout 5s
+          --health-retries 10
 
     env:
       DATABASE_URL: postgresql://stronghold:stronghold@localhost:5433/stronghold
