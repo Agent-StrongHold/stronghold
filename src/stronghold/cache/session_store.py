@@ -68,10 +68,20 @@ class RedisSessionStore:
         # Refresh key-level TTL on access
         await self._redis.expire(rkey, self._ttl)
 
-        # Filter by per-message timestamp, return only role+content
+        # Filter by per-message timestamp, return only role+content.
+        # Skip (log) any poisoned/non-JSON entries rather than crashing the
+        # whole session retrieval.
         result: list[dict[str, str]] = []
         for item in raw:
-            msg = json.loads(item)
+            try:
+                msg = json.loads(item)
+            except (json.JSONDecodeError, TypeError, ValueError):
+                logger.warning(
+                    "Skipping poisoned session entry in %s", session_id,
+                )
+                continue
+            if not isinstance(msg, dict):
+                continue
             ts = msg.pop("_ts", 0)
             if ts >= cutoff:
                 result.append({"role": msg.get("role", ""), "content": msg.get("content", "")})
