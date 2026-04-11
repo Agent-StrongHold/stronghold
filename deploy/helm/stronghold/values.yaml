@@ -3,6 +3,20 @@
 
 replicaCount: 1
 
+# OpenBao / HashiCorp Vault (ADR-K8S-018). Disabled by default; operators
+# who want per-user credential vaulting should either flip this to true
+# (dev/homelab) or point at an external Vault via their own Secret/Config.
+# This stanza exists so the vault-deployment.yaml template's nil guard
+# `{{- if .Values.vault.enabled }}` has a parent to resolve — without
+# this block, helm template crashes with
+# `<.Values.vault.enabled>: nil pointer` before rendering anything else.
+vault:
+  enabled: false
+  namespace: stronghold-system
+  image:
+    repository: openbao/openbao
+    tag: "2.2.0"
+
 image:
   repository: ghcr.io/agent-stronghold/stronghold
   tag: "0.1.0"

@@ -28,6 +28,7 @@ class ViolationCategory(StrEnum):
     PRIVATE_FIELD_ACCESS = "private_field_access"
     DI_VIOLATION = "di_violation"
     MISSING_FAKES = "missing_fakes"
+    HALLUCINATED_IMPORT = "hallucinated_import"
 
 
 class Severity(StrEnum):

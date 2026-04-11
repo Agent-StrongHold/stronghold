@@ -1,4 +1,4 @@
-{{- if and .Values.podDisruptionBudgets.enabled (gt (int .Values.strongholdApi.replicas) 1) }}
+{{- if .Values.podDisruptionBudgets.enabled }}
 apiVersion: policy/v1
 kind: PodDisruptionBudget
 metadata:
@@ -8,7 +8,13 @@ metadata:
     {{- include "stronghold.labels" . | nindent 4 }}
     app.kubernetes.io/component: stronghold-api
 spec:
+  {{- if gt (int .Values.strongholdApi.replicas) 1 }}
   minAvailable: 1
+  {{- else }}
+  # Single replica: block voluntary eviction during node drains until
+  # operators either scale up or explicitly acknowledge downtime.
+  maxUnavailable: 0
+  {{- end }}
   selector:
     matchLabels:
       {{- include "stronghold.selectorLabels" . | nindent 6 }}

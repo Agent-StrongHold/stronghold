@@ -7,14 +7,37 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import random
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator
 
+import httpcore
 import httpx
 
 logger = logging.getLogger("stronghold.llm")
+
+# Transient network errors that should be retried with backoff inside
+# _try_model before giving up on a model. These are distinct from HTTP
+# status errors (429/5xx), which are handled by the model-fallback loop
+# in complete() — 429/5xx indicates a model-specific problem, while the
+# exceptions below indicate a transport-level blip that typically clears
+# on a fresh connection.
+_TRANSIENT_EXCS: tuple[type[BaseException], ...] = (
+    httpx.ConnectError,
+    httpx.ReadTimeout,
+    httpx.RemoteProtocolError,
+    httpcore.ReadTimeout,
+    httpcore.ConnectTimeout,
+)
+
+# Retry budget. Tuned for Mason pipelines — 3 attempts with ~0.5s base
+# backoff caps total added latency at ~2s even in the worst case, which
+# is cheap compared to the alternative (a whole pipeline stage failing
+# because a single httpcore.ReadTimeout escaped unhandled).
+_RETRY_ATTEMPTS = 3
+_RETRY_BASE_DELAY = 0.5
 
 
 class LiteLLMClient:
@@ -101,20 +124,54 @@ class LiteLLMClient:
         body: dict[str, Any],
         headers: dict[str, str],
     ) -> dict[str, Any] | Exception:
-        """Try a single model. Returns response dict on success, Exception on failure."""
+        """Try a single model. Returns response dict on success, Exception on failure.
+
+        Transient network errors (see ``_TRANSIENT_EXCS``) are retried up to
+        ``_RETRY_ATTEMPTS`` times with exponential backoff + jitter before
+        giving up on this model. A fresh ``httpx.AsyncClient`` is created
+        on every attempt because the previous transport may be in a bad
+        state. After exhausting retries, the last transient exception is
+        **returned** (not raised) so the outer ``complete()`` fallback loop
+        can still try the next model.
+
+        Non-retryable HTTP status errors (401, 403, etc.) raise out so
+        callers see auth failures immediately. Retryable-via-fallback
+        codes (400/422/429/5xx) are returned as ``HTTPStatusError`` so
+        the model-fallback loop picks a different model.
+        """
         body["model"] = model
-        try:
-            async with httpx.AsyncClient(timeout=600.0) as client:
-                resp = await client.post(
-                    f"{self._base_url}/v1/chat/completions",
-                    json=body,
-                    headers=headers,
+        last_transient: BaseException | None = None
+        for attempt in range(1, _RETRY_ATTEMPTS + 1):
+            try:
+                async with httpx.AsyncClient(timeout=600.0) as client:
+                    resp = await client.post(
+                        f"{self._base_url}/v1/chat/completions",
+                        json=body,
+                        headers=headers,
+                    )
+            except _TRANSIENT_EXCS as exc:
+                last_transient = exc
+                if attempt == _RETRY_ATTEMPTS:
+                    logger.debug(
+                        "Model %s exhausted %d retries on %s",
+                        model, _RETRY_ATTEMPTS, type(exc).__name__,
+                    )
+                    return exc
+                delay = _RETRY_BASE_DELAY * (2 ** (attempt - 1)) + random.uniform(0, 0.25)
+                logger.warning(
+                    "transient http error on %s attempt %d/%d: %s; sleeping %.2fs",
+                    model, attempt, _RETRY_ATTEMPTS, type(exc).__name__, delay,
                 )
+                await asyncio.sleep(delay)
+                continue
 
             if resp.status_code == 200:  # noqa: PLR2004
                 return resp.json()  # type: ignore[no-any-return]
 
-            # Retryable: 429, 400 (cooldown), 422 (model doesn't support tools), 5xx
+            # Retryable-via-fallback: 429, 400 (cooldown), 422 (model doesn't support tools), 5xx.
+            # These don't go through the transient-retry path because they indicate
+            # a model-specific problem, not a transport problem — the fallback loop
+            # in complete() handles them by trying the next model.
             if resp.status_code in (400, 422, 429, 500, 502, 503):
                 logger.debug("Model %s returned %d, skipping", model, resp.status_code)
                 await asyncio.sleep(0.2)
@@ -124,14 +181,17 @@ class LiteLLMClient:
                     response=resp,
                 )
 
-            # Non-retryable (401, 403, etc.)
+            # Non-retryable (401, 403, etc.) — raise out so callers see auth failures.
             resp.raise_for_status()
+            # Unreachable: raise_for_status() always raises on non-2xx; kept
+            # only to satisfy the type checker that the branch has a return.
+            return RuntimeError(f"Unexpected state for model {model}")  # pragma: no cover
 
-        except httpx.ConnectError as e:
-            logger.debug("Connection error for %s: %s", model, e)
-            return e
-
-        return RuntimeError(f"Unexpected state for model {model}")
+        # Loop exited without returning — unreachable in practice: every
+        # attempt either returns a dict/exception or hits the transient
+        # exhaustion return above. Kept as a type-checker hint.
+        assert last_transient is not None  # pragma: no cover
+        return last_transient  # pragma: no cover  # type: ignore[return-value]
 
     async def _fetch_available_models(
         self,

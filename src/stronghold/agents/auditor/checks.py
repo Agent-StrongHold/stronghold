@@ -7,9 +7,17 @@ This makes every check trivially testable.
 
 from __future__ import annotations
 
+import ast
 import re
+from pathlib import Path
 
 from stronghold.types.feedback import ReviewFinding, Severity, ViolationCategory
+
+# Project root used to resolve `stronghold.X.Y` import paths against the
+# actual filesystem during check_test_imports_exist. Defaults to cwd so
+# tests and CI both work without configuration; override via the keyword
+# argument for unusual layouts.
+_DEFAULT_REPO_ROOT = Path.cwd()
 
 # ---------------------------------------------------------------------------
 # Pattern banks
@@ -341,6 +349,114 @@ def check_bundled_changes(
                     "This may indicate bundled unrelated changes."
                 ),
                 suggestion="Split into focused PRs, one per module or issue.",
+            ),
+        )
+    return findings
+
+
+# ---------------------------------------------------------------------------
+# check_test_imports_exist
+# ---------------------------------------------------------------------------
+#
+# Bug 6: Mason's impl stage sometimes writes test files that import modules
+# that don't exist (e.g. `from stronghold.builders.pipeline import X` when
+# the `stronghold.builders.pipeline` module was never created). The test
+# then crashes at collection time and pollutes the CI signal. This check
+# resolves every `from stronghold.x import y` / `import stronghold.x` in
+# the added lines against the real filesystem under `src/stronghold/` and
+# raises a HALLUCINATED_IMPORT finding if the module cannot be found.
+
+# Matches `from stronghold.x.y import z` at the start of an added diff line.
+# Requires at least one dot after `stronghold` so bare `from stronghold import`
+# (which maps to the package itself) is ignored.
+_FROM_IMPORT_RE = re.compile(
+    r"^\+\s*from\s+(stronghold(?:\.[a-zA-Z_]\w*)+)\s+import\s+"
+)
+# Matches `import stronghold.x.y` (with optional `as alias`).
+_BARE_IMPORT_RE = re.compile(
+    r"^\+\s*import\s+(stronghold(?:\.[a-zA-Z_]\w*)+)(?:\s+as\s+\w+)?\s*(?:#.*)?$"
+)
+
+
+def _module_exists(module: str, repo_root: Path) -> bool:
+    """True if a dotted ``stronghold.x.y`` path resolves to a real module.
+
+    Resolution rule::
+
+        stronghold.x.y  →  repo_root/src/stronghold/x/y.py
+                        OR repo_root/src/stronghold/x/y/__init__.py
+
+    A namespace package directory without ``__init__.py`` is rejected
+    because Python's import system will not find symbols inside it.
+    """
+    parts = module.split(".")
+    base = repo_root / "src" / Path(*parts)
+    return base.with_suffix(".py").exists() or (base / "__init__.py").exists()
+
+
+def _is_test_scope(file_path: str) -> bool:
+    """True if the diff file is a test file the check should scan."""
+    if not file_path:
+        return False
+    p = Path(file_path)
+    if file_path.startswith("tests/") or "/tests/" in f"/{file_path}":
+        return True
+    return p.name.startswith("test_")
+
+
+def check_test_imports_exist(
+    diff_lines: list[str],
+    *,
+    file_path: str,
+    repo_root: Path | None = None,
+) -> list[ReviewFinding]:
+    """Detect hallucinated ``stronghold.*`` imports in added test file lines.
+
+    Only in scope:
+      - Files under ``tests/`` or named ``test_*.py``.
+      - Added lines (prefix ``+``), not context (prefix `` ``) or removals (``-``).
+      - Imports whose root package is ``stronghold`` (stdlib / third-party ignored).
+      - Absolute imports (relative ``from .foo`` is local and out of scope).
+
+    The check is pure — it reads the filesystem only to resolve modules,
+    never writes, and is safe to call from any thread.
+
+    Dedupes violations per (module, file_path) so a test file that
+    mentions the same bad module five times produces one finding.
+    """
+    if not _is_test_scope(file_path):
+        return []
+
+    root = repo_root or _DEFAULT_REPO_ROOT
+    findings: list[ReviewFinding] = []
+    seen: set[str] = set()
+
+    for line in diff_lines:
+        if not line.startswith("+"):
+            continue
+        m = _FROM_IMPORT_RE.match(line) or _BARE_IMPORT_RE.match(line)
+        if not m:
+            continue
+        module = m.group(1)
+        if module in seen:
+            continue
+        seen.add(module)
+        if _module_exists(module, root):
+            continue
+        findings.append(
+            ReviewFinding(
+                category=ViolationCategory.HALLUCINATED_IMPORT,
+                severity=Severity.HIGH,
+                file_path=file_path,
+                description=(
+                    f"Test imports non-existent module `{module}` — "
+                    "the module does not exist under src/stronghold/."
+                ),
+                suggestion=(
+                    "Grep the codebase before writing the test: "
+                    f"`grep -r 'class ' src/stronghold/ | grep -i <ClassName>`. "
+                    "Do not invent module paths — verify with `ls` first."
+                ),
             ),
         )
     return findings
