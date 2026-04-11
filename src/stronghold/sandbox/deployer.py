@@ -19,7 +19,8 @@ logger = logging.getLogger("stronghold.sandbox.deployer")
 
 # mcp-deployer sidecar endpoint (Unix socket in prod, HTTP in dev)
 _DEPLOYER_URL = os.environ.get(
-    "MCP_DEPLOYER_URL", "http://localhost:8300",
+    "MCP_DEPLOYER_URL",
+    "http://localhost:8300",
 )
 
 
@@ -34,7 +35,8 @@ class MCPDeployerClient:
     def __init__(self, base_url: str = "") -> None:
         self._base_url = base_url or _DEPLOYER_URL
         self._client = httpx.AsyncClient(
-            base_url=self._base_url, timeout=30.0,
+            base_url=self._base_url,
+            timeout=30.0,
         )
 
     async def spawn(
