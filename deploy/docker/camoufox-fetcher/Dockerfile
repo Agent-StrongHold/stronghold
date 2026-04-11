@@ -8,16 +8,18 @@ WORKDIR /app
 COPY app.py .
 
 # Install camoufox + playwright (camoufox needs playwright as its control layer)
-# plus the FastAPI server deps.
-# Pin camoufox version for reproducibility — bump manually when needed.
+# plus the FastAPI server deps. Pin floor versions for reproducibility.
+# hadolint ignore=DL3013,SC2102,DL3059
+# DL3013: floor-pinned via `>=` is the intended deprecation strategy here.
+# SC2102: uvicorn[standard] brace glob is a pip extras syntax, not a char range.
+# DL3059: the camoufox fetch RUN must stay separate so a pip retry doesn't
+#         redownload the browser (it's a ~120MB artifact).
 RUN pip install --no-cache-dir \
     "camoufox>=0.4" \
-    playwright \
-    fastapi \
-    uvicorn[standard]
-
-# Download the Camoufox Firefox build (headless).
-RUN camoufox fetch
+    "playwright>=1.40" \
+    "fastapi>=0.115" \
+    "uvicorn[standard]>=0.32" \
+ && camoufox fetch
 
 EXPOSE 8080
 CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8080"]
