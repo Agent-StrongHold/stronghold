@@ -641,6 +641,174 @@ class TestCreateAgentsFilesystem:
         for agent in result.values():
             assert isinstance(agent, Agent)
 
+    async def test_db_load_path_with_records(self, tmp_path: Path, monkeypatch: Any) -> None:
+        """When sa_engine has agents, loads from DB (lines 308-326)."""
+        from types import SimpleNamespace
+        from unittest.mock import AsyncMock
+
+        record = SimpleNamespace(
+            name="loaded-agent",
+            version="2.0.0",
+            description="from db",
+            model="auto",
+            model_fallbacks=["a", "b"],
+            model_constraints={},
+            tools=["shell"],
+            skills=[],
+            rules="rule1\nrule2",
+            trust_tier="t2",
+            priority_tier="P2",
+            max_tool_rounds=5,
+            reasoning_strategy="direct",
+            memory_config={},
+            soul="You are loaded.",
+        )
+
+        class FakeRegistry:
+            def __init__(self, engine: Any) -> None:
+                pass
+
+            async def count(self) -> int:
+                return 1
+
+            async def list_active(self) -> list:
+                return [record]
+
+        import stronghold.persistence.pg_agents as pg_mod
+        monkeypatch.setattr(pg_mod, "PgAgentRegistry", FakeRegistry)
+
+        prompts = FakePromptManager()
+        result = await create_agents(
+            agents_dir=tmp_path,  # empty, but DB path wins
+            prompt_manager=prompts,
+            llm=FakeLLMClient(),
+            context_builder=ContextBuilder(),
+            warden=Warden(),
+            sentinel=None,
+            learning_store=InMemoryLearningStore(),
+            learning_extractor=ToolCorrectionExtractor(),
+            outcome_store=InMemoryOutcomeStore(),
+            session_store=InMemorySessionStore(),
+            quota_tracker=FakeQuotaTracker(),
+            tracer=NoopTracingBackend(),
+            sa_engine=object(),
+        )
+        assert "loaded-agent" in result
+        soul = await prompts.get("agent.loaded-agent.soul")
+        assert "loaded" in soul
+
+    async def test_db_load_fails_falls_back_to_filesystem(
+        self, tmp_path: Path, monkeypatch: Any
+    ) -> None:
+        """DB load raises → fallback to filesystem (lines 327-330)."""
+        class BrokenRegistry:
+            def __init__(self, engine: Any) -> None:
+                raise RuntimeError("db down")
+
+        import stronghold.persistence.pg_agents as pg_mod
+        monkeypatch.setattr(pg_mod, "PgAgentRegistry", BrokenRegistry)
+
+        agents_dir = _make_agents_dir(tmp_path, [{"name": "fs-agent"}])
+        result = await create_agents(
+            agents_dir=agents_dir,
+            prompt_manager=FakePromptManager(),
+            llm=FakeLLMClient(),
+            context_builder=ContextBuilder(),
+            warden=Warden(),
+            sentinel=None,
+            learning_store=InMemoryLearningStore(),
+            learning_extractor=ToolCorrectionExtractor(),
+            outcome_store=InMemoryOutcomeStore(),
+            session_store=InMemorySessionStore(),
+            quota_tracker=FakeQuotaTracker(),
+            tracer=NoopTracingBackend(),
+            sa_engine=object(),
+        )
+        assert "fs-agent" in result
+
+    async def test_db_persist_path_from_filesystem(
+        self, tmp_path: Path, monkeypatch: Any
+    ) -> None:
+        """When DB empty + sa_engine provided, seed from filesystem AND persist (lines 375-401)."""
+        upserted: list = []
+
+        class PersistRegistry:
+            def __init__(self, engine: Any) -> None:
+                pass
+
+            async def count(self) -> int:
+                return 0
+
+            async def list_active(self) -> list:
+                return []
+
+            async def upsert(self, record: Any) -> None:
+                upserted.append(record)
+
+        import stronghold.persistence.pg_agents as pg_mod
+        monkeypatch.setattr(pg_mod, "PgAgentRegistry", PersistRegistry)
+
+        agents_dir = _make_agents_dir(
+            tmp_path,
+            [{"name": "persist-me", "tools": ["shell"]}],
+        )
+        result = await create_agents(
+            agents_dir=agents_dir,
+            prompt_manager=FakePromptManager(),
+            llm=FakeLLMClient(),
+            context_builder=ContextBuilder(),
+            warden=Warden(),
+            sentinel=None,
+            learning_store=InMemoryLearningStore(),
+            learning_extractor=ToolCorrectionExtractor(),
+            outcome_store=InMemoryOutcomeStore(),
+            session_store=InMemorySessionStore(),
+            quota_tracker=FakeQuotaTracker(),
+            tracer=NoopTracingBackend(),
+            sa_engine=object(),
+        )
+        assert "persist-me" in result
+        assert len(upserted) == 1
+        assert upserted[0].name == "persist-me"
+
+    async def test_db_persist_upsert_error_swallowed(
+        self, tmp_path: Path, monkeypatch: Any
+    ) -> None:
+        """upsert failure during persist must not block agent loading (lines 400-401)."""
+        class FlakyRegistry:
+            def __init__(self, engine: Any) -> None:
+                pass
+
+            async def count(self) -> int:
+                return 0
+
+            async def list_active(self) -> list:
+                return []
+
+            async def upsert(self, record: Any) -> None:
+                raise RuntimeError("persist failed")
+
+        import stronghold.persistence.pg_agents as pg_mod
+        monkeypatch.setattr(pg_mod, "PgAgentRegistry", FlakyRegistry)
+
+        agents_dir = _make_agents_dir(tmp_path, [{"name": "flaky"}])
+        result = await create_agents(
+            agents_dir=agents_dir,
+            prompt_manager=FakePromptManager(),
+            llm=FakeLLMClient(),
+            context_builder=ContextBuilder(),
+            warden=Warden(),
+            sentinel=None,
+            learning_store=InMemoryLearningStore(),
+            learning_extractor=ToolCorrectionExtractor(),
+            outcome_store=InMemoryOutcomeStore(),
+            session_store=InMemorySessionStore(),
+            quota_tracker=FakeQuotaTracker(),
+            tracer=NoopTracingBackend(),
+            sa_engine=object(),
+        )
+        assert "flaky" in result
+
     async def test_no_preamble_still_loads_agents(self, tmp_path: Path) -> None:
         """Agents load even when PREAMBLE.md is missing."""
         agents_dir = _make_agents_dir(
