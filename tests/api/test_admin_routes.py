@@ -485,6 +485,151 @@ class TestQuotaBurnRate:
             assert "total_overage_cost" in resp.json()["summary"]
 
 
+class _FakeCoinLedger:
+    def __init__(self) -> None:
+        self._rate = 40
+
+    async def get_banking_rate(self) -> int:
+        return self._rate
+
+    async def set_banking_rate(self, rate: int) -> None:
+        self._rate = rate
+
+
+class TestCoinSettings:
+    def test_get_coin_settings(self, admin_app: FastAPI) -> None:
+        admin_app.state.container.coin_ledger = _FakeCoinLedger()
+        with TestClient(admin_app) as client:
+            resp = client.get(
+                "/v1/stronghold/admin/coins/settings",
+                headers={"Authorization": "Bearer sk-test", "X-Stronghold-Request": "1"},
+            )
+            assert resp.status_code == 200
+            data = resp.json()
+            assert "banking_rate_pct" in data
+            assert "daily_copper_allowance" in data
+
+    def test_update_coin_settings(self, admin_app: FastAPI) -> None:
+        admin_app.state.container.coin_ledger = _FakeCoinLedger()
+        with TestClient(admin_app) as client:
+            resp = client.put(
+                "/v1/stronghold/admin/coins/settings",
+                json={"banking_rate_pct": 50},
+                headers={"Authorization": "Bearer sk-test", "X-Stronghold-Request": "1"},
+            )
+            assert resp.status_code == 200
+            assert resp.json()["banking_rate_pct"] == 50
+
+    def test_update_coin_settings_invalid_rate(self, admin_app: FastAPI) -> None:
+        admin_app.state.container.coin_ledger = _FakeCoinLedger()
+        with TestClient(admin_app) as client:
+            resp = client.put(
+                "/v1/stronghold/admin/coins/settings",
+                json={"banking_rate_pct": 200},
+                headers={"Authorization": "Bearer sk-test", "X-Stronghold-Request": "1"},
+            )
+            assert resp.status_code == 400
+
+    def test_update_coin_settings_zero_rate(self, admin_app: FastAPI) -> None:
+        admin_app.state.container.coin_ledger = _FakeCoinLedger()
+        with TestClient(admin_app) as client:
+            resp = client.put(
+                "/v1/stronghold/admin/coins/settings",
+                json={"banking_rate_pct": 0},
+                headers={"Authorization": "Bearer sk-test", "X-Stronghold-Request": "1"},
+            )
+            assert resp.status_code == 400
+
+
+class TestAnalyzeQuotaExtended:
+    def test_analyst_with_populated_data(self, admin_app: FastAPI) -> None:
+        """Exercises the data_sections branches (by user/team/model/provider + timeseries)."""
+        import asyncio
+
+        from stronghold.types.memory import Outcome
+
+        store = admin_app.state.container.outcome_store
+        asyncio.get_event_loop().run_until_complete(
+            store.record(
+                Outcome(
+                    user_id="alice",
+                    org_id="__system__",
+                    team_id="team-a",
+                    model_used="gpt-4",
+                    input_tokens=4000,
+                    output_tokens=1000,
+                    response_time_ms=200,
+                    success=True,
+                )
+            )
+        )
+        with TestClient(admin_app) as client:
+            resp = client.post(
+                "/v1/stronghold/admin/quota/analyze",
+                json={"question": "Who used the most tokens?"},
+                headers={"Authorization": "Bearer sk-test", "X-Stronghold-Request": "1"},
+            )
+            assert resp.status_code == 200
+
+    def test_analyst_question_too_long(self, admin_app: FastAPI) -> None:
+        with TestClient(admin_app) as client:
+            resp = client.post(
+                "/v1/stronghold/admin/quota/analyze",
+                json={"question": "x" * 1001},
+                headers={"Authorization": "Bearer sk-test", "X-Stronghold-Request": "1"},
+            )
+            assert resp.status_code == 400
+
+    def test_analyst_extracts_chart_config(self, admin_app: FastAPI) -> None:
+        """Exercise the chart extraction branch (lines 1447-1459)."""
+        fake_llm = admin_app.state.container.llm
+        fake_llm.set_simple_response(
+            'Here are the numbers.\n```chartjs\n{"type":"bar","data":{"labels":["a"],"datasets":[]}}\n```\nEnd.'
+        )
+        with TestClient(admin_app) as client:
+            resp = client.post(
+                "/v1/stronghold/admin/quota/analyze",
+                json={"question": "Show me a chart"},
+                headers={"Authorization": "Bearer sk-test", "X-Stronghold-Request": "1"},
+            )
+            assert resp.status_code == 200
+            data = resp.json()
+            assert data["chart"] is not None
+            assert data["chart"]["type"] == "bar"
+
+    def test_analyst_malformed_chart_config(self, admin_app: FastAPI) -> None:
+        """Malformed chart JSON leaves chart as None (line 1458-1459)."""
+        fake_llm = admin_app.state.container.llm
+        fake_llm.set_simple_response("Answer\n```chartjs\n{bad json\n```")
+        with TestClient(admin_app) as client:
+            resp = client.post(
+                "/v1/stronghold/admin/quota/analyze",
+                json={"question": "Show me a chart"},
+                headers={"Authorization": "Bearer sk-test", "X-Stronghold-Request": "1"},
+            )
+            assert resp.status_code == 200
+
+    def test_analyst_llm_exception_returns_502(self, admin_app: FastAPI) -> None:
+        """LLM exception during analysis returns 502 (lines 1437-1442)."""
+        fake_llm = admin_app.state.container.llm
+        original_complete = fake_llm.complete
+
+        async def broken_complete(*args, **kwargs):
+            raise RuntimeError("llm down")
+
+        fake_llm.complete = broken_complete  # type: ignore[method-assign]
+        try:
+            with TestClient(admin_app) as client:
+                resp = client.post(
+                    "/v1/stronghold/admin/quota/analyze",
+                    json={"question": "Anything?"},
+                    headers={"Authorization": "Bearer sk-test", "X-Stronghold-Request": "1"},
+                )
+                assert resp.status_code == 502
+        finally:
+            fake_llm.complete = original_complete  # type: ignore[method-assign]
+
+
 class TestReloadConfig:
     def test_admin_returns_501(self, admin_app: FastAPI) -> None:
         with TestClient(admin_app) as client:
