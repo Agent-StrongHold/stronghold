@@ -302,9 +302,10 @@ jobs:
 
       - name: Audit dependencies (strict, blocking)
         # `--desc` takes an optional value from {on,off,auto}; a bare `.` was
-        # consumed as the desc value and rejected. Use `--desc on` and `--local`
-        # to audit the venv we just set up.
-        run: /tmp/audit-venv/bin/pip-audit --strict --desc on --local
+        # consumed as the desc value and rejected. `--local` audits the venv;
+        # `--skip-editable` skips the `-e .` install of stronghold itself
+        # (not published to PyPI, so pip-audit can't look it up).
+        run: /tmp/audit-venv/bin/pip-audit --strict --desc on --local --skip-editable
 
   pip-licenses:
     name: "📜 pip-licenses — copyleft guard (no GPL/AGPL/LGPL)"
