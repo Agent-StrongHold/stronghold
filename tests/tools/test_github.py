@@ -221,3 +221,120 @@ class TestAuthHeaders:
         })
         auth = route.calls[0].request.headers.get("authorization")
         assert auth == "Bearer ghp_test123"
+
+
+# ── Additional coverage tests ───────────────────────────────────────
+
+
+class TestGetPrDiff:
+    @respx.mock
+    async def test_returns_diff_text(self) -> None:
+        respx.get("https://api.github.com/repos/org/repo/pulls/42").mock(
+            return_value=httpx.Response(200, text="diff --git a/x b/x\n+hello\n"),
+        )
+        ex = GitHubToolExecutor()
+        result = await ex.execute({
+            "action": "get_pr_diff", "owner": "org", "repo": "repo", "issue_number": 42,
+        })
+        assert result.success is True
+        assert "diff --git" in result.content
+
+
+class TestPostPrComment:
+    @respx.mock
+    async def test_posts_comment_returns_id_and_url(self) -> None:
+        respx.post(
+            "https://api.github.com/repos/org/repo/issues/42/comments",
+        ).mock(
+            return_value=httpx.Response(201, json={
+                "id": 999,
+                "html_url": "https://github.com/org/repo/issues/42#issuecomment-999",
+            }),
+        )
+        ex = GitHubToolExecutor()
+        result = await ex.execute({
+            "action": "post_pr_comment", "owner": "org", "repo": "repo",
+            "issue_number": 42, "body": "LGTM",
+        })
+        assert result.success is True
+        data = json.loads(result.content)
+        assert data["id"] == 999
+        assert "issuecomment-999" in data["url"]
+
+
+class TestListPrComments:
+    @respx.mock
+    async def test_returns_mapped_comments(self) -> None:
+        respx.get(
+            "https://api.github.com/repos/org/repo/issues/42/comments",
+        ).mock(
+            return_value=httpx.Response(200, json=[
+                {
+                    "id": 1, "body": "nit",
+                    "user": {"login": "reviewer"},
+                    "created_at": "2026-01-01T00:00:00Z",
+                },
+                {
+                    "id": 2, "body": "fix this",
+                    "user": {"login": "bot"},
+                    "created_at": "2026-01-02T00:00:00Z",
+                },
+            ]),
+        )
+        ex = GitHubToolExecutor()
+        result = await ex.execute({
+            "action": "list_pr_comments", "owner": "org", "repo": "repo",
+            "issue_number": 42,
+        })
+        assert result.success is True
+        data = json.loads(result.content)
+        assert len(data) == 2
+        assert data[0]["user"] == "reviewer"
+        assert data[1]["body"] == "fix this"
+
+
+class TestCreateIssue:
+    @respx.mock
+    async def test_creates_issue_with_labels(self) -> None:
+        captured = []
+        def capture(request):
+            captured.append(request)
+            import json as _json
+            return httpx.Response(201, json={
+                "number": 555,
+                "html_url": "https://github.com/org/repo/issues/555",
+                "state": "open",
+            })
+        respx.post("https://api.github.com/repos/org/repo/issues").mock(side_effect=capture)
+
+        ex = GitHubToolExecutor()
+        result = await ex.execute({
+            "action": "create_issue",
+            "owner": "org", "repo": "repo",
+            "title": "new issue", "body": "...",
+            "labels": ["bug", "good first issue"],
+        })
+        assert result.success is True
+        data = json.loads(result.content)
+        assert data["number"] == 555
+        # Verify labels were in the request body
+        import json as _json
+        sent_body = _json.loads(captured[0].content)
+        assert sent_body["labels"] == ["bug", "good first issue"]
+
+    @respx.mock
+    async def test_creates_issue_without_labels(self) -> None:
+        respx.post("https://api.github.com/repos/org/repo/issues").mock(
+            return_value=httpx.Response(201, json={
+                "number": 600,
+                "html_url": "https://github.com/org/repo/issues/600",
+                "state": "open",
+            }),
+        )
+        ex = GitHubToolExecutor()
+        result = await ex.execute({
+            "action": "create_issue", "owner": "org", "repo": "repo",
+            "title": "no labels", "body": "b",
+        })
+        assert result.success is True
+        assert json.loads(result.content)["number"] == 600

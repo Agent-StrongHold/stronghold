@@ -372,3 +372,143 @@ class TestDynamicFallbackModels:
             )
         assert result["choices"][0]["message"]["content"] == "dynamic ok"
         assert call_count == 2
+
+
+# ── Additional coverage tests ───────────────────────────────────────
+
+
+class TestFallbackChain:
+    @respx.mock
+    async def test_fetches_available_models_when_primary_fails(self) -> None:
+        """When all primary models fail with retryable code, fetch /v1/models."""
+        from stronghold.api.litellm_client import LiteLLMClient
+
+        # Primary model returns 429 (retryable)
+        respx.post("http://litellm/v1/chat/completions").mock(
+            return_value=httpx.Response(429, json={"error": "rate limited"}),
+        )
+        # /v1/models returns fallback options
+        respx.get("http://litellm/v1/models").mock(
+            return_value=httpx.Response(200, json={
+                "data": [
+                    {"id": "gpt-4"},
+                    {"id": "claude-3"},
+                ],
+            }),
+        )
+        # But those also fail (same retryable)
+        # (routes are sticky, so the POST mock catches them)
+
+        client = LiteLLMClient(base_url="http://litellm", api_key="sk-test")
+        import pytest
+        with pytest.raises(httpx.HTTPStatusError):
+            await client.complete(
+                messages=[{"role": "user", "content": "hi"}], model="missing",
+            )
+
+    @respx.mock
+    async def test_fetches_empty_available_models(self) -> None:
+        """If /v1/models returns empty list, raise the last error."""
+        from stronghold.api.litellm_client import LiteLLMClient
+
+        respx.post("http://litellm/v1/chat/completions").mock(
+            return_value=httpx.Response(500),
+        )
+        respx.get("http://litellm/v1/models").mock(
+            return_value=httpx.Response(200, json={"data": []}),
+        )
+
+        client = LiteLLMClient(base_url="http://litellm", api_key="sk-test")
+        import pytest
+        with pytest.raises(Exception):
+            await client.complete(
+                messages=[{"role": "user", "content": "hi"}], model="primary",
+            )
+
+    @respx.mock
+    async def test_fetch_available_models_server_error_returns_empty(self) -> None:
+        """If /v1/models returns 500, fallback list is empty."""
+        from stronghold.api.litellm_client import LiteLLMClient
+
+        respx.post("http://litellm/v1/chat/completions").mock(
+            return_value=httpx.Response(500),
+        )
+        respx.get("http://litellm/v1/models").mock(
+            return_value=httpx.Response(500),
+        )
+
+        client = LiteLLMClient(base_url="http://litellm", api_key="sk-test")
+        import pytest
+        with pytest.raises(Exception):
+            await client.complete(
+                messages=[{"role": "user", "content": "hi"}], model="x",
+            )
+
+
+class TestOptionalBodyFields:
+    @respx.mock
+    async def test_passes_tool_choice(self) -> None:
+        from stronghold.api.litellm_client import LiteLLMClient
+
+        captured = []
+        def capture(request):
+            captured.append(request)
+            return httpx.Response(200, json=_success_response())
+
+        respx.post("http://litellm/v1/chat/completions").mock(side_effect=capture)
+
+        client = LiteLLMClient(base_url="http://litellm", api_key="sk-test")
+        await client.complete(
+            messages=[{"role": "user", "content": "hi"}],
+            model="gpt-4",
+            tool_choice="auto",
+            metadata={"trace_id": "abc"},
+        )
+        import json as _json
+        body = _json.loads(captured[0].content)
+        assert body["tool_choice"] == "auto"
+        assert body["metadata"]["trace_id"] == "abc"
+
+    @respx.mock
+    async def test_passes_max_tokens_and_temperature(self) -> None:
+        from stronghold.api.litellm_client import LiteLLMClient
+
+        captured = []
+        def capture(request):
+            captured.append(request)
+            return httpx.Response(200, json=_success_response())
+
+        respx.post("http://litellm/v1/chat/completions").mock(side_effect=capture)
+
+        client = LiteLLMClient(base_url="http://litellm", api_key="sk-test")
+        await client.complete(
+            messages=[{"role": "user", "content": "hi"}],
+            model="gpt-4",
+            max_tokens=100,
+            temperature=0.5,
+        )
+        import json as _json
+        body = _json.loads(captured[0].content)
+        assert body["max_tokens"] == 100
+        assert body["temperature"] == 0.5
+
+
+class TestStreamMethod:
+    @respx.mock
+    async def test_stream_yields_chunks(self) -> None:
+        from stronghold.api.litellm_client import LiteLLMClient
+
+        respx.post("http://litellm/v1/chat/completions").mock(
+            return_value=httpx.Response(
+                200,
+                text="data: chunk1\ndata: chunk2\ndata: [DONE]\n",
+            ),
+        )
+
+        client = LiteLLMClient(base_url="http://litellm", api_key="sk-test")
+        chunks = []
+        async for chunk in client.stream(
+            messages=[{"role": "user", "content": "hi"}], model="gpt-4",
+        ):
+            chunks.append(chunk)
+        assert len(chunks) > 0
