@@ -18,8 +18,8 @@ logger = logging.getLogger("stronghold.tools.github")
 GITHUB_TOOL_DEF = ToolDefinition(
     name="github",
     description=(
-        "GitHub operations: list issues, get issue details, create branches, "
-        "create PRs, get PR diffs, post/read PR comments."
+        "GitHub operations: list/close issues, get details, create branches/PRs, "
+        "get PR diffs, post/read comments, close/merge PRs, add/remove labels."
     ),
     parameters={
         "type": "object",
@@ -34,6 +34,11 @@ GITHUB_TOOL_DEF = ToolDefinition(
                     "get_pr_diff",
                     "post_pr_comment",
                     "list_pr_comments",
+                    "close_pr",
+                    "merge_pr",
+                    "add_labels",
+                    "remove_label",
+                    "close_issue",
                 ],
                 "description": "The GitHub operation to perform.",
             },
@@ -292,6 +297,95 @@ class GitHubToolExecutor:
                 "state": issue["state"],
             }
 
+    async def _close_pr(self, args: dict[str, Any]) -> dict[str, str]:
+        """Close a pull request."""
+        import httpx  # noqa: PLC0415
+
+        owner, repo = args["owner"], args["repo"]
+        pr_number = args["issue_number"]
+
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            resp = await client.patch(
+                f"{self._base_url}/repos/{owner}/{repo}/pulls/{pr_number}",
+                headers=self._headers(),
+                json={"state": "closed"},
+            )
+            resp.raise_for_status()
+            return {"state": "closed", "number": str(pr_number)}
+
+    async def _merge_pr(self, args: dict[str, Any]) -> dict[str, Any]:
+        """Merge a pull request (squash by default)."""
+        import httpx  # noqa: PLC0415
+
+        owner, repo = args["owner"], args["repo"]
+        pr_number = args["issue_number"]
+        merge_method = args.get("merge_method", "squash")
+
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            resp = await client.put(
+                f"{self._base_url}/repos/{owner}/{repo}/pulls/{pr_number}/merge",
+                headers=self._headers(),
+                json={"merge_method": merge_method},
+            )
+            resp.raise_for_status()
+            data = resp.json()
+            return {
+                "merged": data.get("merged", False),
+                "sha": data.get("sha", ""),
+                "message": data.get("message", ""),
+            }
+
+    async def _add_labels(self, args: dict[str, Any]) -> list[str]:
+        """Add labels to an issue or PR."""
+        import httpx  # noqa: PLC0415
+
+        owner, repo = args["owner"], args["repo"]
+        issue_number = args["issue_number"]
+        labels = args.get("labels", [])
+
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            resp = await client.post(
+                f"{self._base_url}/repos/{owner}/{repo}/issues/{issue_number}/labels",
+                headers=self._headers(),
+                json={"labels": labels},
+            )
+            resp.raise_for_status()
+            return [label["name"] for label in resp.json()]
+
+    async def _remove_label(self, args: dict[str, Any]) -> dict[str, str]:
+        """Remove a label from an issue or PR."""
+        import httpx  # noqa: PLC0415
+
+        owner, repo = args["owner"], args["repo"]
+        issue_number = args["issue_number"]
+        label = args.get("label", "")
+
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            resp = await client.delete(
+                f"{self._base_url}/repos/{owner}/{repo}/issues/{issue_number}/labels/{label}",
+                headers=self._headers(),
+            )
+            if resp.status_code == 404:
+                return {"status": "not_found", "label": label}
+            resp.raise_for_status()
+            return {"status": "removed", "label": label}
+
+    async def _close_issue(self, args: dict[str, Any]) -> dict[str, str]:
+        """Close an issue."""
+        import httpx  # noqa: PLC0415
+
+        owner, repo = args["owner"], args["repo"]
+        issue_number = args["issue_number"]
+
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            resp = await client.patch(
+                f"{self._base_url}/repos/{owner}/{repo}/issues/{issue_number}",
+                headers=self._headers(),
+                json={"state": "closed"},
+            )
+            resp.raise_for_status()
+            return {"state": "closed", "number": str(issue_number)}
+
     _handlers: dict[str, Any] = {
         "list_issues": _list_issues,
         "get_issue": _get_issue,
@@ -301,4 +395,9 @@ class GitHubToolExecutor:
         "get_pr_diff": _get_pr_diff,
         "post_pr_comment": _post_pr_comment,
         "list_pr_comments": _list_pr_comments,
+        "close_pr": _close_pr,
+        "merge_pr": _merge_pr,
+        "add_labels": _add_labels,
+        "remove_label": _remove_label,
+        "close_issue": _close_issue,
     }
