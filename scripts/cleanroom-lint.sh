@@ -51,6 +51,7 @@ if [[ "$mode" == "all" ]]; then
   matches=$(git ls-files -z \
     | xargs -0 grep -inEH "$PATTERN" 2>/dev/null \
     | grep -v '^\.claude/worktrees/' \
+    | grep -v '^scripts/cleanroom-lint\.sh:' \
     || true)
 else
   echo "cleanroom-lint: mode = diff vs ${base}"
@@ -60,12 +61,19 @@ else
     matches=$(git ls-files -z \
       | xargs -0 grep -inEH "$PATTERN" 2>/dev/null \
       | grep -v '^\.claude/worktrees/' \
+      | grep -v '^scripts/cleanroom-lint\.sh:' \
       || true)
   else
     # Get the list of files changed (added or modified) vs base.
     changed_files=$(git diff --name-only --diff-filter=AM "${base}...HEAD" || true)
     if [[ -z "$changed_files" ]]; then
       green "cleanroom-lint: no changed files vs ${base}, nothing to scan"
+      exit 0
+    fi
+    # Exclude this script — it contains the pattern list by definition.
+    changed_files=$(echo "$changed_files" | grep -v 'scripts/cleanroom-lint\.sh')
+    if [[ -z "$changed_files" ]]; then
+      green "cleanroom-lint: only cleanroom-lint.sh changed, nothing else to scan"
       exit 0
     fi
     # Only inspect lines added in this branch (the '+' diff lines).
