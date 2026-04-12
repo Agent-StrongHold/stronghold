@@ -64,6 +64,14 @@ class ReactStrategy:
 
         tool_choice = "required" if self.force_tool_first else "auto"
 
+        logger.info(
+            "ReAct loop: model=%s tools=%d tool_names=%s max_rounds=%d",
+            model,
+            len(tools) if tools else 0,
+            [t.get("function", {}).get("name", "?") for t in (tools or [])],
+            self.max_rounds,
+        )
+
         for round_num in range(self.max_rounds + 1):
             # After first tool round, switch to auto
             if round_num > 0:
@@ -105,6 +113,10 @@ class ReactStrategy:
                 tool_calls = []
 
             if not tool_calls or round_num >= self.max_rounds:
+                logger.info(
+                    "ReAct exit: round=%d tool_calls=%d content_len=%d",
+                    round_num, len(tool_calls), len(message.get("content", "")),
+                )
                 content = message.get("content", "")
                 return ReasoningResult(
                     response=content,
