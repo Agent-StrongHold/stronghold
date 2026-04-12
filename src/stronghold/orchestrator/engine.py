@@ -261,6 +261,13 @@ class OrchestratorEngine:
             if not model_override:
                 model_override = "gemini/gemini-2.5-flash"
 
+        logger.info(
+            "Executing agent=%s model=%s tools=%d",
+            item.agent_name,
+            model_override or agent.identity.model,
+            len(agent.identity.tools),
+        )
+
         response = await agent.handle(
             item.messages,
             SYSTEM_AUTH,
