@@ -62,15 +62,47 @@ GITHUB_TOOL_DEF = ToolDefinition(
 )
 
 
-def _get_app_installation_token() -> str:
-    """Generate a short-lived installation token from GitHub App credentials.
+# ── GitHub App bot identities ───────────────────────────────────────
+#
+# Three bots, each a separate GitHub App installed on Agent-StrongHold:
+#
+#   gatekeeper — CI triage, PR automation, default bot
+#   auditor    — Auditor PR reviews (stronghold-workflow-archie-text[bot])
+#   mason      — Mason code changes, PR creation (stronghold-workflow-mason[bot])
+#
+# Private keys stored in ~/.conductor-secrets/{name}.pem.
+# Installation IDs discovered at startup via env or defaults.
 
-    Requires:
-        GITHUB_APP_ID (or defaults to 3354708)
-        GITHUB_APP_PRIVATE_KEY_PATH (or defaults to well-known path)
-        GITHUB_APP_INSTALLATION_ID (or defaults to 123359098)
+_BOT_REGISTRY: dict[str, dict[str, str]] = {
+    "gatekeeper": {
+        "app_id": "3354708",
+        "installation_id": "123359098",
+        "key_path": "~/.conductor-secrets/gatekeeper.pem",
+    },
+    "auditor": {
+        "app_id": "3354872",
+        "installation_id": "123361328",
+        "key_path": "~/.conductor-secrets/archie.pem",
+    },
+    "mason": {
+        "app_id": "3354924",
+        "installation_id": "123362160",
+        "key_path": "~/.conductor-secrets/mason.pem",
+    },
+}
 
-    Returns empty string if any credential is missing (falls back to PAT).
+
+def _get_app_installation_token(bot: str = "gatekeeper") -> str:
+    """Generate a short-lived installation token for a named bot identity.
+
+    Args:
+        bot: One of "gatekeeper", "auditor", "mason". Falls back to
+             "gatekeeper" for unknown names.
+
+    Env overrides (take precedence over _BOT_REGISTRY):
+        GITHUB_APP_ID, GITHUB_APP_PRIVATE_KEY_PATH, GITHUB_APP_INSTALLATION_ID
+
+    Returns empty string if credentials are missing (falls back to PAT).
     """
     try:
         import jwt as pyjwt  # noqa: PLC0415
@@ -80,12 +112,14 @@ def _get_app_installation_token() -> str:
 
     import time  # noqa: PLC0415
 
-    app_id = os.environ.get("GITHUB_APP_ID", "3354708")
+    reg = _BOT_REGISTRY.get(bot, _BOT_REGISTRY["gatekeeper"])
+
+    app_id = os.environ.get("GITHUB_APP_ID", reg["app_id"])
     key_path = os.environ.get(
         "GITHUB_APP_PRIVATE_KEY_PATH",
-        os.path.expanduser("~/.conductor-secrets/gatekeeper.pem"),
+        os.path.expanduser(reg["key_path"]),
     )
-    installation_id = os.environ.get("GITHUB_APP_INSTALLATION_ID", "123359098")
+    installation_id = os.environ.get("GITHUB_APP_INSTALLATION_ID", reg["installation_id"])
 
     if not app_id or not installation_id:
         return ""
@@ -118,10 +152,10 @@ def _get_app_installation_token() -> str:
         resp.raise_for_status()
         token = resp.json().get("token", "")
         if token:
-            logger.info("GitHub App installation token generated (stronghold-ci-gatekeeper[bot])")
+            logger.info("GitHub App token generated for bot=%s", bot)
         return token
     except Exception:
-        logger.warning("Failed to generate GitHub App installation token", exc_info=True)
+        logger.warning("Failed to generate GitHub App token for bot=%s", bot, exc_info=True)
         return ""
 
 
@@ -131,15 +165,19 @@ class GitHubToolExecutor:
     Implements the ToolExecutor protocol.
 
     Auth priority:
-    1. GitHub App installation token (posts as stronghold-ci-gatekeeper[bot])
+    1. GitHub App installation token (posts as the named bot)
     2. Explicit token param
     3. GITHUB_TOKEN env var (PAT — posts as the user)
+
+    Pass bot="mason" or bot="auditor" to __init__ to select identity.
+    Default is "gatekeeper" (CI/triage bot).
     """
 
-    def __init__(self, token: str = "") -> None:
+    def __init__(self, token: str = "", bot: str = "gatekeeper") -> None:
         # Prefer App installation token so actions show as the bot, not the user
-        app_token = _get_app_installation_token()
+        app_token = _get_app_installation_token(bot)
         self._token = app_token or token or os.environ.get("GITHUB_TOKEN", "")
+        self._bot = bot
         self._base_url = "https://api.github.com"
 
     @property
