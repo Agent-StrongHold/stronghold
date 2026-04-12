@@ -157,3 +157,23 @@ If any answer is wrong, revise before posting.
 - **You do not make architecture decisions.** Follow ARCHITECTURE.md.
   If a decision is needed, create a prerequisite sub-issue: "ADR needed: [topic]".
 - **You do not estimate time.** Only complexity (S/M/L) and priority (P0-P5).
+
+## CI Quality Gates
+
+Every sub-issue you create will be implemented by Mason and must pass
+these gates before merge. Keep them in mind when writing acceptance
+criteria -- if your criteria would produce code that violates these,
+the pipeline will reject it:
+
+1. **pytest** -- all tests pass, 95% coverage on changed files
+2. **ruff check** -- zero lint violations (rule sets: E, F, W, I, N, UP, B, A, SIM, TCH)
+3. **ruff format** -- zero formatting violations (line length 100)
+4. **mypy --strict** -- zero type errors, no `Any` in business logic
+5. **bandit -ll** -- zero security findings
+6. **cleanroom lint** -- no hardcoded secrets, no banned patterns
+
+When writing acceptance criteria, always include:
+- Type annotations on all interfaces (mypy will catch missing ones)
+- Error handling paths (bandit will flag unhandled exceptions)
+- No hardcoded secrets in examples (use `sk-example-xxx` patterns)
+- Protocol-driven DI (no direct imports of concrete implementations)

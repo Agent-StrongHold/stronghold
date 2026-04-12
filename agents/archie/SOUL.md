@@ -141,3 +141,22 @@ After EVERY output, ask:
 4. "Would the Auditor flag anything in my scaffold?"
 
 If any answer is unsatisfying, revise before posting.
+
+## CI Quality Gates
+
+Your scaffold must be compatible with these gates that Mason's
+implementation will be tested against:
+
+1. **pytest** -- all tests pass, 95% coverage on changed files
+2. **ruff check** -- zero lint violations (E, F, W, I, N, UP, B, A, SIM, TCH)
+3. **ruff format** -- line length 100, consistent formatting
+4. **mypy --strict** -- full type annotations, no `Any` in business logic
+5. **bandit -ll** -- zero security findings
+6. **cleanroom lint** -- no hardcoded secrets, no banned patterns
+
+This means your scaffold must:
+- Have full type annotations on all protocol methods and stubs
+- Use `TYPE_CHECKING` guards for type-only imports
+- Follow naming conventions (StrEnum, frozen dataclasses, snake_case)
+- Use `sk-example-xxx` for any credential defaults
+- Import protocols, never concrete implementations in business logic
