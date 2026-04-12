@@ -18,8 +18,8 @@ logger = logging.getLogger("stronghold.tools.github")
 GITHUB_TOOL_DEF = ToolDefinition(
     name="github",
     description=(
-        "GitHub operations: list/close issues, get details, create branches/PRs, "
-        "get PR diffs, post/read comments, close/merge PRs, add/remove labels."
+        "GitHub operations: list issues, get issue details, create branches, "
+        "create PRs, get PR diffs, post/read PR comments."
     ),
     parameters={
         "type": "object",
@@ -34,6 +34,7 @@ GITHUB_TOOL_DEF = ToolDefinition(
                     "get_pr_diff",
                     "post_pr_comment",
                     "list_pr_comments",
+                    "submit_review",
                     "close_pr",
                     "merge_pr",
                     "add_labels",
@@ -58,6 +59,20 @@ GITHUB_TOOL_DEF = ToolDefinition(
                 "type": "string",
                 "enum": ["open", "closed", "all"],
                 "description": "Issue state filter.",
+            },
+            "event": {
+                "type": "string",
+                "enum": ["APPROVE", "REQUEST_CHANGES", "COMMENT"],
+                "description": "Review verdict for submit_review.",
+            },
+            "merge_method": {
+                "type": "string",
+                "enum": ["squash", "merge", "rebase"],
+                "description": "Merge method for merge_pr (default: squash).",
+            },
+            "label": {
+                "type": "string",
+                "description": "Single label name (for remove_label).",
             },
         },
         "required": ["action", "owner", "repo"],
@@ -297,6 +312,46 @@ class GitHubToolExecutor:
                 "state": issue["state"],
             }
 
+    async def _submit_review(self, args: dict[str, Any]) -> dict[str, Any]:
+        """Submit a formal PR review (APPROVE, REQUEST_CHANGES, or COMMENT).
+
+        Args:
+            owner, repo, issue_number (PR number)
+            event: "APPROVE" | "REQUEST_CHANGES" | "COMMENT"
+            body: review comment (required for REQUEST_CHANGES)
+        """
+        import httpx  # noqa: PLC0415
+
+        owner, repo = args["owner"], args["repo"]
+        pr_number = args["issue_number"]
+        event = args.get("event", "COMMENT").upper()
+        body = args.get("body", "")
+
+        if event not in ("APPROVE", "REQUEST_CHANGES", "COMMENT"):
+            return {"error": f"Invalid review event: {event}. Use APPROVE, REQUEST_CHANGES, or COMMENT."}
+
+        if event == "REQUEST_CHANGES" and not body:
+            return {"error": "body is required for REQUEST_CHANGES reviews"}
+
+        payload: dict[str, str] = {"event": event}
+        if body:
+            payload["body"] = body
+
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            resp = await client.post(
+                f"{self._base_url}/repos/{owner}/{repo}/pulls/{pr_number}/reviews",
+                headers=self._headers(),
+                json=payload,
+            )
+            resp.raise_for_status()
+            review = resp.json()
+            return {
+                "id": review["id"],
+                "state": review["state"],
+                "user": review["user"]["login"],
+                "submitted_at": review.get("submitted_at", ""),
+            }
+
     async def _close_pr(self, args: dict[str, Any]) -> dict[str, str]:
         """Close a pull request."""
         import httpx  # noqa: PLC0415
@@ -395,6 +450,7 @@ class GitHubToolExecutor:
         "get_pr_diff": _get_pr_diff,
         "post_pr_comment": _post_pr_comment,
         "list_pr_comments": _list_pr_comments,
+        "submit_review": _submit_review,
         "close_pr": _close_pr,
         "merge_pr": _merge_pr,
         "add_labels": _add_labels,
