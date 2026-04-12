@@ -185,6 +185,7 @@ jobs:
             -e POSTGRES_PASSWORD=stronghold \
             -e POSTGRES_DB=stronghold \
             -p 5433:5432 \
+            --security-opt apparmor=unconfined \
             pgvector/pgvector:pg17
           echo "Waiting for postgres to be ready..."
           READY=false
