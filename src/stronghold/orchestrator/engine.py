@@ -248,9 +248,23 @@ class OrchestratorEngine:
             msg = f"Agent '{item.agent_name}' not loaded"
             raise LookupError(msg)
 
+        # Select a model — resolve from config, fallback to first available
+        model_override = None
+        if agent.identity.model == "auto":
+            config_models = getattr(self._container, "config", None)
+            if config_models and hasattr(config_models, "models"):
+                for name, mcfg in config_models.models.items():
+                    m = mcfg if isinstance(mcfg, dict) else vars(mcfg)
+                    if "code" in m.get("strengths", []):
+                        model_override = m.get("litellm_id", name)
+                        break
+            if not model_override:
+                model_override = "gemini/gemini-2.5-flash"
+
         response = await agent.handle(
             item.messages,
             SYSTEM_AUTH,
+            model_override=model_override,
         )
         return {
             "choices": [
