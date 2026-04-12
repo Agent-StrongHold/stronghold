@@ -14,7 +14,7 @@ import logging
 from pathlib import Path
 from typing import Protocol, runtime_checkable
 
-import casbin
+import casbin  # type: ignore[import-untyped]
 
 logger = logging.getLogger("stronghold.security.tool_policy")
 

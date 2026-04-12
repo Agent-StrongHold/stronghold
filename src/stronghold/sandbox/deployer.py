@@ -62,7 +62,8 @@ class MCPDeployerClient:
             },
         )
         resp.raise_for_status()
-        return resp.json()
+        result: dict[str, Any] = resp.json()
+        return result
 
     async def reap(self, pod_id: str) -> bool:
         """Request mcp-deployer to reap (delete) a sandbox pod."""
@@ -79,16 +80,19 @@ class MCPDeployerClient:
         """Get status of a sandbox pod."""
         resp = await self._client.get(f"/status/{pod_id}")
         resp.raise_for_status()
-        return resp.json()
+        result: dict[str, Any] = resp.json()
+        return result
 
     async def list_active(self, tenant_id: str = "") -> list[dict[str, Any]]:
         """List active sandbox pods, optionally filtered by tenant."""
-        params = {}
+        params: dict[str, str] = {}
         if tenant_id:
             params["tenant_id"] = tenant_id
         resp = await self._client.get("/list", params=params)
         resp.raise_for_status()
-        return resp.json().get("pods", [])
+        data: dict[str, Any] = resp.json()
+        pods: list[dict[str, Any]] = data.get("pods", [])
+        return pods
 
     async def health(self) -> bool:
         """Check if mcp-deployer is healthy."""

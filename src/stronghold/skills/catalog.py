@@ -158,8 +158,9 @@ class SkillCatalog:
                 try:
                     content = path.read_text(encoding="utf-8")
                     skill_def = parse_skill_file(content)
+                    if skill_def is None:
+                        continue
                     entry = SkillCatalogEntry(definition=skill_def, scope="builtin")
-                    # Remove old entry with same name + scope
                     with self._lock:
                         self._entries = [
                             e
