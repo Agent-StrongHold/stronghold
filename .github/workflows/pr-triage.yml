@@ -1,0 +1,206 @@
+name: PR Triage
+
+# Scheduled sweep of all open PRs. For each PR:
+#   1. CI failed → re-run CI once, label "ci-failed", post failure summary
+#   2. CI passed → label "ci-passed", check if mergeable
+#   3. Stale (no activity in 7 days) → comment + close
+#   4. Already labeled "needs-revision" with no new commits for 3 days → close
+#
+# This workflow MUST live on the default branch (main) to fire on schedule.
+
+on:
+  schedule:
+    - cron: "*/30 * * * *"  # Every 30 minutes
+  workflow_dispatch: {}      # Manual trigger for debugging
+
+concurrency:
+  group: pr-triage
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+  actions: write
+
+jobs:
+  triage:
+    name: Triage open PRs
+    runs-on: [self-hosted, stronghold]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Triage all open PRs
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+
+          echo "=== PR Triage starting at $(date -u) ==="
+
+          STALE_DAYS=7
+          NEEDS_REVISION_CLOSE_DAYS=3
+          NOW_EPOCH=$(date +%s)
+
+          # Fetch all open PRs with their check status and update timestamps
+          PRS=$(gh pr list --state open --limit 50 --json \
+            number,title,headRefName,updatedAt,labels,isDraft,mergeable \
+            --jq '.[]')
+
+          if [ -z "$PRS" ]; then
+            echo "No open PRs found."
+            exit 0
+          fi
+
+          echo "$PRS" | jq -c '.' | while IFS= read -r pr; do
+            NUMBER=$(echo "$pr" | jq -r '.number')
+            TITLE=$(echo "$pr" | jq -r '.title')
+            BRANCH=$(echo "$pr" | jq -r '.headRefName')
+            UPDATED=$(echo "$pr" | jq -r '.updatedAt')
+            IS_DRAFT=$(echo "$pr" | jq -r '.isDraft')
+            LABELS=$(echo "$pr" | jq -r '[.labels[].name] | join(",")')
+
+            echo ""
+            echo "--- PR #$NUMBER: $TITLE (branch: $BRANCH) ---"
+            echo "    Updated: $UPDATED | Draft: $IS_DRAFT | Labels: $LABELS"
+
+            # Skip drafts
+            if [ "$IS_DRAFT" = "true" ]; then
+              echo "    SKIP: draft PR"
+              continue
+            fi
+
+            # Skip PRs from protected branches
+            if [ "$BRANCH" = "main" ] || [ "$BRANCH" = "integration" ] || [ "$BRANCH" = "develop" ]; then
+              echo "    SKIP: protected branch"
+              continue
+            fi
+
+            # ── Staleness check ──
+            UPDATED_EPOCH=$(date -d "$UPDATED" +%s 2>/dev/null || date -j -f "%Y-%m-%dT%H:%M:%SZ" "$UPDATED" +%s 2>/dev/null || echo "0")
+            AGE_DAYS=$(( (NOW_EPOCH - UPDATED_EPOCH) / 86400 ))
+            echo "    Age: ${AGE_DAYS}d since last update"
+
+            # Close stale needs-revision PRs
+            if echo "$LABELS" | grep -q "needs-revision"; then
+              if [ "$AGE_DAYS" -ge "$NEEDS_REVISION_CLOSE_DAYS" ]; then
+                echo "    ACTION: closing stale needs-revision PR (${AGE_DAYS}d old)"
+                gh pr comment "$NUMBER" --body "$(cat <<BODY
+          Closing — this PR was marked **needs-revision** ${AGE_DAYS} days ago with no new commits.
+
+          The branch (\`$BRANCH\`) is preserved. Reopen when the revisions are ready, or open a new PR.
+          BODY
+                )"
+                gh pr close "$NUMBER"
+                continue
+              fi
+            fi
+
+            # Close very stale PRs
+            if [ "$AGE_DAYS" -ge "$STALE_DAYS" ]; then
+              echo "    ACTION: closing stale PR (${AGE_DAYS}d without activity)"
+              gh pr comment "$NUMBER" --body "$(cat <<BODY
+          Closing — no activity for **${AGE_DAYS} days**.
+
+          The branch (\`$BRANCH\`) is preserved. Reopen when ready, or open a fresh PR.
+          BODY
+              )"
+              gh pr close "$NUMBER"
+              continue
+            fi
+
+            # ── CI status check ──
+            # Get the latest CI check status
+            CI_STATUS=$(gh pr checks "$NUMBER" --json name,state,conclusion \
+              --jq '[.[] | select(.name != "PR Triage" and .name != "Dispatch repair")] |
+                     if length == 0 then "no_checks"
+                     elif all(.conclusion == "SUCCESS") then "passed"
+                     elif any(.conclusion == "FAILURE") then "failed"
+                     elif any(.state == "IN_PROGRESS" or .state == "QUEUED" or .state == "PENDING") then "pending"
+                     else "unknown" end' 2>/dev/null || echo "error")
+
+            echo "    CI status: $CI_STATUS"
+
+            case "$CI_STATUS" in
+              passed)
+                echo "    ACTION: CI passed — labeling ci-passed"
+                # Remove ci-failed if present, add ci-passed
+                gh pr edit "$NUMBER" --remove-label "ci-failed" 2>/dev/null || true
+                gh pr edit "$NUMBER" --add-label "ci-passed" 2>/dev/null || true
+                ;;
+
+              failed)
+                echo "    ACTION: CI failed — retriggering"
+
+                # Find the failed CI run
+                FAILED_RUN=$(gh run list --branch "$BRANCH" --workflow "CI" --limit 1 \
+                  --json databaseId,conclusion \
+                  --jq '.[] | select(.conclusion == "failure") | .databaseId' 2>/dev/null || echo "")
+
+                # Only retrigger if we haven't already (check for ci-retried label)
+                if echo "$LABELS" | grep -q "ci-retried"; then
+                  echo "    Already retried once — skipping retrigger"
+
+                  # Label as ci-failed so autofix picks it up
+                  gh pr edit "$NUMBER" --add-label "ci-failed" 2>/dev/null || true
+
+                  # Get failure details for comment
+                  if [ -n "$FAILED_RUN" ]; then
+                    FAILED_JOBS=$(gh run view "$FAILED_RUN" --json jobs \
+                      --jq '[.jobs[] | select(.conclusion == "failure") | .name] | join(", ")' 2>/dev/null || echo "unknown")
+                    FAIL_LOG=$(gh run view "$FAILED_RUN" --log-failed 2>&1 | tail -40 || echo "(could not fetch logs)")
+
+                    # Post diagnostic comment if no recent triage comment
+                    RECENT_COMMENT=$(gh pr view "$NUMBER" --json comments \
+                      --jq '[.comments[] | select(.body | contains("CI Triage"))] | last | .createdAt // ""' 2>/dev/null || echo "")
+
+                    if [ -z "$RECENT_COMMENT" ] || [ "$AGE_DAYS" -ge 1 ]; then
+                      gh pr comment "$NUMBER" --body "$(cat <<BODY
+          ## CI Triage — Persistent Failure
+
+          **Failed jobs:** $FAILED_JOBS
+          **Run:** [${FAILED_RUN}](https://github.com/${REPO}/actions/runs/${FAILED_RUN})
+
+          CI has failed after retry. Needs manual attention or Mason dispatch.
+
+          <details>
+          <summary>Failure log</summary>
+
+          \`\`\`
+          $FAIL_LOG
+          \`\`\`
+          </details>
+          BODY
+                      )"
+                    fi
+                  fi
+                else
+                  # First failure — retrigger the run
+                  if [ -n "$FAILED_RUN" ]; then
+                    echo "    Retriggering CI run $FAILED_RUN"
+                    gh run rerun "$FAILED_RUN" --failed 2>/dev/null || \
+                      gh run rerun "$FAILED_RUN" 2>/dev/null || \
+                      echo "    WARNING: could not retrigger run"
+                  fi
+                  gh pr edit "$NUMBER" --add-label "ci-retried" 2>/dev/null || true
+                fi
+                ;;
+
+              pending)
+                echo "    CI still running — skip"
+                ;;
+
+              no_checks)
+                echo "    No CI checks found — may need workflow trigger"
+                ;;
+
+              *)
+                echo "    Unknown CI status: $CI_STATUS — skip"
+                ;;
+            esac
+
+          done
+
+          echo ""
+          echo "=== PR Triage complete at $(date -u) ==="
