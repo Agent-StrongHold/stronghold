@@ -96,7 +96,8 @@ class OrchestratorEngine:
     async def start(self) -> None:
         """Start worker tasks."""
         logger.info(
-            "Orchestrator started: max_concurrent=%d", self._max_concurrent,
+            "Orchestrator started: max_concurrent=%d",
+            self._max_concurrent,
         )
         for i in range(self._max_concurrent):
             task = asyncio.create_task(self._worker(i))
@@ -136,7 +137,10 @@ class OrchestratorEngine:
         self._queue.put_nowait((priority, work_id))
         logger.info(
             "Work dispatched: id=%s agent=%s trigger=%s tier=%s",
-            work_id, agent_name, trigger, priority_tier,
+            work_id,
+            agent_name,
+            trigger,
+            priority_tier,
         )
         return item
 
@@ -172,7 +176,8 @@ class OrchestratorEngine:
         while not self._shutdown:
             try:
                 priority, work_id = await asyncio.wait_for(
-                    self._queue.get(), timeout=1.0,
+                    self._queue.get(),
+                    timeout=1.0,
                 )
             except TimeoutError:
                 continue
@@ -188,7 +193,9 @@ class OrchestratorEngine:
 
             logger.info(
                 "Worker %d executing: id=%s agent=%s",
-                worker_id, work_id, item.agent_name,
+                worker_id,
+                work_id,
+                item.agent_name,
             )
 
             try:
@@ -218,7 +225,9 @@ class OrchestratorEngine:
                 )
                 logger.error(
                     "Work failed: id=%s agent=%s error=%s",
-                    work_id, item.agent_name, exc,
+                    work_id,
+                    item.agent_name,
+                    exc,
                 )
 
             finally:

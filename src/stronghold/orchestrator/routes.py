@@ -127,6 +127,7 @@ async def list_queue(request: Request) -> JSONResponse:
     status_filter = request.query_params.get("status")
     if status_filter:
         from stronghold.orchestrator.engine import WorkStatus  # noqa: PLC0415
+
         try:
             ws = WorkStatus(status_filter)
         except ValueError as exc:
