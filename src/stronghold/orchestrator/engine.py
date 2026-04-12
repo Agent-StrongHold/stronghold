@@ -148,10 +148,10 @@ class OrchestratorEngine:
         return self._items.get(work_id)
 
     def list_items(self, status: WorkStatus | None = None) -> list[dict[str, object]]:
-        items = self._items.values()
+        all_items = list(self._items.values())
         if status:
-            items = [i for i in items if i.status == status]
-        return [i.to_dict() for i in items]
+            all_items = [i for i in all_items if i.status == status]
+        return [i.to_dict() for i in all_items]
 
     def cancel(self, work_id: str) -> bool:
         item = self._items.get(work_id)
@@ -252,7 +252,7 @@ class OrchestratorEngine:
     def _emit_event(self, name: str, data: dict[str, Any]) -> None:
         """Emit an event to the reactor for downstream processing."""
         try:
-            from stronghold.events import Event  # noqa: PLC0415
+            from stronghold.types.reactor import Event  # noqa: PLC0415
 
             event = Event(name=name, data=data)
             self._container.reactor.emit(event)
