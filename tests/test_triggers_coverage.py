@@ -192,3 +192,183 @@ class TestMasonPrReviewTrigger:
         _, handler = _find_trigger(c, "mason_pr_review")
         result = await handler(Event("mason.pr_review_requested", {}))
         assert result["skipped"] is True
+
+
+class TestLearningPromotionWithPromoter:
+    """Test learning_promotion_check when promoter exists."""
+
+    async def test_promoter_runs_and_returns_count(self) -> None:
+        c = _make_container()
+
+        class FakePromoter:
+            async def check_and_promote(self) -> list[str]:
+                return ["learning-1", "learning-2"]
+
+        c.learning_promoter = FakePromoter()  # type: ignore[attr-defined]
+        register_core_triggers(c)
+        _, handler = _find_trigger(c, "learning_promotion_check")
+        result = await handler(Event("tick", {}))
+        assert result["promoted_count"] == 2
+
+
+class TestTournamentCheckWithTournament:
+    """Test tournament_evaluation when tournament exists."""
+
+    async def test_returns_stats(self) -> None:
+        c = _make_container()
+
+        class FakeTournament:
+            def get_stats(self) -> dict[str, Any]:
+                return {"matches": 10, "promotions": 2}
+
+        c.tournament = FakeTournament()  # type: ignore[attr-defined]
+        register_core_triggers(c)
+        _, handler = _find_trigger(c, "tournament_evaluation")
+        result = await handler(Event("tick", {}))
+        assert result["matches"] == 10
+        assert result["promotions"] == 2
+
+
+class TestCanaryCheckWithManager:
+    """Test canary_deployment_check when canary_manager exists."""
+
+    async def test_no_active_canaries(self) -> None:
+        c = _make_container()
+
+        class FakeCanaryManager:
+            def list_active(self) -> list[dict[str, Any]]:
+                return []
+
+        c.canary_manager = FakeCanaryManager()  # type: ignore[attr-defined]
+        register_core_triggers(c)
+        _, handler = _find_trigger(c, "canary_deployment_check")
+        result = await handler(Event("tick", {}))
+        assert result["active_canaries"] == 0
+
+    async def test_active_canary_checked(self) -> None:
+        c = _make_container()
+
+        class FakeCanaryManager:
+            def list_active(self) -> list[dict[str, Any]]:
+                return [{"skill_name": "my_skill", "stage": "canary_10"}]
+
+            def check_promotion_or_rollback(self, skill_name: str) -> str:
+                return "advance"
+
+        c.canary_manager = FakeCanaryManager()  # type: ignore[attr-defined]
+        register_core_triggers(c)
+        _, handler = _find_trigger(c, "canary_deployment_check")
+        result = await handler(Event("tick", {}))
+        assert result["active_canaries"] == 1
+
+
+class TestRlhfFeedbackWithReview:
+    """Test rlhf_feedback when review_result is provided."""
+
+    async def test_processes_review_result(self) -> None:
+        from stronghold.types.feedback import (
+            ReviewFinding,
+            ReviewResult,
+            Severity,
+            ViolationCategory,
+        )
+
+        c = _make_container()
+        register_core_triggers(c)
+        _, handler = _find_trigger(c, "rlhf_feedback")
+        review_result = ReviewResult(
+            pr_number=42,
+            agent_id="mason",
+            findings=(
+                ReviewFinding(
+                    category=ViolationCategory.MOCK_USAGE,
+                    severity=Severity.HIGH,
+                    file_path="main.py",
+                    description="found mock usage",
+                    suggestion="use fakes from tests/fakes.py",
+                ),
+            ),
+            approved=False,
+            summary="Needs fixes",
+        )
+        result = await handler(Event("pr.reviewed", {"review_result": review_result}))
+        assert "stored_learnings" in result
+
+
+class TestMasonDispatchWithRoute:
+    """Test mason_dispatch when issue_number is provided."""
+
+    async def test_dispatch_handles_failure_gracefully(self) -> None:
+        """When route_request fails (no agents), the handler catches and records the error."""
+        c = _make_container()
+
+        class FakeMasonQueue:
+            def __init__(self) -> None:
+                self.started: list[int] = []
+                self.completed: list[int] = []
+                self.failed: list[tuple[int, str]] = []
+
+            def start(self, issue_number: int) -> None:
+                self.started.append(issue_number)
+
+            def complete(self, issue_number: int) -> None:
+                self.completed.append(issue_number)
+
+            def fail(self, issue_number: int, error: str = "") -> None:
+                self.failed.append((issue_number, error))
+
+        c.mason_queue = FakeMasonQueue()  # type: ignore[attr-defined]
+        register_core_triggers(c)
+        _, handler = _find_trigger(c, "mason_dispatch")
+        result = await handler(
+            Event(
+                "mason.issue_assigned",
+                {
+                    "issue_number": 42,
+                    "title": "Implement feature",
+                    "owner": "org",
+                    "repo": "stronghold",
+                },
+            )
+        )
+        assert result["issue_number"] == 42
+        assert result["status"] == "failed"
+        assert "error" in result
+        assert 42 in c.mason_queue.started
+        assert len(c.mason_queue.failed) == 1
+
+
+class TestMasonPrReviewWithRoute:
+    """Test mason_pr_review when pr_number is provided."""
+
+    async def test_pr_review_handles_failure_gracefully(self) -> None:
+        """When route_request fails (no agents), the handler catches and records the error."""
+        c = _make_container()
+        register_core_triggers(c)
+        _, handler = _find_trigger(c, "mason_pr_review")
+        result = await handler(
+            Event(
+                "mason.pr_review_requested",
+                {
+                    "pr_number": 99,
+                    "owner": "org",
+                    "repo": "stronghold",
+                },
+            )
+        )
+        assert result["pr_number"] == 99
+        assert result["status"] == "failed"
+        assert "error" in result
+
+
+class TestSecurityRescanBoundaryDefault:
+    """Test that security_rescan uses default boundary when not specified."""
+
+    async def test_default_boundary_is_tool_result(self) -> None:
+        c = _make_container()
+        register_core_triggers(c)
+        _, handler = _find_trigger(c, "security_rescan")
+        result = await handler(
+            Event("security.rescan", {"content": "safe text"})
+        )
+        assert result["clean"] is True

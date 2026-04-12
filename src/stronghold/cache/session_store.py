@@ -51,11 +51,14 @@ class RedisSessionStore:
         """Get recent messages for a session, filtered by per-message TTL.
 
         Session IDs must be org-scoped (format: org/team/user:name).
-        Bare session IDs are rejected as a defense-in-depth measure.
+        Bare session IDs are rejected with ValueError.
         """
         if "/" not in session_id:
-            logger.warning("Rejected bare session_id (not org-scoped): %s", session_id[:20])
-            return []
+            msg = (
+                f"session_id must be org-scoped (format: org/user:name), "
+                f"got bare id: {session_id[:20]!r}"
+            )
+            raise ValueError(msg)
         limit = max_messages or self._max
         ttl = ttl_seconds or self._ttl
         cutoff = time.time() - ttl
@@ -86,8 +89,11 @@ class RedisSessionStore:
     ) -> None:
         """Append messages to a session with timestamps."""
         if "/" not in session_id:
-            logger.warning("Rejected bare session_id (not org-scoped): %s", session_id[:20])
-            return
+            msg = (
+                f"session_id must be org-scoped (format: org/user:name), "
+                f"got bare id: {session_id[:20]!r}"
+            )
+            raise ValueError(msg)
         if not messages:
             return
 
@@ -113,5 +119,9 @@ class RedisSessionStore:
     async def delete_session(self, session_id: str) -> None:
         """Delete a session."""
         if "/" not in session_id:
-            return
+            msg = (
+                f"session_id must be org-scoped (format: org/user:name), "
+                f"got bare id: {session_id[:20]!r}"
+            )
+            raise ValueError(msg)
         await self._redis.delete(self._key(session_id))

@@ -29,9 +29,9 @@ async def test_get_history_empty(store):
 
 
 async def test_get_history_rejects_bare_session_id(store):
-    """Bare session IDs (not org-scoped) are rejected."""
-    result = await store.get_history("bare-session-id")
-    assert result == []
+    """Bare session IDs (not org-scoped) raise ValueError."""
+    with pytest.raises(ValueError, match="org-scoped"):
+        await store.get_history("bare-session-id")
 
 
 async def test_get_history_returns_messages(store):
@@ -81,10 +81,8 @@ async def test_get_history_refreshes_ttl(store, redis_client):
 # ---- append_messages ----
 
 async def test_append_rejects_bare_session_id(store, redis_client):
-    await store.append_messages("bare-id", [{"role": "user", "content": "x"}])
-    # Nothing should be stored
-    keys = await redis_client.keys("stronghold:session:*")
-    assert len(keys) == 0
+    with pytest.raises(ValueError, match="org-scoped"):
+        await store.append_messages("bare-id", [{"role": "user", "content": "x"}])
 
 
 async def test_append_empty_messages_noop(store, redis_client):
@@ -141,11 +139,6 @@ async def test_delete_session(store, redis_client):
 
 
 async def test_delete_session_rejects_bare_id(store, redis_client):
-    """Bare session ID delete is a no-op."""
-    await store.append_messages("org/team/user:s10", [
-        {"role": "user", "content": "hello"},
-    ])
-    await store.delete_session("bare-id")
-    # Original session should still exist
-    history = await store.get_history("org/team/user:s10")
-    assert len(history) == 1
+    """Bare session ID delete raises ValueError."""
+    with pytest.raises(ValueError, match="org-scoped"):
+        await store.delete_session("bare-id")

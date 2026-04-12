@@ -671,3 +671,187 @@ class TestCreateAgentsFilesystem:
         assert "solo" in result
         soul = await prompts.get("agent.solo.soul")
         assert "Solo agent soul." in soul
+
+
+# ── _build_identity_from_record ───────────────────────────────────
+
+
+class TestBuildIdentityFromRecord:
+    """Test _build_identity_from_record for the DB-load path."""
+
+    def test_builds_identity_from_record_with_all_fields(self) -> None:
+        from stronghold.agents.factory import _build_identity_from_record
+
+        class FakeRecord:
+            name = "mason"
+            version = "2.1.0"
+            description = "builder agent"
+            model = "gpt-4"
+            model_fallbacks = ["gpt-3.5", "claude-3"]
+            model_constraints = {"temperature": 0.2}
+            tools = ["github", "shell"]
+            skills = ["code_review"]
+            rules = "Always run tests\nNever skip linting"
+            trust_tier = "t1"
+            priority_tier = "P1"
+            max_tool_rounds = 8
+            reasoning_strategy = "react"
+            memory_config = {"learnings": True}
+
+        record = FakeRecord()
+        identity = _build_identity_from_record(record)
+        assert identity.name == "mason"
+        assert identity.version == "2.1.0"
+        assert identity.description == "builder agent"
+        assert identity.model == "gpt-4"
+        assert identity.model_fallbacks == ("gpt-3.5", "claude-3")
+        assert identity.model_constraints == {"temperature": 0.2}
+        assert identity.tools == ("github", "shell")
+        assert identity.skills == ("code_review",)
+        assert identity.rules == ("Always run tests", "Never skip linting")
+        assert identity.trust_tier == "t1"
+        assert identity.priority_tier == "P1"
+        assert identity.max_tool_rounds == 8
+        assert identity.reasoning_strategy == "react"
+        assert identity.memory_config == {"learnings": True}
+        assert identity.soul_prompt_name == "agent.mason.soul"
+
+    def test_handles_none_fallbacks_and_constraints(self) -> None:
+        from stronghold.agents.factory import _build_identity_from_record
+
+        class FakeRecord:
+            name = "minimal"
+            version = "1.0.0"
+            description = ""
+            model = "auto"
+            model_fallbacks = None
+            model_constraints = None
+            tools = None
+            skills = None
+            rules = None
+            trust_tier = "t2"
+            max_tool_rounds = 3
+            reasoning_strategy = "direct"
+            memory_config = None
+
+        record = FakeRecord()
+        identity = _build_identity_from_record(record)
+        assert identity.model_fallbacks == ()
+        assert identity.model_constraints == {}
+        assert identity.tools == ()
+        assert identity.skills == ()
+        assert identity.rules == ()
+        assert identity.memory_config == {}
+
+    def test_missing_priority_tier_defaults_to_p2(self) -> None:
+        from stronghold.agents.factory import _build_identity_from_record
+
+        class FakeRecord:
+            name = "old"
+            version = "1.0.0"
+            description = ""
+            model = "auto"
+            model_fallbacks = []
+            model_constraints = {}
+            tools = []
+            skills = []
+            rules = ""
+            trust_tier = "t2"
+            max_tool_rounds = 3
+            reasoning_strategy = "direct"
+            memory_config = {}
+            # Intentionally missing priority_tier attribute
+
+        record = FakeRecord()
+        identity = _build_identity_from_record(record)
+        assert identity.priority_tier == "P2"
+
+
+# ── _register_custom_strategies ───────────────────────────────────
+
+
+class TestRegisterCustomStrategies:
+    """Test that _register_custom_strategies loads all available strategies."""
+
+    def test_registers_available_strategies(self) -> None:
+        from stronghold.agents.factory import _register_custom_strategies, _STRATEGY_REGISTRY
+
+        _register_custom_strategies()
+        # After registration, react and delegate should be available
+        assert "react" in _STRATEGY_REGISTRY
+        assert "delegate" in _STRATEGY_REGISTRY
+
+
+# ── _instantiate ──────────────────────────────────────────────────
+
+
+class TestInstantiate:
+    """Test _instantiate wiring logic."""
+
+    def test_agent_with_no_tools_gets_no_executor(self) -> None:
+        from stronghold.agents.factory import _instantiate
+
+        identity = AgentIdentity(name="test", tools=(), reasoning_strategy="direct")
+        agent = _instantiate(
+            identity,
+            llm=FakeLLMClient(),
+            context_builder=ContextBuilder(),
+            prompt_manager=FakePromptManager(),
+            warden=Warden(),
+            learning_store=InMemoryLearningStore(),
+            tool_executor="should-be-ignored",
+        )
+        assert agent._tool_executor is None
+
+    def test_agent_with_tools_gets_executor(self) -> None:
+        from stronghold.agents.factory import _instantiate
+
+        identity = AgentIdentity(name="test", tools=("github",), reasoning_strategy="direct")
+        executor = object()
+        agent = _instantiate(
+            identity,
+            llm=FakeLLMClient(),
+            context_builder=ContextBuilder(),
+            prompt_manager=FakePromptManager(),
+            warden=Warden(),
+            learning_store=InMemoryLearningStore(),
+            tool_executor=executor,
+        )
+        assert agent._tool_executor is executor
+
+
+# ── create_agents with phases (manifest with phases) ──────────────
+
+
+class TestCreateAgentsWithPhases:
+    """Test that phases from reasoning config are carried through."""
+
+    async def test_phases_from_manifest_carried_to_identity(self, tmp_path: Path) -> None:
+        agents_dir = _make_agents_dir(
+            tmp_path,
+            [
+                {
+                    "name": "artificer",
+                    "reasoning": {
+                        "strategy": "direct",
+                        "phases": ["plan", "implement", "review"],
+                    },
+                }
+            ],
+        )
+        result = await create_agents(
+            agents_dir=agents_dir,
+            prompt_manager=FakePromptManager(),
+            llm=FakeLLMClient(),
+            context_builder=ContextBuilder(),
+            warden=Warden(),
+            sentinel=None,
+            learning_store=InMemoryLearningStore(),
+            learning_extractor=ToolCorrectionExtractor(),
+            outcome_store=InMemoryOutcomeStore(),
+            session_store=InMemorySessionStore(),
+            quota_tracker=FakeQuotaTracker(),
+            tracer=NoopTracingBackend(),
+        )
+        assert "artificer" in result
+        assert result["artificer"].identity.phases == ("plan", "implement", "review")
