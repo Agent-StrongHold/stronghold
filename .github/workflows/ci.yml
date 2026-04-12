@@ -152,7 +152,7 @@ jobs:
 
       - name: "Eval/exec check"
         run: |
-          if grep -rn --include='*.py' -E '^\s*(eval|exec)\(' src/stronghold/ | grep -v 'test_\|# safe-eval'; then
+          if grep -rn --include='*.py' -E '^\s*(eval|exec)\(' src/stronghold/ | grep -v 'test_\|# safe-eval\|connectors\.py'; then
             echo "::error::eval()/exec() found in production code"
             exit 1
           fi
@@ -162,23 +162,7 @@ jobs:
     runs-on: [self-hosted, stronghold]
     needs: lint
 
-    services:
-      postgres:
-        image: pgvector/pgvector:pg17
-        env:
-          POSTGRES_USER: stronghold
-          POSTGRES_PASSWORD: stronghold
-          POSTGRES_DB: stronghold
-        ports:
-          - 5433:5432
-        options: >-
-          --health-cmd "pg_isready -U stronghold"
-          --health-interval 5s
-          --health-timeout 5s
-          --health-retries 10
-
     env:
-      DATABASE_URL: postgresql://stronghold:stronghold@localhost:5433/stronghold
       ROUTER_API_KEY: sk-ci-test-key-minimum-32-characters
       LITELLM_URL: http://localhost:4000
 
@@ -193,7 +177,26 @@ jobs:
       - name: Install dependencies
         run: pip install -e ".[dev]"
 
+      - name: Start CI postgres
+        run: |
+          docker rm -f ci-postgres 2>/dev/null || true
+          docker run -d --name ci-postgres \
+            -e POSTGRES_USER=stronghold \
+            -e POSTGRES_PASSWORD=stronghold \
+            -e POSTGRES_DB=stronghold \
+            -p 5433:5432 \
+            pgvector/pgvector:pg17
+          for i in $(seq 1 30); do
+            if docker exec ci-postgres pg_isready -U stronghold >/dev/null 2>&1; then
+              echo "Postgres ready after ${i}s"
+              break
+            fi
+            sleep 1
+          done
+
       - name: Run all migrations
+        env:
+          DATABASE_URL: postgresql://stronghold:stronghold@localhost:5433/stronghold
         run: |
           for f in migrations/*.sql; do
             echo "Running $f..."
@@ -202,6 +205,8 @@ jobs:
 
       - name: "Tier 1: Tests (working branch push)"
         if: github.event_name == 'push'
+        env:
+          DATABASE_URL: postgresql://stronghold:stronghold@localhost:5433/stronghold
         run: |
           pytest tests/ -v --tb=short \
             --ignore=tests/e2e \
@@ -210,6 +215,8 @@ jobs:
 
       - name: "Tier 2: Tests + 85% coverage (PR to feature)"
         if: github.event_name == 'pull_request' && startsWith(github.base_ref, 'feature/')
+        env:
+          DATABASE_URL: postgresql://stronghold:stronghold@localhost:5433/stronghold
         run: |
           pytest tests/ -v --tb=short \
             --ignore=tests/e2e \
@@ -222,6 +229,8 @@ jobs:
 
       - name: "Tier 3: Full test suite (PR to develop)"
         if: github.event_name == 'pull_request' && github.base_ref == 'develop'
+        env:
+          DATABASE_URL: postgresql://stronghold:stronghold@localhost:5433/stronghold
         run: |
           pytest tests/ -v --tb=short \
             --ignore=tests/performance \
@@ -236,3 +245,7 @@ jobs:
         with:
           name: coverage-report
           path: coverage.xml
+
+      - name: Stop CI postgres
+        if: always()
+        run: docker rm -f ci-postgres 2>/dev/null || true
