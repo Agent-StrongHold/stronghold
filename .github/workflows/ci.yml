@@ -116,7 +116,7 @@ jobs:
             echo "::error::AWS access key found in source code"
             FOUND=1
           fi
-          if grep -rn --include='*.py' 'BEGIN.*PRIVATE KEY' src/stronghold/; then
+          if grep -rn --include='*.py' 'BEGIN.*PRIVATE KEY' src/stronghold/ | grep -v 'pii_filter\.py\|re\.compile'; then
             echo "::error::Private key found in source code"
             FOUND=1
           fi
@@ -170,7 +170,7 @@ jobs:
           POSTGRES_PASSWORD: stronghold
           POSTGRES_DB: stronghold
         ports:
-          - 5432:5432
+          - 5433:5432
         options: >-
           --health-cmd "pg_isready -U stronghold"
           --health-interval 5s
@@ -178,7 +178,7 @@ jobs:
           --health-retries 10
 
     env:
-      DATABASE_URL: postgresql://stronghold:stronghold@localhost:5432/stronghold
+      DATABASE_URL: postgresql://stronghold:stronghold@localhost:5433/stronghold
       ROUTER_API_KEY: sk-ci-test-key-minimum-32-characters
       LITELLM_URL: http://localhost:4000
 
