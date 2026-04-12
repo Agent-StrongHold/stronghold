@@ -8,13 +8,13 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from enum import Enum
 
 logger = logging.getLogger("stronghold.agents.mason_queue")
 
 
-class IssueStatus(str, Enum):
+class IssueStatus(Enum):
     QUEUED = "queued"
     IN_PROGRESS = "in_progress"
     COMPLETED = "completed"
@@ -30,7 +30,7 @@ class IssueRecord:
     status: IssueStatus = IssueStatus.QUEUED
     error: str = ""
     log: list[str] = field(default_factory=list)
-    queued_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    queued_at: datetime = field(default_factory=lambda: datetime.now(UTC))
     started_at: datetime | None = None
     completed_at: datetime | None = None
 
@@ -76,14 +76,14 @@ class MasonQueue:
         record = self._issues.get(issue_number)
         if record:
             record.status = IssueStatus.IN_PROGRESS
-            record.started_at = datetime.now(timezone.utc)
+            record.started_at = datetime.now(UTC)
             logger.info("Issue #%d started", issue_number)
 
     def complete(self, issue_number: int) -> None:
         record = self._issues.get(issue_number)
         if record:
             record.status = IssueStatus.COMPLETED
-            record.completed_at = datetime.now(timezone.utc)
+            record.completed_at = datetime.now(UTC)
             logger.info("Issue #%d completed", issue_number)
 
     def fail(self, issue_number: int, error: str) -> None:
@@ -91,7 +91,7 @@ class MasonQueue:
         if record:
             record.status = IssueStatus.FAILED
             record.error = error
-            record.completed_at = datetime.now(timezone.utc)
+            record.completed_at = datetime.now(UTC)
             logger.warning("Issue #%d failed: %s", issue_number, error)
 
     def add_log(self, issue_number: int, message: str) -> None:

@@ -31,6 +31,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
     # Wire Mason queue + router
     from stronghold.agents.mason_queue import MasonQueue  # noqa: PLC0415
+    from stronghold.api.routes.mason import configure_mason_router  # noqa: PLC0415
 
     mason_queue = MasonQueue()
     container.mason_queue = mason_queue
@@ -153,6 +154,7 @@ def create_app() -> FastAPI:
     from stronghold.api.routes.dashboard import router as dashboard_router
     from stronghold.api.routes.gate_endpoint import router as gate_router
     from stronghold.api.routes.marketplace import router as marketplace_router
+    from stronghold.api.routes.mason import router as mason_router
     from stronghold.api.routes.mcp import router as mcp_router
     from stronghold.api.routes.models import router as models_router
     from stronghold.api.routes.profile import router as profile_router
@@ -162,9 +164,8 @@ def create_app() -> FastAPI:
     from stronghold.api.routes.status import router as status_router
     from stronghold.api.routes.tasks import router as tasks_router
     from stronghold.api.routes.traces import router as traces_router
-    from stronghold.api.routes.mason import configure_mason_router, router as mason_router
-    from stronghold.orchestrator.routes import router as orchestrator_router
     from stronghold.api.routes.webhooks import router as webhooks_router
+    from stronghold.orchestrator.routes import router as orchestrator_router
     from stronghold.prompts.routes import router as prompts_router
 
     app.include_router(auth_router)  # BFF auth (must be before dashboard for /auth/* routes)

@@ -17,14 +17,14 @@ import asyncio
 import logging
 import traceback
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from enum import Enum
 from typing import Any
 
 logger = logging.getLogger("stronghold.orchestrator.engine")
 
 
-class WorkStatus(str, Enum):
+class WorkStatus(Enum):
     QUEUED = "queued"
     RUNNING = "running"
     COMPLETED = "completed"
@@ -47,7 +47,7 @@ class WorkItem:
     result: dict[str, Any] | None = None
     error: str = ""
     log: list[str] = field(default_factory=list)
-    created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    created_at: datetime = field(default_factory=lambda: datetime.now(UTC))
     started_at: datetime | None = None
     completed_at: datetime | None = None
 
@@ -174,7 +174,7 @@ class OrchestratorEngine:
                 priority, work_id = await asyncio.wait_for(
                     self._queue.get(), timeout=1.0,
                 )
-            except (TimeoutError, asyncio.TimeoutError):
+            except TimeoutError:
                 continue
 
             item = self._items.get(work_id)
@@ -183,7 +183,7 @@ class OrchestratorEngine:
 
             self._running.add(work_id)
             item.status = WorkStatus.RUNNING
-            item.started_at = datetime.now(timezone.utc)
+            item.started_at = datetime.now(UTC)
             item.log.append(f"Worker {worker_id} picked up work")
 
             logger.info(
@@ -195,7 +195,7 @@ class OrchestratorEngine:
                 result = await self._execute(item)
                 item.status = WorkStatus.COMPLETED
                 item.result = result
-                item.completed_at = datetime.now(timezone.utc)
+                item.completed_at = datetime.now(UTC)
                 item.log.append("Completed successfully")
 
                 # Emit completion event for downstream reactors
@@ -208,7 +208,7 @@ class OrchestratorEngine:
             except Exception as exc:
                 item.status = WorkStatus.FAILED
                 item.error = str(exc)
-                item.completed_at = datetime.now(timezone.utc)
+                item.completed_at = datetime.now(UTC)
                 item.log.append(f"Failed: {exc}")
                 item.log.append(traceback.format_exc())
 
