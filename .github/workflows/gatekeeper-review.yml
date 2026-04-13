@@ -1,0 +1,106 @@
+name: Gatekeeper Review
+
+# When CI passes on a PR, Gatekeeper automatically approves.
+# When CI fails, ci-autofix.yml handles the failure path.
+#
+# This workflow MUST live on the default branch (main) for the
+# workflow_run trigger to fire.
+
+on:
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
+
+concurrency:
+  group: gatekeeper-${{ github.event.workflow_run.head_branch }}
+  cancel-in-progress: true
+
+jobs:
+  review:
+    name: Gatekeeper auto-review
+    runs-on: k3s-runners
+    if: >-
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'pull_request' &&
+      github.event.workflow_run.head_branch != 'main' &&
+      github.event.workflow_run.head_branch != 'integration' &&
+      github.event.workflow_run.head_branch != 'develop'
+    steps:
+      - name: Find PR for this branch
+        id: pr
+        env:
+          GH_TOKEN: ${{ github.token }}
+          HEAD_BRANCH: ${{ github.event.workflow_run.head_branch }}
+        run: |
+          PR_NUMBER=$(gh pr list --repo "${{ github.repository }}" \
+            --head "$HEAD_BRANCH" --state open \
+            --json number --jq '.[0].number' 2>/dev/null || echo "")
+          echo "number=$PR_NUMBER" >> "$GITHUB_OUTPUT"
+          if [ -z "$PR_NUMBER" ] || [ "$PR_NUMBER" = "null" ]; then
+            echo "No open PR for branch $HEAD_BRANCH — skipping"
+          else
+            echo "Found PR #$PR_NUMBER for branch $HEAD_BRANCH"
+          fi
+
+      - name: Generate Gatekeeper token
+        if: steps.pr.outputs.number != '' && steps.pr.outputs.number != 'null'
+        id: token
+        env:
+          APP_ID: ${{ secrets.GATEKEEPER_APP_ID }}
+          PRIVATE_KEY: ${{ secrets.GATEKEEPER_PRIVATE_KEY }}
+          INSTALLATION_ID: ${{ secrets.GATEKEEPER_INSTALLATION_ID }}
+        run: |
+          # Generate JWT
+          NOW=$(date +%s)
+          IAT=$((NOW - 60))
+          EXP=$((NOW + 600))
+
+          # Base64url encode header and payload
+          HEADER=$(echo -n '{"alg":"RS256","typ":"JWT"}' | openssl base64 -e -A | tr '+/' '-_' | tr -d '=')
+          PAYLOAD=$(echo -n "{\"iat\":$IAT,\"exp\":$EXP,\"iss\":\"$APP_ID\"}" | openssl base64 -e -A | tr '+/' '-_' | tr -d '=')
+
+          # Sign with RSA private key
+          SIGNATURE=$(echo -n "${HEADER}.${PAYLOAD}" | \
+            openssl dgst -sha256 -sign <(echo "$PRIVATE_KEY") -binary | \
+            openssl base64 -e -A | tr '+/' '-_' | tr -d '=')
+
+          JWT="${HEADER}.${PAYLOAD}.${SIGNATURE}"
+
+          # Exchange JWT for installation token
+          TOKEN=$(curl -s -X POST \
+            -H "Authorization: Bearer $JWT" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/app/installations/$INSTALLATION_ID/access_tokens" \
+            | jq -r '.token')
+
+          if [ "$TOKEN" = "null" ] || [ -z "$TOKEN" ]; then
+            echo "::error::Failed to generate Gatekeeper installation token"
+            exit 1
+          fi
+
+          echo "::add-mask::$TOKEN"
+          echo "token=$TOKEN" >> "$GITHUB_OUTPUT"
+
+      - name: Submit approval review
+        if: steps.pr.outputs.number != '' && steps.pr.outputs.number != 'null'
+        env:
+          TOKEN: ${{ steps.token.outputs.token }}
+          PR_NUMBER: ${{ steps.pr.outputs.number }}
+          RUN_ID: ${{ github.event.workflow_run.id }}
+        run: |
+          RESPONSE=$(curl -s -w "\n%{http_code}" -X POST \
+            -H "Authorization: Bearer $TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/${{ github.repository }}/pulls/$PR_NUMBER/reviews" \
+            -d "{\"event\":\"APPROVE\",\"body\":\"CI passed ([run #$RUN_ID](https://github.com/${{ github.repository }}/actions/runs/$RUN_ID)). Approved by Gatekeeper.\"}")
+
+          HTTP_CODE=$(echo "$RESPONSE" | tail -1)
+          BODY=$(echo "$RESPONSE" | head -n -1)
+
+          if [ "$HTTP_CODE" = "200" ] || [ "$HTTP_CODE" = "201" ] || [ "$HTTP_CODE" = "422" ]; then
+            USER=$(echo "$BODY" | jq -r '.user.login // "unknown"')
+            echo "Review submitted by $USER (HTTP $HTTP_CODE)"
+          else
+            echo "::warning::Review submission returned HTTP $HTTP_CODE"
+            echo "$BODY" | jq . 2>/dev/null || echo "$BODY"
+          fi
