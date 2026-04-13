@@ -122,10 +122,12 @@ class ReactStrategy:
                 tool_name = fn.get("name", "")
                 raw_args = fn.get("arguments", "{}")
                 # JSON bomb protection: reject args > 32KB
+                tool_blocked = False
                 if len(raw_args) > 32768:
                     logger.warning("Tool args too large for %s: %d bytes", tool_name, len(raw_args))
                     tool_args = {}
-                    tool_result = f"Error: Tool arguments too large ({len(raw_args)} bytes)"  # noqa: F841
+                    tool_result = f"Error: Tool arguments too large ({len(raw_args)} bytes)"
+                    tool_blocked = True
                 else:
                     try:
                         tool_args = json.loads(raw_args)
@@ -140,8 +142,7 @@ class ReactStrategy:
                 # Sentinel pre-call: validate + repair tool arguments
                 sentinel = kwargs.get("sentinel")
                 auth = kwargs.get("auth")
-                tool_blocked = False
-                if sentinel is not None and auth is not None:
+                if not tool_blocked and sentinel is not None and auth is not None:
                     tool_schema = _find_tool_schema(tools, tool_name)
                     sentinel_verdict = await sentinel.pre_call(
                         tool_name,

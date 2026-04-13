@@ -57,6 +57,7 @@ class ArtificerStrategy:
         tool_executor: Any = None,
         status_callback: StatusCallback | None = None,
         trace: Trace | None = None,
+        warden: Any = None,
         **kwargs: Any,
     ) -> ReasoningResult:
         """Run the full plan-execute workflow — fully traced."""
@@ -144,20 +145,32 @@ class ArtificerStrategy:
             for tc in tool_calls:
                 fn = tc.get("function", {})
                 tool_name = fn.get("name", "")
-                try:
-                    tool_args = json.loads(fn.get("arguments", "{}"))
-                except json.JSONDecodeError:
-                    logger.warning(
-                        "Malformed tool arguments for %s: %s",
-                        tool_name,
-                        fn.get("arguments", "")[:200],
-                    )
+                raw_args = fn.get("arguments", "{}")
+
+                # JSON bomb protection: reject args > 32KB
+                tool_blocked = False
+                if len(raw_args) > 32768:
+                    logger.warning("Tool args too large for %s: %d bytes", tool_name, len(raw_args))
                     tool_args = {}
+                    tool_result = f"Error: Tool arguments too large ({len(raw_args)} bytes)"
+                    tool_blocked = True
+                else:
+                    try:
+                        tool_args = json.loads(raw_args)
+                    except json.JSONDecodeError:
+                        logger.warning(
+                            "Malformed tool arguments for %s: %s",
+                            tool_name,
+                            raw_args[:200],
+                        )
+                        tool_args = {}
 
                 await status(f"Running {tool_name}...")
                 logger.info("Tool call: %s(%s)", tool_name, list(tool_args.keys()))
 
-                if tool_executor and callable(tool_executor):
+                if tool_blocked:
+                    pass  # tool_result already set from JSON bomb rejection
+                elif tool_executor and callable(tool_executor):
                     if trace:
                         with trace.span(f"tool.{tool_name}") as ts:
                             ts.set_input(tool_args)
@@ -182,9 +195,32 @@ class ArtificerStrategy:
                 else:
                     tool_result = f"Tool '{tool_name}' not available"
 
+                # Tool result size cap: prevent context window / memory exhaustion
+                tool_result_str = str(tool_result)
+                if len(tool_result_str) > 16384:
+                    tool_result_str = (
+                        tool_result_str[:16384]
+                        + f"\n[... truncated, {len(tool_result_str) - 16384} bytes omitted]"
+                    )
+
+                # Warden scan + PII filter on tool results
+                if warden is not None:
+                    verdict = await warden.scan(tool_result_str, "tool_result")
+                    if not verdict.clean:
+                        tool_result_str = (
+                            f"[BLOCKED: tool result contained suspicious content: "
+                            f"{', '.join(verdict.flags)}]"
+                        )
+
+                # Always redact PII regardless of Warden presence
+                from stronghold.security.sentinel.pii_filter import (  # noqa: PLC0415
+                    scan_and_redact,
+                )
+
+                tool_result_str, _ = scan_and_redact(tool_result_str)
+
                 # Log result summary
-                result_str = tool_result if isinstance(tool_result, str) else str(tool_result)
-                result_preview = result_str[:200]
+                result_preview = tool_result_str[:200]
                 if '"passed": true' in result_preview or '"status": "ok"' in result_preview:
                     await status(f"{tool_name}: OK")
                 elif '"passed": false' in result_preview:
@@ -196,7 +232,7 @@ class ArtificerStrategy:
                     {
                         "tool_name": tool_name,
                         "arguments": tool_args,
-                        "result": tool_result,
+                        "result": tool_result_str,
                         "round": round_num,
                     }
                 )
@@ -205,7 +241,7 @@ class ArtificerStrategy:
                     {
                         "role": "tool",
                         "tool_call_id": tc.get("id", ""),
-                        "content": str(tool_result),
+                        "content": tool_result_str,
                     }
                 )
 
