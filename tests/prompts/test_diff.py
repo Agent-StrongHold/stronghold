@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+import dataclasses
+
+import pytest
+
 from stronghold.prompts.diff import DiffLine, compute_diff
 
 
@@ -62,6 +66,8 @@ class TestComputeDiff:
         d = DiffLine(op="add", content="test", new_lineno=1)
         assert d.op == "add"
         assert d.content == "test"
+        with pytest.raises((AttributeError, dataclasses.FrozenInstanceError)):
+            d.op = "modified"
 
     def test_content_to_empty(self) -> None:
         result = compute_diff("existing content\n", "")
