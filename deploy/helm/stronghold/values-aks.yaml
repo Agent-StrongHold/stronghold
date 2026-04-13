@@ -128,11 +128,16 @@ postgresql:
 
 # --- Stronghold API -----------------------------------------------------------
 #
-# Start small, let HPA scale. Requests are the scheduler floor — keep them
-# tiny so pods pack onto a single node at idle.
+# Memory sizing is driven by Artificer (code agent), which spawns pytest,
+# mypy, and ruff as subprocesses sharing the container cgroup. Chat agents
+# (Arbiter, Ranger, Scribe) use ~200 KB heap per request — nearly nothing.
+# But a single Artificer request can spike to 500-800 MB (pytest loading
+# 550+ tests + mypy strict). The limit must accommodate that spike; the
+# request should reflect typical working-set so the scheduler doesn't
+# over-provision.
 
 strongholdApi:
-  replicas: 1  # HPA takes over immediately
+  replicas: 1
   image:
     registry: ""  # Set to your ACR: <name>.azurecr.io
     repository: stronghold/stronghold-api
@@ -141,10 +146,10 @@ strongholdApi:
   resources:
     requests:
       cpu: 100m
-      memory: 128Mi
+      memory: 256Mi   # Python process + headroom for chat agents
     limits:
       cpu: "2"
-      memory: 1Gi
+      memory: 1536Mi  # Artificer quality gates (pytest + mypy) spike to ~800Mi
 
 # --- LiteLLM proxy ------------------------------------------------------------
 
