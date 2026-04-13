@@ -328,18 +328,36 @@ Secrets: Azure Key Vault ──> ESO ──> K8s Secrets
 Identity: Azure Workload Identity (no stored credentials)
 ```
 
-## Cost estimate (small team, 3-node cluster)
+## Cost estimates
+
+### Dev / small team (2-node, nginx-ingress)
+
+| Resource | SKU | Estimated monthly cost |
+|---|---|---|
+| AKS cluster (2x D2s_v5) | Pay-as-you-go | ~$140 |
+| Azure Load Balancer | Standard (nginx-ingress) | ~$18 |
+| Azure Disk (32Gi) | managed-csi | ~$5 |
+| ACR | Standard | ~$5 |
+| Azure Key Vault | Standard | ~$1 |
+| **Total** | | **~$170/month** |
+
+Set `strongholdApi.replicas=1`, `litellmProxy.replicas=1`, and
+`ingressRoutes.className=nginx`.
+
+### Production (3-node HA, Application Gateway)
 
 | Resource | SKU | Estimated monthly cost |
 |---|---|---|
 | AKS cluster (3x D4s_v5) | Pay-as-you-go | ~$400 |
-| Azure Disk (32Gi Premium) | managed-csi-premium | ~$5 |
 | Application Gateway (v2) | Standard_v2 | ~$250 |
+| Azure Disk (32Gi) | managed-csi-premium | ~$5 |
 | ACR | Standard | ~$5 |
 | Azure Key Vault | Standard | ~$1 |
 | **Total** | | **~$660/month** |
 
-Use `Standard_D2s_v5` nodes for dev/test to halve the compute cost.
+The Application Gateway v2 carries a fixed hourly cost (~$0.20/hr = ~$146/mo
+base) plus capacity-unit charges. If you don't need WAF or L7 features,
+nginx-ingress behind a Standard Load Balancer cuts that line from $250 to $18.
 
 ## Troubleshooting
 
