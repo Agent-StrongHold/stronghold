@@ -128,13 +128,11 @@ postgresql:
 
 # --- Stronghold API -----------------------------------------------------------
 #
-# Memory sizing is driven by Artificer (code agent), which spawns pytest,
-# mypy, and ruff as subprocesses sharing the container cgroup. Chat agents
-# (Arbiter, Ranger, Scribe) use ~200 KB heap per request — nearly nothing.
-# But a single Artificer request can spike to 500-800 MB (pytest loading
-# 550+ tests + mypy strict). The limit must accommodate that spike; the
-# request should reflect typical working-set so the scheduler doesn't
-# over-provision.
+# All agents except Artificer are pure async I/O — ~200 KB heap per request,
+# waiting on upstream LLM responses. Size for that reality. Artificer is the
+# sole exception: it spawns pytest/mypy/ruff subprocesses that spike to
+# 500-800 MB. That belongs in a separate deployment (see ARCHITECTURE.md
+# "Custom agent containers"), not in a pod sized for chat.
 
 strongholdApi:
   replicas: 1
@@ -146,10 +144,10 @@ strongholdApi:
   resources:
     requests:
       cpu: 100m
-      memory: 256Mi   # Python process + headroom for chat agents
+      memory: 192Mi   # Python process + Warden regex + context assembly
     limits:
-      cpu: "2"
-      memory: 1536Mi  # Artificer quality gates (pytest + mypy) spike to ~800Mi
+      cpu: "1"
+      memory: 512Mi   # Headroom for concurrent requests, no subprocess spikes
 
 # --- LiteLLM proxy ------------------------------------------------------------
 
