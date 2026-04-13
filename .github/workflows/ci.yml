@@ -25,15 +25,15 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Set up Python 3.13
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
       - name: Install system deps
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y -qq python3-pip python3-venv postgresql-client >/dev/null
-
-      - name: Set up venv
-        run: |
-          python3 -m venv .venv
-          echo "$PWD/.venv/bin" >> "$GITHUB_PATH"
+          sudo apt-get install -y -qq postgresql-client >/dev/null
 
       - name: Install dependencies
         run: pip install -e ".[dev]"
@@ -71,15 +71,15 @@ jobs:
     runs-on: k3s-runners
     steps:
       - uses: actions/checkout@v4
+      - name: Set up Python 3.13
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
       - name: Install system deps
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y -qq python3-pip python3-venv postgresql-client >/dev/null
-
-      - name: Set up venv
-        run: |
-          python3 -m venv .venv
-          echo "$PWD/.venv/bin" >> "$GITHUB_PATH"
+          sudo apt-get install -y -qq postgresql-client >/dev/null
       - name: Install dependencies
         run: pip install -e ".[dev]"
       - name: "Warden + Sentinel + Gate"
@@ -100,15 +100,15 @@ jobs:
     runs-on: k3s-runners
     steps:
       - uses: actions/checkout@v4
+      - name: Set up Python 3.13
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
       - name: Install system deps
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y -qq python3-pip python3-venv postgresql-client >/dev/null
-
-      - name: Set up venv
-        run: |
-          python3 -m venv .venv
-          echo "$PWD/.venv/bin" >> "$GITHUB_PATH"
+          sudo apt-get install -y -qq postgresql-client >/dev/null
       - name: Install dependencies
         run: pip install -e ".[dev]" pip-audit
 
@@ -181,15 +181,15 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Set up Python 3.13
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
       - name: Install system deps
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y -qq python3-pip python3-venv postgresql-client >/dev/null
-
-      - name: Set up venv
-        run: |
-          python3 -m venv .venv
-          echo "$PWD/.venv/bin" >> "$GITHUB_PATH"
+          sudo apt-get install -y -qq postgresql-client >/dev/null
 
       - name: Install dependencies
         run: pip install -e ".[dev]"
