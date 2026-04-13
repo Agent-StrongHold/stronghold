@@ -424,7 +424,10 @@ class GitHubToolExecutor:
         body = args.get("body", "")
 
         if event not in ("APPROVE", "REQUEST_CHANGES", "COMMENT"):
-            return {"error": f"Invalid review event: {event}. Use APPROVE, REQUEST_CHANGES, or COMMENT."}
+            return {
+                "error": f"Invalid review event: {event}. "
+                "Use APPROVE, REQUEST_CHANGES, or COMMENT.",
+            }
 
         if event == "REQUEST_CHANGES" and not body:
             return {"error": "body is required for REQUEST_CHANGES reviews"}
