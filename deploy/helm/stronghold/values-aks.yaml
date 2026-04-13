@@ -170,11 +170,19 @@ phoenixSvc:
       cpu: 500m
       memory: 1Gi
 
-# --- Autoscaling (aggressive scale-up, slow scale-down) ----------------------
+# --- Autoscaling --------------------------------------------------------------
 #
-# AKS cluster autoscaler adds nodes when pods are unschedulable — pair this
-# with tiny requests so pods schedule fast, then HPA adds replicas as load
-# climbs. Recommended AKS cluster autoscaler settings:
+# Stronghold is an async I/O gateway — the bottleneck is upstream LLM latency,
+# not local CPU. A single stronghold-api pod handles many concurrent requests.
+# LiteLLM is a pure HTTP proxy with near-zero compute. Phoenix is a low-volume
+# span collector. Postgres is a StatefulSet (can't HPA).
+#
+# TL;DR: one pod each is fine for most teams. HPA is here for stronghold-api
+# only, for the case where Warden regex scans or classification scoring
+# saturate a single pod under high concurrency. LiteLLM HPA is off — enable
+# it if you're somehow saturating the proxy (you won't).
+#
+# AKS cluster autoscaler handles the node side if a second pod can't schedule:
 #
 #   az aks update -g <rg> -n <cluster> \
 #     --cluster-autoscaler-profile \
@@ -187,21 +195,14 @@ autoscaling:
   strongholdApi:
     enabled: true
     minReplicas: 1
-    maxReplicas: 8
-    targetCPUUtilization: 60
-    targetMemoryUtilization: 75
+    maxReplicas: 4
+    targetCPUUtilization: 70
+    targetMemoryUtilization: 80
     scaleUpStabilization: 0       # scale up immediately on threshold breach
-    scaleUpMaxPods: 4             # up to 4 pods per 60s burst
+    scaleUpMaxPods: 2             # add up to 2 pods per 60s window
     scaleDownStabilization: 300   # 5 min cooldown before removing pods
   litellm:
-    enabled: true
-    minReplicas: 1
-    maxReplicas: 6
-    targetCPUUtilization: 60
-    targetMemoryUtilization: 75
-    scaleUpStabilization: 0
-    scaleUpMaxPods: 3
-    scaleDownStabilization: 300
+    enabled: false                # pure proxy — one pod is enough
 
 # --- MCP servers --------------------------------------------------------------
 
