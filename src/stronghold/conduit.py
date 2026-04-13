@@ -643,7 +643,9 @@ class Conduit:
             ]
         if fallback_models:
             logger.info("Fallback models: %s", fallback_models)
-        self._c.llm._fallback_models = fallback_models  # type: ignore[attr-defined]
+        # H6 fix: do NOT mutate shared LLM client -- concurrent requests
+        # would overwrite each other.  LiteLLMClient.complete() accepts
+        # fallback_models as a parameter; Phase-2 also discovers all models.
 
         # ── 9. Reactor: pre-agent event ──
         c.reactor.emit(

@@ -88,3 +88,81 @@ class InMemoryPromptManager:
         # First version gets "production" by default
         if version == 1 and "production" not in self._labels[key]:
             self._labels[key]["production"] = version
+
+    async def list_prompts(self) -> list[dict[str, Any]]:
+        """List all prompts with their current labels and version counts."""
+        result: list[dict[str, Any]] = []
+        for name in sorted(self._versions.keys()):
+            labels = self._labels.get(name, {})
+            versions = self._versions.get(name, {})
+            latest_version = max(versions.keys()) if versions else 0
+            content, _ = versions.get(latest_version, ("", {}))
+            result.append(
+                {
+                    "name": name,
+                    "versions": len(versions),
+                    "labels": labels,
+                    "latest_version": latest_version,
+                    "content_preview": (content[:100] + "..." if len(content) > 100 else content),
+                }
+            )
+        return result
+
+    async def get_version_history(self, name: str) -> dict[str, Any] | None:
+        """Get full version history for a prompt, or None if not found."""
+        versions = self._versions.get(name)
+        if not versions:
+            return None
+        labels = self._labels.get(name, {})
+        version_labels: dict[int, list[str]] = {}
+        for lbl, ver in labels.items():
+            version_labels.setdefault(ver, []).append(lbl)
+        version_list: list[dict[str, Any]] = []
+        for ver in sorted(versions.keys()):
+            content, config = versions[ver]
+            version_list.append(
+                {
+                    "version": ver,
+                    "labels": version_labels.get(ver, []),
+                    "content_preview": (content[:100] + "..." if len(content) > 100 else content),
+                    "config": config,
+                }
+            )
+        return {"name": name, "versions": version_list, "labels": labels}
+
+    async def get_label_version(self, name: str, label: str) -> int | None:
+        """Get the version number that a label points to, or None."""
+        labels = self._labels.get(name, {})
+        return labels.get(label)
+
+    async def set_label(self, name: str, label: str, version: int) -> None:
+        """Set a label to point at a specific version."""
+        if name not in self._labels:
+            self._labels[name] = {}
+        self._labels[name][label] = version
+
+    async def get_latest_version(self, name: str) -> int:
+        """Get the latest (highest) version number for a prompt."""
+        versions = self._versions.get(name, {})
+        return max(versions.keys()) if versions else 0
+
+    async def get_version_content(
+        self,
+        name: str,
+        version: int,
+    ) -> tuple[str, dict[str, Any]] | None:
+        """Get content and config for a specific version, or None."""
+        versions = self._versions.get(name, {})
+        entry = versions.get(version)
+        if entry is None:
+            return None
+        return entry
+
+    async def has_version(self, name: str, version: int) -> bool:
+        """Check whether a specific version exists for a prompt."""
+        versions = self._versions.get(name, {})
+        return version in versions
+
+    def scoped_name(self, name: str, org_id: str = "") -> str:
+        """Public wrapper for org-scoped prompt key generation."""
+        return self._scoped_name(name, org_id)

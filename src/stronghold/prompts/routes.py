@@ -45,23 +45,7 @@ async def list_prompts(request: Request) -> JSONResponse:
     container = request.app.state.container
     pm = container.prompt_manager
 
-    all_prompts: list[dict[str, Any]] = []
-    for name in sorted(pm._versions.keys()):
-        labels = pm._labels.get(name, {})
-        versions = pm._versions.get(name, {})
-        latest_version = max(versions.keys()) if versions else 0
-        content, config = versions.get(latest_version, ("", {}))
-
-        all_prompts.append(
-            {
-                "name": name,
-                "versions": len(versions),
-                "labels": labels,
-                "latest_version": latest_version,
-                "content_preview": content[:100] + "..." if len(content) > 100 else content,
-            }
-        )
-
+    all_prompts = await pm.list_prompts()
     return JSONResponse(content={"prompts": all_prompts})
 
 
@@ -72,28 +56,11 @@ async def get_versions(name: str, request: Request) -> JSONResponse:
     container = request.app.state.container
     pm = container.prompt_manager
 
-    versions = pm._versions.get(name)
-    if not versions:
+    history = await pm.get_version_history(name)
+    if not history:
         raise HTTPException(status_code=404, detail=f"Prompt '{name}' not found")
 
-    labels = pm._labels.get(name, {})
-    version_labels: dict[int, list[str]] = {}
-    for label, ver in labels.items():
-        version_labels.setdefault(ver, []).append(label)
-
-    version_list = []
-    for ver in sorted(versions.keys()):
-        content, config = versions[ver]
-        version_list.append(
-            {
-                "version": ver,
-                "labels": version_labels.get(ver, []),
-                "content_preview": content[:100] + "..." if len(content) > 100 else content,
-                "config": config,
-            }
-        )
-
-    return JSONResponse(content={"name": name, "versions": version_list})
+    return JSONResponse(content={"name": name, "versions": history["versions"]})
 
 
 @router.get("/{name:path}")
@@ -111,8 +78,7 @@ async def get_prompt(
     if not content:
         raise HTTPException(status_code=404, detail=f"Prompt '{name}' not found")
 
-    labels = pm._labels.get(name, {})
-    current_label_version = labels.get(label)
+    current_label_version = await pm.get_label_version(name, label)
 
     return JSONResponse(
         content={
@@ -146,9 +112,8 @@ async def upsert_prompt(name: str, request: Request) -> JSONResponse:
 
     await pm.upsert(name, content, config=config, label=label, org_id=auth.org_id)
 
-    scoped_name = pm._scoped_name(name, auth.org_id)
-    versions = pm._versions.get(scoped_name, {})
-    latest = max(versions.keys()) if versions else 0
+    scoped = pm.scoped_name(name, auth.org_id)
+    latest = await pm.get_latest_version(scoped)
 
     return JSONResponse(
         content={
@@ -177,26 +142,26 @@ async def promote_label(name: str, request: Request) -> JSONResponse:
     if not from_label or not to_label:
         raise HTTPException(status_code=400, detail="from_label and to_label required")
 
-    labels = pm._labels.get(name)
-    if not labels:
-        raise HTTPException(status_code=404, detail=f"Prompt '{name}' not found")
-
-    from_version = labels.get(from_label)
+    from_version = await pm.get_label_version(name, from_label)
     if from_version is None:
+        # Check if the prompt exists at all
+        history = await pm.get_version_history(name)
+        if not history:
+            raise HTTPException(status_code=404, detail=f"Prompt '{name}' not found")
         raise HTTPException(status_code=404, detail=f"Label '{from_label}' not found")
 
-    labels[to_label] = from_version
+    await pm.set_label(name, to_label, from_version)
 
     return JSONResponse(
         content={
             "name": name,
-            "promoted": f"{from_label}(v{from_version}) → {to_label}",
+            "promoted": f"{from_label}(v{from_version}) -> {to_label}",
             "version": from_version,
         }
     )
 
 
-# ── Diff + Approval Workflow ──────────────────────────────────────
+# -- Diff + Approval Workflow --
 
 # In-memory approval store (per-process, cleared on restart)
 _approvals: dict[str, list[Any]] = {}
@@ -214,12 +179,15 @@ async def get_diff(
     container = request.app.state.container
     pm = container.prompt_manager
 
-    versions = pm._versions.get(name)
-    if not versions:
+    history = await pm.get_version_history(name)
+    if not history:
         raise HTTPException(status_code=404, detail=f"Prompt '{name}' not found")
 
-    old_content = versions.get(from_version, ("", {}))[0]
-    new_content = versions.get(to_version, ("", {}))[0]
+    old_entry = await pm.get_version_content(name, from_version)
+    new_entry = await pm.get_version_content(name, to_version)
+
+    old_content = old_entry[0] if old_entry else ""
+    new_content = new_entry[0] if new_entry else ""
 
     if not old_content and not new_content:
         raise HTTPException(
@@ -268,8 +236,7 @@ async def request_approval(name: str, request: Request) -> JSONResponse:
     version = body.get("version", 0)
     notes = body.get("notes", "")
 
-    versions = pm._versions.get(name)
-    if not versions or version not in versions:
+    if not await pm.has_version(name, version):
         raise HTTPException(status_code=404, detail=f"Prompt '{name}' v{version} not found")
 
     from stronghold.types.prompt import ApprovalRequest  # noqa: PLC0415
@@ -323,9 +290,7 @@ async def approve_prompt(name: str, request: Request) -> JSONResponse:
     pending.reviewed_by = auth.user_id
     pending.reviewed_at = datetime.now(UTC)
 
-    labels = pm._labels.get(name, {})
-    labels["production"] = version
-    pm._labels[name] = labels
+    await pm.set_label(name, "production", version)
 
     return JSONResponse(
         content={
