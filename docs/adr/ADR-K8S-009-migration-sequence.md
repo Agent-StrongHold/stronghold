@@ -8,7 +8,7 @@
 
 The current production Stronghold instance runs on a prior single-node
 Kubernetes deployment alongside a legacy docker-compose stack on the
-homelab host. Both have known problems:
+development host. Both have known problems:
 
 - The single-node Kubernetes runtime uses a CNI that does not enforce
   NetworkPolicy. Storage is hostPath inside a container. Several MCP pods
@@ -190,7 +190,7 @@ smoke tests pass.**
 
 **Negative:**
 
-- 7 calendar days of dual-cluster resource consumption. On the homelab
+- 7 calendar days of dual-cluster resource consumption. On the dev cluster
   hardware (i9-13900K / 128GB RAM) this is comfortably within budget.
 - The PR-16 → PR-17 → PR-18 sequence holds the merge train for at least
   a week, blocking other k8s work from landing during the soak. Mitigated

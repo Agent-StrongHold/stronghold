@@ -6,7 +6,7 @@
 
 ## Context
 
-The Stronghold homelab cluster (see ADR-K8S-006) is a single Kubernetes
+The Stronghold development cluster (see ADR-K8S-006) is a single Kubernetes
 cluster that hosts both:
 
 - The production Stronghold instance (`stronghold-prod` namespace)
@@ -64,7 +64,7 @@ construction; CI checks the rendered manifests for compliance.
    pods do not get PDBs — they're expendable by design.
 
 6. **Separate StorageClasses for prod and dev (or quota-controlled
-   shared).** On the homelab, prod PVCs use a StorageClass backed by NVMe
+   shared).** On the dev cluster, prod PVCs use a StorageClass backed by NVMe
    (`local-path-nvme-prod`); dev PVCs use a separate StorageClass
    (`local-path-nvme-dev`) on the same physical disk but with a separate
    storage quota allocation in the namespace ResourceQuota. Alternatively,
@@ -124,7 +124,7 @@ oc delete namespace stronghold-dev-feat-foo
 
 **A) Separate clusters for prod and dev.**
 
-- Rejected: doubles the ops surface for a single-operator homelab. Two
+- Rejected: doubles the ops surface for a single-operator dev cluster. Two
   clusters means two upgrade cycles, two CNI installs, two cert-manager
   installs, two backup pipelines. The benefit (cluster-level isolation)
   is real but smaller than the cost. Namespace-level isolation with the

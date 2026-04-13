@@ -10,8 +10,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## IMPORTANT: Project Identity
 
 Stronghold is an **enterprise multi-tenant agent governance platform**. It is NOT:
-- NOT conductor-router (that's the homelab predecessor, a different repo)
-- NOT a homelab tool (it targets K8s + Entra ID deployment)
+- NOT conductor-router (that's the dev cluster predecessor, a different repo)
+- NOT a dev cluster tool (it targets K8s + Entra ID deployment)
 - NOT a chatbot wrapper (it's a governance layer with security, routing, memory, and audit)
 
 All architecture decisions must account for: **tenant isolation, namespace-scoped secrets, per-user memory, pluggable integrations** (no hardcoded profiles, no SQLite in production).

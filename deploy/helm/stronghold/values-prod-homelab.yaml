@@ -1,4 +1,4 @@
-# values-prod-homelab.yaml
+# values-prod-homelab.yaml (development overlay)
 #
 # Targets the k3s v1.31 cluster on VM 301 (stronghold-k3s-host, 10.10.42.31).
 # Pivoted from OKD/CRC to k3s after CRC kept dying on libvirtd restarts.
@@ -36,7 +36,7 @@ networkPolicy:
 ingressRoutes:
   enabled: false
 
-# Enable the shared-PAT github-mcp template for the homelab dev cluster.
+# Enable the shared-PAT github-mcp template for the development cluster.
 # This is acceptable for a single-user dev cluster but NOT for production.
 # See ADR-K8S-018/019/020/025 for the production credential isolation path.
 mcp:
@@ -50,7 +50,7 @@ image:
   tag: latest
   pullPolicy: Always
 
-# Homelab resource tuning (single-node, 32GB RAM, 10 vCPU).
+# Development cluster resource tuning (single-node, 32GB RAM, 10 vCPU).
 strongholdApi:
   replicas: 1
   image:

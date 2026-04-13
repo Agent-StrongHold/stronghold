@@ -329,7 +329,7 @@ mcp:
     # Per ADR-K8S-018/019/020/025, the production path is an in-process Stronghold
     # tool with per-user vault credential injection. This template is dev-only
     # and will be removed in v0.9.1 (replaced by src/stronghold/tools/github.py).
-    # Set to true ONLY for dev/homelab clusters where a single PAT is acceptable.
+    # Set to true ONLY for dev clusters where a single PAT is acceptable.
     devMode: false
     replicas: 1
     image:

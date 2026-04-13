@@ -63,9 +63,9 @@ update; restart pods to pick up the new value.
 not fully reproducible from the repo. Acceptable for dev / single-node
 where the operator is the source of truth.
 
-### `sealed-secrets` — Bitnami sealed-secrets controller (default for OKD homelab)
+### `sealed-secrets` — Bitnami sealed-secrets controller (default for OKD dev cluster)
 
-**Use when:** GitOps workflows, OKD homelab default, OpenShift customers
+**Use when:** GitOps workflows, OKD dev cluster default, OpenShift customers
 who want declarative secret management without a separate cloud secret
 store.
 
@@ -220,7 +220,7 @@ manifest as pod CrashLoopBackOff.**
 
 **Positive:**
 
-- Customers on every common environment (homelab, cloud-managed,
+- Customers on every common environment (dev cluster, cloud-managed,
   on-prem enterprise) get a workflow that fits their existing tools.
 - Per-backend workflows are documented in one place
   (`docs/INSTALL.md`), with the same conceptual model applied to each.

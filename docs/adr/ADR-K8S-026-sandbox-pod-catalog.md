@@ -150,7 +150,7 @@ destroyed when the session ends or the maximum lifetime expires.
   provides VM-level isolation at near-container startup times; gVisor
   intercepts syscalls via a user-space kernel. Both add operational
   complexity (KVM access for Firecracker, custom RuntimeClass for
-  gVisor) beyond what v0.9 on a homelab k3s cluster requires. When
+  gVisor) beyond what v0.9 on a dev k3s cluster requires. When
   Stronghold targets multi-node production clusters with untrusted
   tenants, this becomes the right choice.
 

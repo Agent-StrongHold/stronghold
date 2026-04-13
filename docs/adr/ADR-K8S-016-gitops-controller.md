@@ -92,7 +92,7 @@ Helm chart gives us:
    RBAC they already have. No second identity provider to configure.
 3. **Red Hat support is available if Stronghold customers deploy on
    paid OpenShift Container Platform.** The same operator runs on
-   OKD (our homelab) and OCP (customers), so the GitOps story does not
+   OKD (our dev cluster) and OCP (customers), so the GitOps story does not
    fork between the two.
 4. **Operator-managed upgrades.** When a new Argo CD version lands,
    OpenShift GitOps handles the upgrade as an operator reconciliation,
@@ -133,7 +133,7 @@ edit.** Auto-sync hides that transition inside a reconcile loop.
 ### What auto-sync would cost
 
 Auto-sync is attractive for its "cluster is always in git-declared
-state" property. For Stronghold's homelab reference deployment, we give
+state" property. For Stronghold's reference deployment, we give
 that up in exchange for the debugging-safety property above. Customers
 who want auto-sync on their own Stronghold deployment can set it on
 their Application resource; the Stronghold chart does not prescribe it
@@ -205,7 +205,7 @@ to catch drift.**
 **Negative:**
 
 - One more operator running in the cluster (`openshift-gitops`), with
-  its own Postgres-backed state. Modest resource cost on the homelab
+  its own Postgres-backed state. Modest resource cost on the dev cluster
   hardware.
 - Operators must learn the Argo CD UI and CLI in addition to `helm`
   and `oc`. Mitigated by the fact that Argo CD UI is straightforward

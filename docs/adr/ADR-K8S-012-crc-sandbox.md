@@ -6,7 +6,7 @@
 
 ## Context
 
-ADR-K8S-006 commits the homelab production runtime to OKD single-node
+ADR-K8S-006 commits the development cluster production runtime to OKD single-node
 OpenShift. We also want a separate, throwaway sandbox environment for:
 
 - Validating chart compatibility against fresh OpenShift versions before
@@ -26,7 +26,7 @@ OpenShift offers several "small footprint" variants for this purpose:
    k8s APIs, and basic OpenShift APIs
 3. **Single-Node OpenShift (SNO)** — full OpenShift on a single node,
    identical to multi-node OpenShift in capability; this is what the
-   homelab prod cluster runs
+   dev cluster production runtime runs
 
 The choice between CRC and MicroShift for the sandbox affects what we
 can validate. We need to decide which one fits our purpose.
@@ -35,7 +35,7 @@ can validate. We need to decide which one fits our purpose.
 
 **The Stronghold sandbox VM runs full OpenShift Local (CRC), not
 MicroShift.** The sandbox VM (`stronghold-crc`, VMID 108) lives on the
-homelab host, stays stopped except when actively in use, and exposes the
+development host, stays stopped except when actively in use, and exposes the
 complete OpenShift surface for compatibility validation.
 
 ### Rationale
@@ -59,7 +59,7 @@ complete OpenShift surface for compatibility validation.
    have OperatorHub cannot validate the OperatorHub-based install path.
 
 4. **The hardware can afford it.** CRC requires ~16GB RAM, 4 vCPU, 50GB
-   disk. The homelab host has 128GB RAM and 24 cores; the sandbox VM is
+   disk. The development host has 128GB RAM and 24 cores; the sandbox VM is
    stopped most of the time anyway. The resource cost is irrelevant.
 
 5. **CRC is a Red Hat product, free with a developer account.** We need
@@ -70,7 +70,7 @@ complete OpenShift surface for compatibility validation.
 6. **OKD vs CRC version skew matters.** CRC tracks OpenShift Container
    Platform releases closely, so it gets new versions before OKD does.
    This is actually useful: the sandbox can validate Stronghold's chart
-   against a newer OpenShift version before the homelab prod cluster
+   against a newer OpenShift version before the dev cluster
    upgrades to the corresponding OKD release.
 
 ### Operating model
@@ -79,7 +79,7 @@ complete OpenShift surface for compatibility validation.
 - **`qm start 108`** spins it up when an operator wants to validate
   something. Boot time ~5-10 minutes for a cold start.
 - **Weekly cron** in `stronghold-system` on the prod cluster (or in the
-  homelab host's cron) brings the sandbox up, runs the chart's
+  development host's cron) brings the sandbox up, runs the chart's
   compatibility test suite, posts results, brings it down. This catches
   CRC version drift and Stronghold chart drift before either becomes a
   surprise.
@@ -122,7 +122,7 @@ complete OpenShift surface for compatibility validation.
   cycles to keep healthy. CRC's 16GB on-demand footprint is right-sized
   for a sandbox.
 
-**C) An ephemeral CI Kubernetes runtime on the homelab host.**
+**C) An ephemeral CI Kubernetes runtime on the development host.**
 
 - Rejected: a CI runtime is not OpenShift. It doesn't have Routes, doesn't
   have SCCs, doesn't have OperatorHub. We already rejected ephemeral CI
@@ -137,12 +137,12 @@ using ephemeral namespaces.**
   operator upgrades, OperatorHub installs, Web Console testing) cannot
   be done in a namespace. A separate cluster is the only safe place.
 
-**E) Run CRC on the operator's workstation, not on the homelab.**
+**E) Run CRC on the operator's workstation, not on the dev cluster.**
 
-- Rejected: the homelab is the canonical environment for Stronghold
+- Rejected: the dev cluster is the canonical environment for Stronghold
   development on this team. Workstation CRC means another local VM, more
   battery drain on a laptop, and asymmetry between team members. Putting
-  it on the homelab keeps the development surface uniform.
+  it on the dev cluster keeps the development surface uniform.
 
 ## Consequences
 
@@ -164,9 +164,9 @@ using ephemeral namespaces.**
   cron slower than running it against an always-on cluster. Acceptable —
   the cron isn't latency-sensitive.
 - 50GB of VM disk allocated to a mostly-stopped VM. Acceptable on the
-  homelab's NVMe budget.
+  dev cluster's NVMe budget.
 - One more VM in the inventory (`stronghold-crc`, VMID 108) to register
-  in the homelab CLAUDE.md and PBS backup config (the VM disk gets
+  in the dev cluster CLAUDE.md and PBS backup config (the VM disk gets
   snapshotted nightly even though it's stopped, for convenience of
   rollback if `crc setup` ever corrupts the install).
 
@@ -183,6 +183,6 @@ using ephemeral namespaces.**
 - Red Hat OpenShift Local (CRC) documentation
 - Red Hat MicroShift documentation
 - OpenShift Container Platform 4.14 documentation: "Single-node OpenShift cluster install"
-- ADR-K8S-006 (runtime selection — homelab prod cluster choice)
+- ADR-K8S-006 (runtime selection — dev cluster choice)
 - ADR-K8S-007 (distro compatibility matrix — Tier-1 release validation)
 - ADR-K8S-008 (prod/dev isolation — why the sandbox can't share the prod cluster)

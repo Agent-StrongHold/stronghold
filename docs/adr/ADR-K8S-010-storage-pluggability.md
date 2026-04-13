@@ -17,7 +17,7 @@ Stronghold's persistent state lives in Postgres + pgvector:
 How and where this Postgres lives is a deployment decision that varies by
 customer:
 
-- A homelab single-operator wants in-cluster Postgres on local disk —
+- A single-operator deployment wants in-cluster Postgres on local disk —
   simple, free, no cloud account required
 - An EKS customer probably wants RDS for managed backups, PITR, and
   multi-AZ
@@ -40,7 +40,7 @@ We adopt a **two-mode storage backend** with values-driven selection:
 
 - Postgres + pgvector runs as a StatefulSet in `stronghold-data` namespace
 - Persistent storage via the cluster's default StorageClass (local-path on
-  the homelab; gp3 / pd-ssd / managed-csi on the cloud distros)
+  the dev cluster; gp3 / pd-ssd / managed-csi on the cloud distros)
 - Single replica for v0.9 (HA Postgres in v1.0+)
 - Backups via Velero scheduled snapshots of the namespace + PVCs
 - Credentials managed via the secrets backend selected in ADR-K8S-003
@@ -106,9 +106,9 @@ In external mode, the operator must grant the Stronghold credential the
 ability to create tables and indexes in its database. The chart's
 `docs/INSTALL.md` includes the SQL grants.
 
-### Storage class selection on the homelab
+### Storage class selection on the dev cluster
 
-For the homelab OKD cluster (in-cluster mode):
+For the development cluster (in-cluster mode):
 
 - Prod Postgres PVC uses a fast StorageClass backed by NVMe (`local-path-
   nvme-prod` or whatever the OKD installer creates by default on the
@@ -149,7 +149,7 @@ This is documented as a v1.0+ feature. v0.9 ships in-cluster only.
 
 - Rejected: forces every customer to provision a separate database
   before they can install Stronghold. Bad first-run experience. The
-  homelab single-operator wants `helm install` to just work without
+  single-operator deployment wants `helm install` to just work without
   setting up RDS first.
 
 **C) Bundle Postgres as a sub-chart from a community Helm chart (e.g.,
@@ -175,7 +175,7 @@ a hand-rolled StatefulSet.**
 
 **Positive:**
 
-- Homelab single-operator gets `helm install` and a working database
+- Single-operator deployment gets `helm install` and a working database
   with no extra setup.
 - Cloud customers can point at managed Postgres without modifying the
   chart.
@@ -189,7 +189,7 @@ a hand-rolled StatefulSet.**
 - Two modes means two code paths in the chart templates. Mitigated by
   isolating mode-specific logic in `_helpers.tpl`.
 - v0.9 customers on external Postgres are out of scope until v1.0
-  ships. Acceptable: v0.9 is the homelab milestone, not the
+  ships. Acceptable: v0.9 is the development milestone, not the
   cloud-customer milestone.
 - Operator-managed Postgres (Crunchy, etc.) is a third mode we don't
   ship in v0.9. Acceptable: customers who need it can still use the
@@ -199,7 +199,7 @@ a hand-rolled StatefulSet.**
 
 - Template complexity in exchange for portability.
 - Delayed cloud-customer support (v1.0 not v0.9) in exchange for
-  shipping the homelab milestone on schedule.
+  shipping the development milestone on schedule.
 
 ## References
 

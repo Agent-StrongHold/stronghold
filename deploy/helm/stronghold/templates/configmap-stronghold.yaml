@@ -1,7 +1,7 @@
 # Non-secret config for the stronghold-api. The example payload mirrors
 # the STRONGHOLD_CONFIG file referenced by the raw manifest at
 # deploy/k8s/stronghold.yaml; real production values come from the
-# values-prod-homelab overlay.
+# values-prod-homelab overlay (development environment).
 apiVersion: v1
 kind: ConfigMap
 metadata:

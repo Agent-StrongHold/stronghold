@@ -12,7 +12,7 @@ is whatever distro and cloud their platform team has standardized on.
 Stronghold's chart needs to run on a defined set of those environments
 without surprises.
 
-We chose OKD as the homelab reference deployment (ADR-K8S-006), which sets
+We chose OKD as the reference deployment (ADR-K8S-006), which sets
 the chart's primary design target. We now need to decide:
 
 - Which distros do we explicitly validate every release? (Tier-1)
@@ -31,7 +31,7 @@ Tier-1 distro fails the validation suite. Test coverage: helm install + smoke
 
 | Distro | Min version | Why Tier-1 |
 |---|---|---|
-| **OKD** | 4.14+ | Homelab reference deployment; primary design target |
+| **OKD** | 4.14+ | Reference deployment; primary design target |
 | **OpenShift Container Platform (OCP)** | 4.14+ | Same code path as OKD; paid Red Hat customers |
 | **Amazon EKS** | 1.29+ | Largest enterprise k8s footprint; most likely customer environment |
 | **Google GKE** | 1.29+ | Second largest enterprise k8s footprint |
@@ -66,7 +66,7 @@ releases on Tier-2 results.
 
 1. `helm lint` and `kubeconform -strict` against the rendered manifests
 2. `helm install` with the appropriate values file:
-   - OKD / OCP: `values-prod-homelab.yaml` (minus the homelab-specific
+   - OKD / OCP: `values-prod-homelab.yaml` (minus the dev-cluster-specific
      hostnames)
    - EKS / GKE / AKS: `values-vanilla-k8s.yaml` plus a per-cloud overlay
      (`values-eks.yaml`, etc.)
@@ -128,7 +128,7 @@ backend), and the expected post-install verification steps.
   evaluation. "Tested with EKS, GKE, AKS, OCP" is a sales requirement, not
   a nice-to-have.
 
-**D) Test only the homelab cluster (OKD), trust customer environments by
+**D) Test only the dev cluster (OKD), trust customer environments by
 analogy.**
 
 - Rejected: testing only OKD means Stronghold ships with OpenShift-specific

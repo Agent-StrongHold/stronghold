@@ -1,4 +1,4 @@
-# Homelab overlay: connects Stronghold to Traefik network
+# Development overlay: connects Stronghold to Traefik network
 # for routing agentstronghold.com through the reverse proxy.
 services:
   stronghold:

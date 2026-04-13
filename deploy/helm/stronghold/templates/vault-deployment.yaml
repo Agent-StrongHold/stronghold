@@ -4,7 +4,7 @@
 #
 # For production, operators should use the official OpenBao or Vault
 # Helm chart instead. This template provides a minimal single-node
-# deployment for development and homelab use.
+# deployment for development use.
 ---
 apiVersion: v1
 kind: Namespace

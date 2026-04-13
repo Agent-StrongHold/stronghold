@@ -35,7 +35,7 @@ all MCP tools that call external APIs will migrate from carrying their own
 credentials to requesting credentials from a central vault at call time.
 This ADR defines that vault.
 
-The homelab cluster (k3s on VM 301, single node, 32 GB RAM, 10 vCPU) is
+The development cluster (k3s on VM 301, single node, 32 GB RAM, 10 vCPU) is
 resource-constrained. Whatever we deploy must run lean. OpenBao is a Go
 binary with a memory footprint measured in hundreds of megabytes, which
 fits comfortably.
@@ -51,7 +51,7 @@ under a path convention that encodes both user and service identity.**
 
 OpenBao runs as a single-replica StatefulSet in `stronghold-system` with
 the integrated Raft storage backend on a PersistentVolumeClaim. In the
-homelab this lands on ZFS NVMe via the local-path provisioner — fast
+dev cluster this lands on ZFS NVMe via the local-path provisioner — fast
 enough for a write-light, read-moderate vault workload. When the cluster
 grows to multiple nodes, the StatefulSet scales to 3 replicas for Raft
 quorum; the Helm chart parameterizes `replicaCount` so the upgrade is a
@@ -172,7 +172,7 @@ tokens requires a separate controller anyway; (4) no per-user namespacing
 
 Infisical's dynamic secrets engine is less mature than OpenBao's, its
 community is smaller, and its self-hosted deployment requires a MongoDB
-backend — an additional stateful dependency the homelab does not need.
+backend — an additional stateful dependency the dev cluster does not need.
 
 - Rejected: less mature dynamic secrets, smaller community, and MongoDB
   dependency for no clear benefit over OpenBao.
@@ -196,7 +196,7 @@ backend — an additional stateful dependency the homelab does not need.
 - OpenBao is a new stateful component to operate — unsealing after node
   restarts, monitoring Raft health, backing up the storage backend.
 - The Shamir unseal ceremony is a manual step on cold start. Auto-unseal
-  via a cloud KMS is not available on the homelab.
+  via a cloud KMS is not available on the dev cluster.
 - Stronghold-API gains a runtime dependency on OpenBao availability. If
   OpenBao is down, credentialed tool calls fail. Mitigation: the health
   endpoint is checked by a readiness probe on the Stronghold-API pod.
@@ -206,7 +206,7 @@ backend — an additional stateful dependency the homelab does not need.
 - We accept the operational burden of a stateful vault in exchange for
   per-user credential isolation, short-lived leases, and a real audit
   trail.
-- We accept manual unsealing on the homelab in exchange for not depending
+- We accept manual unsealing on the dev cluster in exchange for not depending
   on a cloud KMS that does not exist in this environment.
 - We accept the OpenBao fork's smaller community (relative to pre-BSL
   Vault) in exchange for a clear open-source license.

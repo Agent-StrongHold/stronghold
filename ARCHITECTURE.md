@@ -11,7 +11,7 @@
 
 Stronghold is an open-source, self-hosted agent governance platform. It wraps any LLM in a secure execution harness with intelligent routing, self-improving memory, autonomous operation, and zero-trust security.
 
-It is extracted from a private homelab AI gateway (Project mAIstro / Conductor) but redesigned from first principles as a clean, enterprise-ready platform.
+It is extracted from a private development server AI gateway (Project mAIstro / Conductor) but redesigned from first principles as a clean, enterprise-ready platform.
 
 **Core principle: All input is untrusted. All tool output is untrusted. Trust is earned, not assumed.**
 
@@ -475,7 +475,7 @@ class AuthProvider(Protocol):
 
 | Provider | Use Case | Claims |
 |----------|----------|--------|
-| Keycloak OIDC | Homelab, open-source default | realm_access.roles |
+| Keycloak OIDC | Development, open-source default | realm_access.roles |
 | Entra ID | Enterprise (Microsoft-shop customers) | roles (app roles) |
 | Static API key | Service-to-service, backward compat | Maps to system admin context |
 | OpenWebUI headers | Thin client passthrough | X-OpenWebUI-User-* headers |

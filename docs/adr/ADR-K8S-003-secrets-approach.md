@@ -29,7 +29,7 @@ pluggable across these environments without forking.
 ## Decision
 
 We will adopt a **pluggable secrets backend** with four supported providers,
-selected per-deployment via `values.yaml`. The default for the OKD homelab and
+selected per-deployment via `values.yaml`. The default for the OKD dev cluster and
 for OpenShift customers is **OpenShift Secrets + sealed-secrets for GitOps**.
 
 ### Supported backends
@@ -42,7 +42,7 @@ for OpenShift customers is **OpenShift Secrets + sealed-secrets for GitOps**.
 2. **`sealed-secrets`** — Bitnami sealed-secrets controller installed in
    `stronghold-system`. Secrets are encrypted client-side with the cluster's
    public key, committed to git as `SealedSecret` resources, and decrypted in-
-   cluster by the controller. Suitable for: GitOps workflows, OKD homelab
+   cluster by the controller. Suitable for: GitOps workflows, OKD dev cluster
    default, OpenShift customers who want declarative secret management.
 
 3. **`eso` (External Secrets Operator)** — operator that syncs Kubernetes
@@ -187,7 +187,7 @@ Those are not secrets and are unaffected by this rule.
 
 The current hardcoded credentials in `docker-compose.yml` and `.kubeconfig-docker`
 are removed in PR-8 (R3 fix) and PR-18 (legacy compose decommission). They are
-replaced by sealed-secrets in the OKD homelab deployment.
+replaced by sealed-secrets in the OKD development deployment.
 
 ## Alternatives considered
 
@@ -204,7 +204,7 @@ replaced by sealed-secrets in the OKD homelab deployment.
 
 **C) Single backend (e.g., Vault only) with no pluggability.**
 
-- Rejected: forces every customer to deploy Vault. The OKD homelab does not
+- Rejected: forces every customer to deploy Vault. The OKD dev cluster does not
   need Vault. EKS customers prefer IRSA + Secrets Manager. AKS customers
   prefer Workload Identity + Key Vault. Pluggability is the only way to be
   portable across these environments.
@@ -218,7 +218,7 @@ replaced by sealed-secrets in the OKD homelab deployment.
 **E) HashiCorp Vault Agent as the only supported backend.**
 
 - Rejected: Vault is heavyweight to deploy and operate. Inappropriate as the
-  default for a single-operator homelab. Necessary as an option for regulated
+  default for a single-operator dev cluster. Necessary as an option for regulated
   enterprise customers.
 
 ## Consequences
