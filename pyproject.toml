@@ -89,10 +89,11 @@ source = ["stronghold"]
 omit = ["src/stronghold/persistence/pg_*.py"]
 
 [tool.coverage.report]
-# No global fail_under — CI workflows enforce per-tier:
+# CI workflows enforce per-tier:
 #   feature/* PRs: 85% diff coverage
 #   develop PRs: 90% total coverage
 #   main PRs: 95% diff coverage (release.yml)
+fail_under = 90
 exclude_lines = [
     "pragma: no cover",
     "if TYPE_CHECKING:",

@@ -133,6 +133,7 @@ def test_list_tools_no_args_returns_builtins_only() -> None:
     assert tools[0].definition.name == "builtin_tool"
 
 
+
 # ---------------------------------------------------------------------------
 # Coverage tests for ToolCatalog — lines 64, 97-110
 # ---------------------------------------------------------------------------

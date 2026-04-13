@@ -205,6 +205,7 @@ class TestTraceOutput:
         assert intent.tier == "P2"
 
 
+
 # ── Coverage expansion: Conduit class, token estimation, fallback, consent ──
 
 

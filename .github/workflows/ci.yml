@@ -264,7 +264,7 @@ jobs:
             --cov=stronghold \
             --cov-report=term-missing \
             --cov-report=xml:coverage.xml \
-            --cov-fail-under=90
+            --cov-fail-under=90  # future main gate: 95%
 
       - name: Upload coverage
         if: always() && hashFiles('coverage.xml')
