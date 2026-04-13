@@ -92,6 +92,15 @@ class InMemoryRateLimiter:
             return
         self._windows[key].append(time.monotonic())
 
+    def evict_stale_keys(self) -> int:
+        """Public API: evict stale keys and return the count evicted."""
+        import time as _time
+
+        now = _time.monotonic()
+        before = len(self._windows)
+        self._evict_stale_keys(now)
+        return before - len(self._windows)
+
     def _evict_stale_keys(self, now: float) -> None:
         """Remove keys whose most recent entry is older than eviction age."""
         self._check_count = 0

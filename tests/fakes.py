@@ -230,6 +230,10 @@ class FakeRateLimiter:
     async def record(self, key: str) -> None:
         pass
 
+    def evict_stale_keys(self) -> int:
+        """No-op for tests."""
+        return 0
+
 
 class FakeAuthProvider:
     """Fake auth provider that always returns system auth."""

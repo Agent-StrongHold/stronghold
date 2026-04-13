@@ -31,7 +31,7 @@ class TestRegisterCoreTriggers:
     def test_registers_all_10_triggers(self) -> None:
         c = _make_container()
         register_core_triggers(c)
-        assert len(c.reactor._triggers) == 10
+        assert len(c.reactor._triggers) == 11
 
     def test_trigger_names(self) -> None:
         c = _make_container()
@@ -48,6 +48,7 @@ class TestRegisterCoreTriggers:
             "rlhf_feedback",
             "issue_backlog_scanner",
             "mason_pr_review",
+            "retrospective_analysis",
         }
         assert names == expected
 
@@ -179,12 +180,21 @@ class TestRlhfFeedbackTrigger:
 class TestIssueBacklogScanner:
     async def test_skipped_when_no_github_token(self) -> None:
         """Scanner skips when no GitHub App credentials available."""
+        import unittest.mock as _mock
+
         c = _make_container()
         register_core_triggers(c)
         _, handler = _find_trigger(c, "issue_backlog_scanner")
-        # Without real app credentials, token generation returns ""
-        result = await handler(Event("tick", {}))
-        assert result.get("skipped") is True or result.get("error") is not None
+        # Patch the GitHub tool so token generation raises, and clear env var
+        with (
+            _mock.patch(
+                "stronghold.tools.github._get_app_installation_token",
+                side_effect=ImportError("no keys"),
+            ),
+            _mock.patch.dict("os.environ", {"GITHUB_TOKEN": ""}, clear=False),
+        ):
+            result = await handler(Event("tick", {}))
+        assert result.get("skipped") is True
 
 
 class TestMasonPrReviewTrigger:
@@ -334,9 +344,18 @@ class TestIssueBacklogScannerBasics(_ScannerTestBase):
     """Token, API, and empty backlog tests."""
 
     async def test_no_token_skips(self) -> None:
+        import unittest.mock as _mock
+
         c = _make_container()
         handler = self._get_handler(c)
-        result = await handler(Event("tick", {}))
+        with (
+            _mock.patch(
+                "stronghold.tools.github._get_app_installation_token",
+                side_effect=ImportError("no keys"),
+            ),
+            _mock.patch.dict("os.environ", {"GITHUB_TOKEN": ""}, clear=False),
+        ):
+            result = await handler(Event("tick", {}))
         assert result.get("skipped") is True
 
     async def test_empty_backlog_returns_zero(self, monkeypatch: Any) -> None:

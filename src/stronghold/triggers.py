@@ -7,6 +7,8 @@ The reactor evaluates conditions at 1000Hz and dispatches matches.
 from __future__ import annotations
 
 import logging
+import re
+from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, Any
 
 from stronghold.types.reactor import Event, TriggerMode, TriggerSpec
@@ -15,6 +17,15 @@ if TYPE_CHECKING:
     from stronghold.container import Container
 
 logger = logging.getLogger("stronghold.triggers")
+
+# Patterns for duplicate detection (Phase B)
+_DUPLICATE_PATTERN = re.compile(r"(?:duplicate\s+of|same\s+as)\s+#\d+", re.IGNORECASE)
+
+# Labels that route to Herald instead of builder pipeline (Phase C)
+_HERALD_LABELS = {"idea", "feature-request", "enhancement"}
+
+# Staleness threshold (Phase B)
+_STALE_THRESHOLD_DAYS = 30
 
 
 def register_core_triggers(container: Container) -> None:
@@ -39,13 +50,9 @@ def register_core_triggers(container: Container) -> None:
     )
 
     # 2. Rate limiter stale key eviction (every 5 minutes)
+    # H22 fix: use public evict_stale_keys() method instead of private attrs
     async def _evict_stale_rate_keys(event: Event) -> dict[str, Any]:
-        import time
-
-        before = len(container.rate_limiter._windows)
-        container.rate_limiter._evict_stale_keys(time.monotonic())
-        after = len(container.rate_limiter._windows)
-        evicted = before - after
+        evicted = container.rate_limiter.evict_stale_keys()
         if evicted > 0:
             logger.debug("Evicted %d stale rate limit keys", evicted)
         return {"evicted": evicted}
@@ -193,6 +200,31 @@ def register_core_triggers(container: Container) -> None:
         _rlhf_feedback,
     )
 
+    # ── Phase D helper: best-effort label management ─────────────────
+    async def _label_issue(
+        token: str,
+        repo: str,
+        issue_number: int,
+        add: list[str] | None = None,
+        remove: list[str] | None = None,
+    ) -> None:
+        """Add/remove labels on an issue. Best-effort: never raises."""
+        import httpx  # noqa: PLC0415
+
+        base_url = f"https://api.github.com/repos/{repo}/issues/{issue_number}/labels"
+        headers = {
+            "Authorization": f"Bearer {token}",
+            "Accept": "application/vnd.github+json",
+        }
+        try:
+            async with httpx.AsyncClient(timeout=15.0) as client:
+                if add:
+                    await client.post(base_url, headers=headers, json={"labels": add})
+                for label in remove or []:
+                    await client.delete(f"{base_url}/{label}", headers=headers)
+        except Exception:
+            pass  # Best-effort: labeling failures must not crash the pipeline
+
     # 9. Issue backlog scanner — pick up work through the full pipeline
     async def _scan_issue_backlog(event: Event) -> dict[str, Any]:
         """Scan GitHub for open `builders` issues and dispatch through the
@@ -272,11 +304,87 @@ def register_core_triggers(container: Container) -> None:
             return {"scanned": len(issues), "dispatched": 0, "reason": "at concurrency limit"}
 
         dispatched = 0
+        flagged = 0
+        repo = "Agent-StrongHold/stronghold"
         for issue in actionable:
             issue_number = issue["number"]
             title = issue["title"]
             body = issue.get("body", "") or ""
             issue_labels = {label["name"] for label in issue.get("labels", [])}
+
+            # ── Phase B: Obsolescence detection ──
+            created_at_str = issue.get("created_at", "")
+            is_stale = False
+            is_duplicate = False
+            if created_at_str:
+                try:
+                    created_at = datetime.fromisoformat(created_at_str.replace("Z", "+00:00"))
+                    age = datetime.now(UTC) - created_at
+                    is_stale = age > timedelta(days=_STALE_THRESHOLD_DAYS)
+                except (ValueError, TypeError):
+                    pass
+
+            if _DUPLICATE_PATTERN.search(body):
+                is_duplicate = True
+
+            if is_stale or is_duplicate:
+                reasons = []
+                if is_stale:
+                    reasons.append(f"issue is older than {_STALE_THRESHOLD_DAYS} days")
+                if is_duplicate:
+                    reasons.append("body references a duplicate issue")
+                comment_body = "This issue has been flagged for human review:\n" + "\n".join(
+                    f"- {r}" for r in reasons
+                )
+                await _label_issue(
+                    token,
+                    repo,
+                    issue_number,
+                    add=["needs-human-review"],
+                )
+                try:
+                    async with httpx.AsyncClient(timeout=15.0) as cc:
+                        await cc.post(
+                            f"https://api.github.com/repos/{repo}/issues/{issue_number}/comments",
+                            headers={
+                                "Authorization": f"Bearer {token}",
+                                "Accept": "application/vnd.github+json",
+                            },
+                            json={"body": comment_body},
+                        )
+                except Exception:
+                    pass
+                flagged += 1
+                logger.info(
+                    "Backlog scanner: flagged issue #%d -- %s",
+                    issue_number,
+                    ", ".join(reasons),
+                )
+                continue  # Skip dispatch for flagged issues
+
+            # ── Phase C: Herald routing ──
+            if issue_labels & _HERALD_LABELS:
+                reactor.emit(
+                    Event(
+                        name="pipeline.herald_ready",
+                        data={
+                            "issue_number": issue_number,
+                            "title": title,
+                            "repo": repo,
+                        },
+                    )
+                )
+                dispatched += 1
+                logger.info(
+                    "Backlog scanner: routed issue #%d to Herald (labels: %s)",
+                    issue_number,
+                    issue_labels & _HERALD_LABELS,
+                )
+                continue
+
+            # ── builders label filter ──
+            if "builders" not in issue_labels:
+                continue
 
             # ── Gatekeeper triage: atomic or decomposable? ──
             # Explicit labels override heuristics
@@ -293,31 +401,23 @@ def register_core_triggers(container: Container) -> None:
                 is_atomic = not (has_checkboxes or has_sections or is_long)
 
             logger.info(
-                "Backlog scanner: triaging issue #%d (%s) — %s",
+                "Backlog scanner: triaging issue #%d (%s) -- %s",
                 issue_number,
                 title[:60],
-                "atomic → Archie+Mason" if is_atomic else "decomposable → Quartermaster first",
+                "atomic -> Archie+Mason" if is_atomic else "decomposable -> Quartermaster first",
             )
 
-            # Label the issue with triage result for visibility
-            try:
-                triage_label = "atomic" if is_atomic else "needs-decomposition"
-                async with httpx.AsyncClient(timeout=15.0) as label_client:
-                    await label_client.post(
-                        f"https://api.github.com/repos/Agent-StrongHold/stronghold"
-                        f"/issues/{issue_number}/labels",
-                        headers={
-                            "Authorization": f"Bearer {token}",
-                            "Accept": "application/vnd.github+json",
-                        },
-                        json={"labels": [triage_label, "in-progress"]},
-                    )
-            except Exception:
-                pass  # Labeling is best-effort
+            # ── Phase D: Stage completion labels ──
+            triage_label = "atomic" if is_atomic else "needs-decomposition"
+            await _label_issue(
+                token,
+                repo,
+                issue_number,
+                add=[triage_label, "in-progress"],
+                remove=["builders"],
+            )
 
             # ── Dispatch through BuilderPipeline (full chain) ──
-            # skip_decompose=True → skips Quartermaster, goes to Archie+Mason
-            # skip_decompose=False → Quartermaster decomposes into sub-issues first
             orchestrator = getattr(container, "orchestrator", None)
             if orchestrator is None:
                 reactor.emit(
@@ -326,7 +426,7 @@ def register_core_triggers(container: Container) -> None:
                         data={
                             "issue_number": issue_number,
                             "title": title,
-                            "repo": "Agent-StrongHold/stronghold",
+                            "repo": repo,
                             "atomic": is_atomic,
                         },
                     )
@@ -339,15 +439,32 @@ def register_core_triggers(container: Container) -> None:
                     await pipeline.execute(
                         issue_number=issue_number,
                         title=title,
-                        repo="Agent-StrongHold/stronghold",
+                        repo=repo,
                         skip_decompose=is_atomic,
+                    )
+                    await _label_issue(
+                        token,
+                        repo,
+                        issue_number,
+                        add=["completed"],
+                        remove=["in-progress"],
                     )
                 except Exception as e:
                     logger.warning("Pipeline failed for issue #%d: %s", issue_number, e)
+                    await _label_issue(
+                        token,
+                        repo,
+                        issue_number,
+                        add=["failed"],
+                        remove=["in-progress"],
+                    )
 
             dispatched += 1
 
-        return {"scanned": len(issues), "dispatched": dispatched}
+        result: dict[str, Any] = {"scanned": len(issues), "dispatched": dispatched}
+        if flagged:
+            result["flagged"] = flagged
+        return result
 
     reactor.register(
         TriggerSpec(
@@ -402,6 +519,32 @@ def register_core_triggers(container: Container) -> None:
             event_pattern=r"mason\.pr_review_requested",
         ),
         _mason_pr_review,
+    )
+
+    # 11. Retrospective learning analysis (daily)
+    async def _retrospective_analysis(event: Event) -> dict[str, Any]:
+        """Run daily retrospective analysis across pipeline history."""
+        from stronghold.learning.retrospective import (  # noqa: PLC0415
+            RetrospectiveLearningManager,
+        )
+
+        mgr = RetrospectiveLearningManager()
+        orchestrator = getattr(container, "orchestrator", None)
+        if orchestrator is None:
+            return {"skipped": True, "reason": "no orchestrator"}
+        pipeline_history = getattr(orchestrator, "pipeline_history", [])
+        if not pipeline_history:
+            return {"skipped": True, "reason": "no pipeline history"}
+        insights = await mgr.analyze_runs(pipeline_history)
+        return {"insights": len(insights), "details": insights}
+
+    reactor.register(
+        TriggerSpec(
+            name="retrospective_analysis",
+            mode=TriggerMode.INTERVAL,
+            interval_secs=86400,  # daily
+        ),
+        _retrospective_analysis,
     )
 
     logger.info("Registered %d core triggers", len(reactor._triggers))
