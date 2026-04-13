@@ -253,7 +253,7 @@ jobs:
             --cov-report=xml:coverage.xml \
             --cov-fail-under=85
 
-      - name: "Tier 3: Full test suite (PR to develop)"
+      - name: "Tier 3: Full test suite + 90% coverage (PR to develop)"
         if: github.event_name == 'pull_request' && github.base_ref == 'develop'
         env:
           DATABASE_URL: postgresql://stronghold:stronghold@localhost:5433/stronghold
@@ -263,7 +263,8 @@ jobs:
             -m "not perf" \
             --cov=stronghold \
             --cov-report=term-missing \
-            --cov-report=xml:coverage.xml
+            --cov-report=xml:coverage.xml \
+            --cov-fail-under=90
 
       - name: Upload coverage
         if: always() && hashFiles('coverage.xml')
