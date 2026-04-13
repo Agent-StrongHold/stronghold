@@ -249,7 +249,8 @@ def register_core_triggers(container: Container) -> None:
         # Filter out issues already in progress or blocked
         skip_labels = {"in-progress", "blocked", "wontfix", "duplicate"}
         actionable = [
-            issue for issue in issues
+            issue
+            for issue in issues
             if not skip_labels.intersection(label["name"] for label in issue.get("labels", []))
             and not issue.get("pull_request")  # skip PRs
         ]
@@ -261,10 +262,7 @@ def register_core_triggers(container: Container) -> None:
         max_concurrent = 3
         queue = getattr(container, "mason_queue", None)
         if queue is not None:
-            in_progress = len([
-                r for r in queue.list_all()
-                if r.get("status") == "in_progress"
-            ])
+            in_progress = len([r for r in queue.list_all() if r.get("status") == "in_progress"])
             slots = max(0, max_concurrent - in_progress)
             actionable = actionable[:slots]
         else:
@@ -322,15 +320,17 @@ def register_core_triggers(container: Container) -> None:
             # skip_decompose=False → Quartermaster decomposes into sub-issues first
             orchestrator = getattr(container, "orchestrator", None)
             if orchestrator is None:
-                reactor.emit(Event(
-                    name="pipeline.issue_ready",
-                    data={
-                        "issue_number": issue_number,
-                        "title": title,
-                        "repo": "Agent-StrongHold/stronghold",
-                        "atomic": is_atomic,
-                    },
-                ))
+                reactor.emit(
+                    Event(
+                        name="pipeline.issue_ready",
+                        data={
+                            "issue_number": issue_number,
+                            "title": title,
+                            "repo": "Agent-StrongHold/stronghold",
+                            "atomic": is_atomic,
+                        },
+                    )
+                )
             else:
                 from stronghold.orchestrator.pipeline import BuilderPipeline  # noqa: PLC0415
 
