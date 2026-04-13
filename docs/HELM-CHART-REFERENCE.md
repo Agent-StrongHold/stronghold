@@ -365,3 +365,228 @@ Every request is a trace. Every boundary crossing is a span. OTEL-native.
 - TLS in ingress templates (add via cert-manager annotations)
 - Node selectors, tolerations, or affinity rules
 - Cluster autoscaler configuration (AKS cluster-level, documented in INSTALL-AKS.md)
+
+---
+
+## 9. Addendum: Builder Pipeline and Automation Loops
+
+Stronghold has an autonomous development pipeline that picks up GitHub issues, decomposes them, writes tests, implements code, reviews PRs, and auto-fixes CI failures. This is a chain of specialized agents orchestrated by the Reactor (1000Hz event loop) and the BuilderPipeline (`src/stronghold/orchestrator/pipeline.py`).
+
+### The pipeline (issue to merge)
+
+```
+GitHub issue (labeled "builders")
+  |
+  +- Backlog Scanner (reactor trigger, every 5 min)
+  |   Polls GitHub API for open issues with "builders" label
+  |   Triages: atomic (small) vs decomposable (epic)
+  |   Labels issue with "atomic" or "needs-decomposition" + "in-progress"
+  |   Max 3 concurrent issues
+  |
+  +- Stage 1: QUARTERMASTER (decompose)
+  |   Agent: quartermaster (not yet a shipped agent — referenced in pipeline)
+  |   Skipped if issue is atomic
+  |   Decomposes epics into atomic sub-issues with acceptance criteria
+  |   Needs: GitHub API access, LLM
+  |
+  +- Stage 2: ARCHIE (scaffold)
+  |   Agent: archie (referenced as "archie" in pipeline, maps to Frank's role)
+  |   Creates protocols in src/stronghold/protocols/
+  |   Adds fakes to tests/fakes.py
+  |   Creates empty module files with docstrings
+  |   Updates ARCHITECTURE.md
+  |   Does NOT write implementation code
+  |   Needs: file_ops, shell, git, workspace, LLM, GitHub API
+  |
+  +- Stage 3: MASON (implement)
+  |   Agent: mason
+  |   8-phase TDD pipeline (see below)
+  |   Writes tests first, then implementation
+  |   Runs quality gates: pytest, ruff, mypy --strict, bandit
+  |   Creates PR when all gates pass
+  |   Needs: file_ops, shell, run_pytest, run_ruff, run_mypy, run_bandit,
+  |          git, github, workspace, LLM
+  |   Resource spike: subprocess spawning (pytest 200-400MB, mypy 100-300MB)
+  |
+  +- Stage 4: AUDITOR (review)
+  |   Agent: auditor
+  |   Reviews PR diff against project standards
+  |   Posts structured comments with ViolationCategory tags
+  |   Output feeds into RLHF loop (learnings stored in Mason's memory)
+  |   Does NOT modify code — read-only
+  |   Needs: github_cli, file_ops, LLM
+  |
+  +- Stage 5: GATEKEEPER (cleanup)
+      Agent: gatekeeper
+      Skipped if Auditor review is clean
+      Fixes violations found by Auditor
+      Runs ruff --fix, ruff format, mypy fixes
+      Pushes to existing PR branch (does NOT create new PR)
+      Needs: file_ops, shell, quality gate tools, git, LLM
+```
+
+Each stage has a 10-minute timeout. Output from one stage is passed as context to the next (truncated to 2000 chars).
+
+### Agent details
+
+#### Frank (The Architect)
+
+| | |
+|---|---|
+| **File** | `agents/frank/agent.yaml` + `SOUL.md` |
+| **Strategy** | react (max 10 rounds) |
+| **Role** | Analyze issues, design solutions, write Gherkin acceptance criteria, produce diagnostic artifact for Mason |
+| **Tools** | github, file_ops, shell, workspace, run_pytest |
+| **Priority** | P5 (builders tier) |
+| **Model** | auto (fallback: gemini-2.5-pro, mistral-large) |
+| **Does NOT** | Write implementation code. That is Mason's job. |
+| **Output** | Architecture plan, Gherkin scenarios, failing test suite, diagnostic artifact (execution mode, prior failures, lessons, coverage expectation) |
+| **Infrastructure needs** | Git clone + worktree (/workspace volume), GitHub API token, LLM provider, postgres (learnings) |
+
+#### Mason (The Bricklayer)
+
+| | |
+|---|---|
+| **File** | `agents/mason/agent.yaml` + `SOUL.md` + `RULES.md` |
+| **Strategy** | builders_learning (custom, 8-phase) |
+| **Role** | Persistent autonomous code generation with evidence-driven TDD |
+| **Tools** | file_ops, shell, run_pytest, run_ruff_check, run_ruff_format, run_mypy, run_bandit, git, github |
+| **Priority** | P5 (builders tier) |
+| **Max rounds** | 50 (across all 8 phases) |
+| **Model** | auto (fallback: gemini-2.5-pro, mistral-large), temp 0.2 |
+| **Does NOT** | Write code before Phase 7. Skip any phase. |
+
+**Mason's 8 phases:**
+1. **Acceptance criteria** — derive testable criteria from issue + Frank's diagnostic (max 3 rounds)
+2. **Acceptance tests** — write failing tests for each criterion (max 5 rounds)
+3. **Edge case tests** — boundary, adversarial, concurrency, multi-tenant (max 3 rounds)
+4. **Style tests** — protocol compliance, type safety, naming, security (max 2 rounds)
+5. **Code smell tests** — DI violations, private field access, bundled concerns (max 2 rounds)
+6. **Test review** — adversarial review of ALL tests, tighten until unbreakable (max 5 rounds)
+7. **Implementation** — minimum code to pass all tests + quality gates (max 10 rounds)
+8. **Post-review** — verify code solves the issue, check coverage, create PR (max 2 rounds)
+
+**Infrastructure needs:**
+- Git clone + worktree (/workspace volume, writable)
+- GitHub API token (create PRs, post comments)
+- LLM provider (50 tool calls/request, 8192 max tokens)
+- Subprocess execution: pytest, ruff, mypy, bandit (each 100-400MB peak)
+- Postgres (learnings store — reads prior feedback before each session)
+
+**Resource impact:** Mason is the most expensive agent. A single issue pipeline run can make 50+ LLM calls and spawn dozens of quality gate subprocesses. Each subprocess (pytest, mypy) can spike to 200-400MB. This is why Mason should NOT share a pod sized for chat.
+
+#### Auditor
+
+| | |
+|---|---|
+| **File** | `agents/auditor/agent.yaml` + `SOUL.md` + `RULES.md` |
+| **Strategy** | react (max 10 rounds) |
+| **Role** | PR review. Structured comments with ViolationCategory tags. |
+| **Tools** | github_cli, file_ops |
+| **Priority** | P3 (backend support) |
+| **Does NOT** | Modify code. Only reviews. |
+| **Proactive** | `pr.opened` event trigger + cron every 30 min for unreviewed PRs |
+| **RLHF output** | Findings are extracted into Learnings and stored in Mason's agent memory via FeedbackLoop |
+
+**Infrastructure needs:** GitHub API token (read PR diffs, post review comments), LLM provider, postgres (learnings store for writing feedback).
+
+#### Gatekeeper
+
+| | |
+|---|---|
+| **File** | `.github/workflows/gatekeeper-review.yml` (CI) + pipeline stage (in-cluster) |
+| **CI role** | GitHub App that auto-approves PRs when CI passes. Runs as a GitHub Actions workflow triggered by CI completion. |
+| **Pipeline role** | Final cleanup stage — fixes Auditor-found violations, pushes to PR branch |
+| **Does NOT** | Create new PRs. Only pushes to existing branches. |
+| **CI needs** | GitHub App credentials (GATEKEEPER_APP_ID, GATEKEEPER_PRIVATE_KEY, GATEKEEPER_INSTALLATION_ID) |
+| **Pipeline needs** | file_ops, shell, quality gate tools, git, LLM |
+
+#### CI Autofix
+
+| | |
+|---|---|
+| **File** | `.github/workflows/ci-autofix.yml` |
+| **Role** | When CI fails on a PR, extracts failure details and creates a repair issue labeled `ci-autofix,builders` |
+| **How** | GitHub Actions workflow triggered by CI failure. Posts failure log as PR comment. Creates GitHub issue with repair instructions for Mason. |
+| **Needs** | GitHub token (create issues, post comments) |
+| **Connection** | The repair issue gets the `builders` label, so the Backlog Scanner picks it up and routes it through the pipeline |
+
+#### Quartermaster (planned, not yet a shipped agent)
+
+Referenced in the pipeline as the decomposition stage. Breaks epics into atomic sub-issues. Currently handled by heuristics in the Backlog Scanner (checkbox detection, section count, body length). Will be a full agent that uses LLM to decompose complex issues.
+
+### Reactor triggers (background loops)
+
+These run inside the stronghold-api pod on the 1000Hz reactor loop:
+
+| Trigger | Interval | What it does |
+|---|---|---|
+| `issue_backlog_scanner` | 5 min | Polls GitHub for `builders` issues, triages, dispatches through pipeline |
+| `learning_promotion_check` | 60s | Checks if any learnings have enough hits to auto-promote to permanent prompt |
+| `rate_limit_eviction` | 5 min | Evicts stale keys from in-memory rate limiter |
+| `outcome_stats_snapshot` | 5 min | Logs task completion rates |
+| `tournament_evaluation` | 10 min | Checks agent head-to-head scores for promotion |
+| `canary_deployment_check` | 30s | Monitors canary skill deployments for promotion/rollback |
+| `rlhf_feedback` | event | On `pr.reviewed` event, extracts learnings from Auditor output into Mason's memory |
+| `mason_pr_review` | event | On `mason.pr_review_requested`, dispatches PR review-and-improve to Mason |
+| `security_rescan` | event | On `security.rescan`, re-scans flagged content through Warden |
+| `post_tool_learning` | event | On `post_tool_loop`, logs learning extraction opportunities from tool failures |
+
+### RLHF feedback loop
+
+```
+Auditor reviews PR
+  -> posts structured ViolationCategory comments
+  -> emits "pr.reviewed" event
+  -> reactor fires rlhf_feedback trigger
+  -> ReviewFeedbackExtractor converts findings to Learning objects
+  -> LearningStore.store() saves to Mason's agent-scoped memory
+  -> InMemoryViolationTracker records metrics (trend, findings/PR)
+  -> Next time Mason starts work, it reads these learnings first
+```
+
+Goal: zero review comments per PR over time. Mason learns from every rejection.
+
+### Builders runtime (`src/stronghold/builders/`)
+
+Shared infrastructure for the builder agents:
+
+- **contracts.py** — Pydantic models: RunRequest, RunResult, ArtifactRef, StageEvent, WorkerStatus. Workers: frank, mason, auditor.
+- **runtime.py** — BuildersRuntime: stateless stage dispatcher. Registers handlers per worker+stage, executes them, manages prompt templates and tool allowlists per stage.
+
+### Workspace manager (`src/stronghold/tools/workspace.py`)
+
+Git worktree isolation for Mason. Each issue gets its own worktree branched from main:
+
+1. `create(issue_number)` — clones repo (once), creates worktree at `/workspace/issue-{N}`
+2. Mason writes files, runs tests in the isolated worktree
+3. `commit_and_push()` — stages, commits, pushes the branch
+4. `cleanup()` — removes worktree
+
+Needs the `/workspace` volume (writable, 1Gi+ for repo clone + worktrees).
+
+### Infrastructure requirements for the full pipeline
+
+| Requirement | Why |
+|---|---|
+| **GitHub API token** | Backlog scanner polls issues, Mason creates PRs, Auditor posts reviews, Gatekeeper approves |
+| **GitHub App** (Gatekeeper) | Auto-approve PRs with a non-human identity (APP_ID, PRIVATE_KEY, INSTALLATION_ID) |
+| **/workspace volume** (writable, 2Gi+) | Git clone + worktrees for Mason and Frank |
+| **LLM provider** | Every agent makes LLM calls. Mason: 50+ calls per issue. Auditor: 10-20 per PR. |
+| **Postgres** | Learnings, feedback metrics, outcome tracking |
+| **Subprocess capacity** | Mason runs pytest, mypy, ruff, bandit — each can spike to 200-400MB |
+| **k3s-runners** (CI) | GitHub Actions self-hosted runners for Gatekeeper and CI Autofix workflows |
+
+### Deployment implications for AKS
+
+The builder pipeline is the strongest argument for separating heavy agents into their own deployment:
+
+| Component | Where it should run | Why |
+|---|---|---|
+| Backlog scanner + reactor triggers | stronghold-api pod | Lightweight — just HTTP polling + event evaluation |
+| Frank, Auditor | stronghold-api pod (OK) | Mostly LLM calls + file reads. Low resource. |
+| Mason, Gatekeeper (pipeline stage) | **Separate deployment** | Subprocess spawning (pytest 200-400MB, mypy 100-300MB). Needs /workspace volume. Will OOM in a 512Mi chat pod. |
+| Gatekeeper (CI) | GitHub Actions runner | Runs as a workflow, not in-cluster |
+| CI Autofix | GitHub Actions runner | Runs as a workflow, not in-cluster |
+
+Recommended: a `stronghold-builders` Deployment with 1.5-2Gi memory limit, /workspace PVC, and the same image but configured to only accept P5 (builders) priority work. The chat pod stays small.
