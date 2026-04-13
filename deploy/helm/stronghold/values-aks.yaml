@@ -1,0 +1,174 @@
+# values-aks.yaml
+#
+# Azure AKS overlay — Tier-1 per ADR-K8S-007.
+#
+# Targets Azure Kubernetes Service 1.29+ with:
+#   - Azure AD Workload Identity (federated credentials, no pod-managed identity)
+#   - Azure Disk CSI StorageClass for persistent volumes
+#   - Azure Application Gateway Ingress Controller (AGIC)
+#   - Entra ID (Azure AD) authentication
+#   - Azure CNI with NetworkPolicy enforcement (Calico or Cilium)
+#
+# Prerequisites on the AKS cluster:
+#   1. OIDC issuer enabled:  az aks update -g <rg> -n <cluster> --enable-oidc-issuer
+#   2. Workload Identity enabled:  az aks update -g <rg> -n <cluster> --enable-workload-identity
+#   3. Azure Application Gateway Ingress Controller addon (or nginx-ingress)
+#   4. Azure CNI with NetworkPolicy support (Calico or Cilium)
+#   5. Azure Disk CSI driver (enabled by default on AKS 1.29+)
+#   6. External Secrets Operator (optional, for Azure Key Vault integration)
+#
+# Usage:
+#   helm upgrade --install stronghold deploy/helm/stronghold \
+#     --namespace stronghold-platform --create-namespace \
+#     -f deploy/helm/stronghold/values-vanilla-k8s.yaml \
+#     -f deploy/helm/stronghold/values-aks.yaml \
+#     --set auth.entraId.tenantId=<YOUR_TENANT_ID> \
+#     --set auth.entraId.clientId=<YOUR_CLIENT_ID>
+
+# --- Platform flags -----------------------------------------------------------
+
+openshift:
+  enabled: false
+
+priorityClasses:
+  create: true
+
+namespace:
+  create: false
+  name: stronghold-platform
+
+rbac:
+  create: true
+
+# Extra namespaces for MCP server and data isolation (ADR-K8S-001).
+extraNamespaces:
+  create: true
+
+# --- Azure AD Workload Identity -----------------------------------------------
+#
+# Each service account is annotated so the Azure AD Workload Identity webhook
+# injects the AZURE_CLIENT_ID, AZURE_TENANT_ID, and AZURE_FEDERATED_TOKEN_FILE
+# environment variables into pods. The corresponding federated credential must
+# be created in the Azure AD app registration:
+#
+#   az identity federated-credential create \
+#     --name stronghold-api \
+#     --identity-name stronghold-identity \
+#     --resource-group <rg> \
+#     --issuer <AKS_OIDC_ISSUER_URL> \
+#     --subject system:serviceaccount:stronghold-platform:stronghold-stronghold-api \
+#     --audience api://AzureADTokenExchange
+
+serviceAccounts:
+  strongholdApi:
+    name: stronghold-api
+    annotations:
+      azure.workload.identity/client-id: ""  # Set via --set or sealed-secret
+  mcpDeployer:
+    name: mcp-deployer
+    annotations:
+      azure.workload.identity/client-id: ""
+  postgres:
+    name: postgres
+    annotations: {}  # Postgres does not need Azure identity
+  litellm:
+    name: litellm
+    annotations:
+      azure.workload.identity/client-id: ""
+  phoenix:
+    name: phoenix
+    annotations: {}  # Phoenix does not need Azure identity
+
+# --- Entra ID authentication --------------------------------------------------
+
+auth:
+  entraId:
+    enabled: true
+    tenantId: ""   # --set auth.entraId.tenantId=<TENANT_ID>
+    clientId: ""   # --set auth.entraId.clientId=<CLIENT_ID>
+  keycloak:
+    enabled: false
+
+# --- Ingress (Azure Application Gateway) -------------------------------------
+#
+# If using AGIC, set className to "azure-application-gateway".
+# If using nginx-ingress on AKS, set className to "nginx".
+
+ingressRoutes:
+  enabled: true
+  className: azure-application-gateway
+  stronghold:
+    host: stronghold.example.com   # Override with your DNS
+  litellm:
+    host: litellm.internal.example.com
+  phoenix:
+    host: phoenix.internal.example.com
+
+# --- NetworkPolicy (Azure CNI + Calico/Cilium) --------------------------------
+
+networkPolicy:
+  enabled: true
+  ingressOpen: false
+
+# --- Storage (Azure Disk CSI) ------------------------------------------------
+
+postgresql:
+  persistence:
+    size: 32Gi
+    # managed-csi is the default StorageClass on AKS 1.29+ (Azure Disk CSI).
+    # Use "managed-csi-premium" for production workloads requiring low latency.
+    storageClassName: managed-csi
+  resources:
+    requests:
+      cpu: 500m
+      memory: 1Gi
+    limits:
+      cpu: "2"
+      memory: 4Gi
+
+# --- Stronghold API -----------------------------------------------------------
+
+strongholdApi:
+  replicas: 2  # HA for production
+  image:
+    registry: ""  # Set to your ACR: <name>.azurecr.io
+    repository: stronghold/stronghold-api
+    tag: ""       # Set via CI/CD (git SHA or semver)
+    pullPolicy: IfNotPresent
+  resources:
+    requests:
+      cpu: 500m
+      memory: 512Mi
+    limits:
+      cpu: "2"
+      memory: 2Gi
+
+# --- LiteLLM proxy ------------------------------------------------------------
+
+litellmProxy:
+  replicas: 2  # HA for production
+  resources:
+    requests:
+      cpu: 250m
+      memory: 512Mi
+    limits:
+      cpu: "1"
+      memory: 2Gi
+
+# --- Phoenix observability ----------------------------------------------------
+
+phoenixSvc:
+  replicas: 1
+  resources:
+    requests:
+      cpu: 200m
+      memory: 512Mi
+    limits:
+      cpu: "1"
+      memory: 2Gi
+
+# --- MCP servers --------------------------------------------------------------
+
+mcp:
+  github:
+    devMode: false  # Never use shared-PAT in production
