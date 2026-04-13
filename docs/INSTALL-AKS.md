@@ -27,7 +27,9 @@ Azure Workload Identity, and the Stronghold Helm chart.
 
 ## 1. Provision the AKS cluster
 
-If you don't have a cluster yet:
+The default profile uses burstable B-series nodes with cluster autoscaler.
+Pods start tiny and HPA scales them out; the cluster autoscaler adds nodes
+when pods are unschedulable and removes them when idle.
 
 ```bash
 RESOURCE_GROUP=stronghold-rg
@@ -37,12 +39,15 @@ LOCATION=eastus2
 # Create resource group
 az group create --name $RESOURCE_GROUP --location $LOCATION
 
-# Create AKS cluster with required features
+# Create AKS cluster — B4ms (4 vCPU / 16GB, burstable) with autoscaler
 az aks create \
   --resource-group $RESOURCE_GROUP \
   --name $CLUSTER_NAME \
-  --node-count 3 \
-  --node-vm-size Standard_D4s_v5 \
+  --node-count 1 \
+  --min-count 1 \
+  --max-count 5 \
+  --node-vm-size Standard_B4ms \
+  --enable-cluster-autoscaler \
   --network-plugin azure \
   --network-policy calico \
   --enable-oidc-issuer \
@@ -50,11 +55,35 @@ az aks create \
   --enable-managed-identity \
   --generate-ssh-keys
 
+# Tune autoscaler for aggressive response
+az aks update \
+  --resource-group $RESOURCE_GROUP \
+  --name $CLUSTER_NAME \
+  --cluster-autoscaler-profile \
+    scale-down-delay-after-add=5m \
+    scale-down-unneeded-time=5m \
+    scan-interval=10s \
+    max-graceful-termination-sec=30
+
 # Get credentials
 az aks get-credentials --resource-group $RESOURCE_GROUP --name $CLUSTER_NAME
 ```
 
-### Enable AGIC (Application Gateway Ingress Controller)
+For larger teams or sustained high load, use `Standard_D4s_v5` (dedicated
+compute) instead of B-series burstable.
+
+### Install nginx-ingress
+
+The default `values-aks.yaml` uses nginx-ingress (cheap — backed by a
+Standard Load Balancer at ~$18/mo):
+
+```bash
+helm repo add ingress-nginx https://kubernetes.github.io/ingress-nginx
+helm install ingress-nginx ingress-nginx/ingress-nginx \
+  --namespace ingress-nginx --create-namespace
+```
+
+If you need WAF or L7 path routing, use AGIC instead:
 
 ```bash
 az aks enable-addons \
@@ -62,14 +91,7 @@ az aks enable-addons \
   --name $CLUSTER_NAME \
   --addons ingress-appgw \
   --appgw-subnet-cidr "10.225.0.0/16"
-```
-
-Or if you prefer nginx-ingress instead:
-
-```bash
-helm repo add ingress-nginx https://kubernetes.github.io/ingress-nginx
-helm install ingress-nginx ingress-nginx/ingress-nginx \
-  --namespace ingress-nginx --create-namespace
+# Then override: --set ingressRoutes.className=azure-application-gateway
 ```
 
 ## 2. Set up Azure Container Registry
@@ -309,12 +331,12 @@ model_list:
 ```
                     Internet
                        |
-              Application Gateway
-              (or nginx-ingress)
+                  nginx-ingress
+              (Standard Load Balancer)
                        |
           +------------+------------+
           |                         |
-   stronghold-api (x2)      litellm (x2)
+   stronghold-api (1→8)     litellm (1→6)     ← HPA-managed
           |                    |
           +--------+-----------+
                    |
@@ -326,25 +348,29 @@ model_list:
 Auth: Entra ID (JWT) ──> stronghold-api
 Secrets: Azure Key Vault ──> ESO ──> K8s Secrets
 Identity: Azure Workload Identity (no stored credentials)
+Scaling: HPA (pods) + cluster autoscaler (nodes, 1→5 B4ms)
 ```
+
+At idle, everything fits on a single B4ms node. Under load, HPA adds pods
+and the cluster autoscaler adds nodes within ~30s.
 
 ## Cost estimates
 
-### Dev / small team (2-node, nginx-ingress)
+### Minimal / startup (1-node idle, autoscales to 5)
 
 | Resource | SKU | Estimated monthly cost |
 |---|---|---|
-| AKS cluster (2x D2s_v5) | Pay-as-you-go | ~$140 |
+| AKS node at idle (1x B4ms) | Pay-as-you-go | ~$120 |
 | Azure Load Balancer | Standard (nginx-ingress) | ~$18 |
-| Azure Disk (32Gi) | managed-csi | ~$5 |
+| Azure Disk (8Gi) | managed-csi | ~$1 |
 | ACR | Standard | ~$5 |
 | Azure Key Vault | Standard | ~$1 |
-| **Total** | | **~$170/month** |
+| **Total at idle** | | **~$145/month** |
 
-Set `strongholdApi.replicas=1`, `litellmProxy.replicas=1`, and
-`ingressRoutes.className=nginx`.
+Under sustained load with 3 nodes active: ~$385/month. Nodes scale back
+to 1 after 5 minutes of low utilization.
 
-### Production (3-node HA, Application Gateway)
+### Production (dedicated compute, AGIC)
 
 | Resource | SKU | Estimated monthly cost |
 |---|---|---|
@@ -355,9 +381,9 @@ Set `strongholdApi.replicas=1`, `litellmProxy.replicas=1`, and
 | Azure Key Vault | Standard | ~$1 |
 | **Total** | | **~$660/month** |
 
-The Application Gateway v2 carries a fixed hourly cost (~$0.20/hr = ~$146/mo
-base) plus capacity-unit charges. If you don't need WAF or L7 features,
-nginx-ingress behind a Standard Load Balancer cuts that line from $250 to $18.
+For production, use dedicated D-series VMs (no CPU throttling) and
+Application Gateway for WAF. Override in Helm:
+`--set ingressRoutes.className=azure-application-gateway`.
 
 ## Troubleshooting
 

@@ -397,6 +397,32 @@ route:
     host: phoenix.apps.cluster.example.com
     tlsTermination: edge
 
+# -----------------------------------------------------------------------------
+# Autoscaling (HorizontalPodAutoscaler). Disabled by default — enable in
+# per-environment overlays (e.g. values-aks.yaml). When enabled, the HPA
+# takes ownership of replica counts; the static .replicas value is only
+# the initial seed.
+# -----------------------------------------------------------------------------
+autoscaling:
+  strongholdApi:
+    enabled: false
+    minReplicas: 1
+    maxReplicas: 6
+    targetCPUUtilization: 70
+    targetMemoryUtilization: 80
+    scaleUpStabilization: 30     # seconds before allowing another scale-up
+    scaleUpMaxPods: 2            # max pods added per 60s window
+    scaleDownStabilization: 300  # seconds before allowing scale-down
+  litellm:
+    enabled: false
+    minReplicas: 1
+    maxReplicas: 4
+    targetCPUUtilization: 70
+    targetMemoryUtilization: 80
+    scaleUpStabilization: 30
+    scaleUpMaxPods: 2
+    scaleDownStabilization: 300
+
 # Vanilla Kubernetes Ingress fallbacks (rendered when
 # openshift.enabled=false AND ingressRoutes.enabled=true). The PR-6
 # top-level `ingress` block is preserved for backward compatibility;

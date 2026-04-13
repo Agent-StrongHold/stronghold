@@ -89,14 +89,14 @@ auth:
   keycloak:
     enabled: false
 
-# --- Ingress (Azure Application Gateway) -------------------------------------
+# --- Ingress -----------------------------------------------------------------
 #
-# If using AGIC, set className to "azure-application-gateway".
-# If using nginx-ingress on AKS, set className to "nginx".
+# Default: nginx-ingress (cheap — just a Standard LB at ~$18/mo).
+# For WAF / L7 features, override with: --set ingressRoutes.className=azure-application-gateway
 
 ingressRoutes:
   enabled: true
-  className: azure-application-gateway
+  className: nginx
   stronghold:
     host: stronghold.example.com   # Override with your DNS
   litellm:
@@ -114,22 +114,25 @@ networkPolicy:
 
 postgresql:
   persistence:
-    size: 32Gi
+    size: 8Gi
     # managed-csi is the default StorageClass on AKS 1.29+ (Azure Disk CSI).
     # Use "managed-csi-premium" for production workloads requiring low latency.
     storageClassName: managed-csi
   resources:
     requests:
-      cpu: 500m
-      memory: 1Gi
+      cpu: 100m
+      memory: 256Mi
     limits:
-      cpu: "2"
-      memory: 4Gi
+      cpu: "1"
+      memory: 2Gi
 
 # --- Stronghold API -----------------------------------------------------------
+#
+# Start small, let HPA scale. Requests are the scheduler floor — keep them
+# tiny so pods pack onto a single node at idle.
 
 strongholdApi:
-  replicas: 2  # HA for production
+  replicas: 1  # HPA takes over immediately
   image:
     registry: ""  # Set to your ACR: <name>.azurecr.io
     repository: stronghold/stronghold-api
@@ -137,23 +140,23 @@ strongholdApi:
     pullPolicy: IfNotPresent
   resources:
     requests:
-      cpu: 500m
-      memory: 512Mi
+      cpu: 100m
+      memory: 128Mi
     limits:
       cpu: "2"
-      memory: 2Gi
+      memory: 1Gi
 
 # --- LiteLLM proxy ------------------------------------------------------------
 
 litellmProxy:
-  replicas: 2  # HA for production
+  replicas: 1  # HPA takes over immediately
   resources:
     requests:
-      cpu: 250m
-      memory: 512Mi
+      cpu: 100m
+      memory: 256Mi
     limits:
       cpu: "1"
-      memory: 2Gi
+      memory: 1Gi
 
 # --- Phoenix observability ----------------------------------------------------
 
@@ -161,11 +164,44 @@ phoenixSvc:
   replicas: 1
   resources:
     requests:
-      cpu: 200m
-      memory: 512Mi
+      cpu: 50m
+      memory: 128Mi
     limits:
-      cpu: "1"
-      memory: 2Gi
+      cpu: 500m
+      memory: 1Gi
+
+# --- Autoscaling (aggressive scale-up, slow scale-down) ----------------------
+#
+# AKS cluster autoscaler adds nodes when pods are unschedulable — pair this
+# with tiny requests so pods schedule fast, then HPA adds replicas as load
+# climbs. Recommended AKS cluster autoscaler settings:
+#
+#   az aks update -g <rg> -n <cluster> \
+#     --cluster-autoscaler-profile \
+#       scale-down-delay-after-add=5m \
+#       scale-down-unneeded-time=5m \
+#       scan-interval=10s \
+#       max-graceful-termination-sec=30
+
+autoscaling:
+  strongholdApi:
+    enabled: true
+    minReplicas: 1
+    maxReplicas: 8
+    targetCPUUtilization: 60
+    targetMemoryUtilization: 75
+    scaleUpStabilization: 0       # scale up immediately on threshold breach
+    scaleUpMaxPods: 4             # up to 4 pods per 60s burst
+    scaleDownStabilization: 300   # 5 min cooldown before removing pods
+  litellm:
+    enabled: true
+    minReplicas: 1
+    maxReplicas: 6
+    targetCPUUtilization: 60
+    targetMemoryUtilization: 75
+    scaleUpStabilization: 0
+    scaleUpMaxPods: 3
+    scaleDownStabilization: 300
 
 # --- MCP servers --------------------------------------------------------------
 
