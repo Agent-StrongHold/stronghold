@@ -12,15 +12,15 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) for the full system design.
 
 **Stronghold is a complete redesign**, not a port. Built from the learnings of Maistro and Conductor, Stronghold was designed from first principles with security as the unitary architectural foundation. Maistro was *security and function*. Stronghold is **security-first design, then function** — every architectural decision is derived from the security model, not constrained by it after the fact.
 
-The initial commit (March 25, 2026) established the security-first architecture with the Warden/Gate/Sentinel stack, 6-agent roster, scarcity-based model routing, and self-improving memory — informed by Maistro's battle-tested patterns but redesigned for zero-trust from the ground up.
+The initial commit (March 25, 2026) established the security-first architecture with 481 files — the Warden/Gate/Sentinel stack, 6-agent roster, scarcity-based model routing, and self-improving memory — informed by Maistro's and Conductor's battle-tested patterns but redesigned for zero-trust from the ground up.
 
 ## Timeline
 
 | Date | Milestone |
 |---|---|
-| Pre-2026 | **CoinSwarm** — biological-evolution-inspired hybrid micro-agent + statistical engine swarm for crypto/equities trading. Origin of the 7-tier episodic memory model (regrets structurally unforgettable, wisdom near-permanent). |
+| **Jan 15** | **CoinSwarm** — biological-evolution-inspired hybrid micro-agent + statistical engine swarm for crypto/equities trading. Evolutionary fitness loops, ELO scoring, trio voting, memory reinforcement/contradiction/decay. Origin of the 7-tier episodic memory model. Production system against 7 exchange APIs. |
 | **Feb 19** | **Project Maistro** begins — autonomous agent harness with routing, memory, multi-agent orchestration (parallel project, still active) |
-| **Mar 25** | **Stronghold v0.1.0** — complete redesign from Maistro/Conductor learnings. Security-first architecture, ~520 files, 2,785 tests. Warden/Gate/Sentinel, 6-agent roster, model routing, memory, skills. |
+| **Mar 25** | **Stronghold v0.1.0** — complete redesign from Maistro/Conductor learnings. Security-first architecture, 481 files. 4-layer Warden, Gate, Sentinel, 6-agent roster, scarcity routing, 7-tier memory, 203 unique attack payloads in test suite. |
 | Apr 1 | Frank + Mason builder pipeline, deterministic strategies, issue-driven feedback loops |
 | Apr 2 | Builders 2.0 — unified agent architecture, learning strategy with repo recon and self-diagnosis |
 | Apr 6–9 | CI hardening, ruff cleanup, lint/type strictness across all modules |
@@ -67,7 +67,7 @@ How Stronghold compares to other agent frameworks and platforms. Stronghold is a
 | Config-driven RBAC | ✅ | MS Agent Framework, Archestra | MS uses Entra ID; Archestra uses org/team scoping; Stronghold supports both Keycloak + Entra |
 | Per-agent tool permissions | ✅ | MS Agent Framework, Archestra, CrewAI | Stronghold enforces via LiteLLM per-key config |
 | Rate limiting | ✅ | MS Agent Framework, Archestra | All three enforce at the gateway level |
-| Zero-trust architecture | ✅ | MS Agent Framework 🟡, Archestra 🟡 | Stronghold is the only framework designed zero-trust end-to-end |
+| Zero-trust architecture | ✅ | MS Agent Framework 🟡, Archestra 🟡 | Stronghold scans all three boundaries (input, tool-result, output); MS and Archestra have partial zero-trust |
 | **Memory & Learning** | | | |
 | 7-tier episodic memory | ✅ | ❌ | Unique to Stronghold — regrets (≥0.6) structurally unforgettable |
 | Self-improving learnings (fail→succeed) | ✅ | Hyperagents ✅, Claude Code 🟡 | Hyperagents: research-only metacognitive loop; Claude Code: static auto-memory |
@@ -108,7 +108,7 @@ Most agent frameworks give you **building blocks** (LangGraph, OpenAI Agents SDK
 - **Tournament-based agent evolution** — Agents compete head-to-head on live traffic; winners earn routes. No other framework has this.
 - **Protocol-driven DI with zero direct external imports** — Business logic depends only on protocols. LiteLLM, Arize, PostgreSQL — all swappable without touching a single line of business logic.
 
-**Roadmap — Reflexive Agentic Self-Optimization (RASO):** Stronghold's builders loop already implements plan → execute → review → learn → iterate with automatic learning extraction and correction promotion. The RASO roadmap wraps a meta-agent around this graph so it can modify its own structure (add/remove/reorder nodes, adjust strategy selection, tune scoring weights), treating the entire workflow as both a pipeline of agents *and* an agent itself. This concept was on Stronghold's roadmap with skeletal tests and code snippets before Meta published their [Hyperagents](https://arxiv.org/abs/2603.19461) paper (March 2026); Hyperagents has since informed the renewed design. Previously called "naive RLHF" internally, but renamed: there's no human feedback in the loop — it's agent feedback from tournament scoring, learning extraction, and automated quality gates. *Direction shifted April 16, 2026 based on influence of Hyperagents paper.* Built entirely from existing Stronghold primitives under Apache 2.0.
+**Roadmap — Reflexive Agentic Self-Optimization (RASO):** Stronghold's builders loop implements plan → execute → review → learn → iterate with automatic learning extraction and correction promotion. The underlying concept — agents improving via structured feedback from other agents — traces back to CoinSwarm's evolutionary fitness loops (January 2026, where agent populations self-improve through evaluation pressure, memory reinforcement, and trait inheritance) and Maistro's trace reviewer (February 2026, where an agent reviews another agent's execution traces and produces structured corrections). Stronghold's feedback module (April 2, 2026) was developed independently of Meta's [Hyperagents](https://arxiv.org/abs/2603.19461) paper (published March 19, 2026; discovered April 16, 2026). The RASO roadmap — wrapping a meta-agent around the builders graph so it can modify its own structure — was influenced by HyperAgents after discovery. Previously called "naive RLHF" internally; renamed because the feedback is primarily agent-driven (tournaments, learning extraction, quality gates), with optional human feedback via PR comments. *Direction shifted April 16, 2026 based on influence of Hyperagents paper.*
 
 ## License
 
