@@ -172,3 +172,63 @@ This is Stronghold's primary differentiator. Security is not a feature — it is
 **Multi-model support** — Most frameworks are model-agnostic through middleware (LiteLLM, Portkey, direct SDK calls). Claude Code and OpenAI Agents SDK are optimized for their own models but support alternatives. Stronghold routes through LiteLLM, giving access to any provider LiteLLM supports.
 
 **Fallback** — Stronghold, MS Agent Framework, Archestra, OpenClaw, and Pi all handle provider failures with automatic fallback to alternative models. LangGraph and CrewAI have partial support through their LLM middleware layers.
+
+---
+
+## 6. Tool Ecosystem
+
+| Feature | Stronghold | Claude Code | OpenAI Agents SDK | MS Agent Framework | Archestra | LangGraph | CrewAI | OpenClaw | Hyperagents | Deep Agents | Pi |
+|---|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
+| MCP support | ✅ via LiteLLM | ✅ | ✅ | ✅ | ✅ Registry | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| AI tool/agent creation (Forge) | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| OpenAPI auto-conversion | ✅ via LiteLLM | ❌ | ❌ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| Skill marketplace | ✅ | ❌ | ❌ | ✅ Foundry | ✅ 858+ servers | ❌ | ❌ | ✅ ClawHub | ❌ | ❌ | ❌ |
+
+### Analysis
+
+**Stronghold's position:** MCP support via LiteLLM gateway (not a custom implementation), OpenAPI auto-conversion, skill marketplace, and the Forge agent for AI-driven tool creation. All shipped in the initial commit from Maistro.
+
+**Forge (AI tool/agent creation)** — Unique to Stronghold. The Forge agent creates tools and agents autonomously, validates them through security scanning, and starts output at ☠️ trust tier. The creation loop (generate → scan → validate schema → test → iterate, max 10 rounds) ensures created artifacts meet minimum viability before promotion to T3. No other framework has an agent that creates other agents and tools with automated security validation.
+
+**MCP support** — 5 frameworks support MCP natively: Stronghold (via LiteLLM), Claude Code, OpenAI Agents SDK, MS Agent Framework, and Archestra. Archestra has the largest registry (858+ MCP servers). Stronghold delegates MCP protocol handling entirely to LiteLLM rather than implementing its own gateway — this means Stronghold gets MCP improvements for free as LiteLLM evolves.
+
+**OpenAPI auto-conversion** — Stronghold and MS Agent Framework both auto-convert OpenAPI specs to callable tools. Stronghold does this through LiteLLM's OpenAPI-to-MCP conversion. Point at any OpenAPI spec, get MCP-compatible tools.
+
+---
+
+## 7. Observability
+
+| Feature | Stronghold | Claude Code | OpenAI Agents SDK | MS Agent Framework | Archestra | LangGraph | CrewAI | OpenClaw | Hyperagents | Deep Agents | Pi |
+|---|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
+| OTEL tracing | ✅ Phoenix | ✅ | ✅ | ✅ | ✅ Prometheus | ✅ LangSmith | ✅ | ❌ | ❌ | 🟡 | ❌ |
+| Prompt management | ✅ PostgreSQL | ❌ | ❌ | ❌ | ❌ | 🟡 LangSmith | ❌ | ❌ | ❌ | ❌ | ❌ |
+| Cost tracking | ✅ LiteLLM | ❌ | ❌ | ✅ | ✅ | 🟡 Portkey | ❌ | ❌ | ❌ | ❌ | ✅ |
+
+### Analysis
+
+**Stronghold's position:** Full observability stack — OTEL tracing to Arize Phoenix, self-hosted prompt management in PostgreSQL, and per-request cost tracking through LiteLLM callbacks. All observability components are behind protocol interfaces (`TracingBackend`, `PromptManager`) so backends are swappable.
+
+**Prompt management** — Stronghold stores prompts in PostgreSQL with versioning, labels (production/staging), and structured metadata. Hot-reload via LISTEN/NOTIFY. No external SaaS dependency. LangGraph uses LangSmith for prompt management but that's a commercial SaaS product. No other framework has self-hosted prompt management built in.
+
+**Tracing** — Every request is a trace, every boundary crossing is a span. The trace tree covers: warden scan → gate → classify → route → agent.handle → prompt build → LLM calls → tool calls → learning extraction → response. Most frameworks with OTEL support provide less granular span trees.
+
+---
+
+## 8. Enterprise & Multi-Tenant
+
+| Feature | Stronghold | Claude Code | OpenAI Agents SDK | MS Agent Framework | Archestra | LangGraph | CrewAI | OpenClaw | Hyperagents | Deep Agents | Pi |
+|---|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
+| Multi-tenant isolation | 🗺️ | ❌ | ❌ | ✅ | ✅ | ✅ Platform | 🟡 AMP | ❌ | ❌ | ❌ | ❌ |
+| SSO / OIDC | ✅ Keycloak + Entra | ✅ Enterprise | ❌ | ✅ Entra ID | ❌ | ✅ Platform | 🟡 | ❌ | ❌ | ❌ | ❌ |
+| Namespace-scoped secrets | 🗺️ | ❌ | ❌ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| Agent marketplace | 🗺️ | ❌ | ❌ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
+
+### Analysis
+
+**Stronghold's position:** SSO/OIDC is implemented (Keycloak + Entra ID, shipped in initial commit). Multi-tenant isolation, namespace-scoped secrets, and agent marketplace are roadmapped. This is Stronghold's weakest category today — MS Agent Framework, Archestra, and LangGraph Platform all have production multi-tenancy.
+
+**SSO** — Stronghold supports both Keycloak (open-source default) and Entra ID (enterprise Microsoft shops) through the `AuthProvider` protocol. Static API keys for service-to-service. OpenWebUI header passthrough for thin-client deployments.
+
+**Multi-tenant isolation (roadmapped)** — Designed as per-tenant K8s namespaces, each with scoped LiteLLM API keys, scoped Arize projects, and memory filtered by tenant_id. MS Agent Framework has this today through Azure AI Foundry. Archestra has per-org/team/agent scoping. LangGraph Platform (commercial) has multi-tenancy with SOC 2 Type 2 compliance.
+
+**Where Stronghold trails:** MS Agent Framework and Archestra both have agent/tool registries (marketplaces) and per-tenant secret management in production today. These are Stronghold's most significant gaps for enterprise adoption.
