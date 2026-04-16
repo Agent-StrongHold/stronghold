@@ -160,14 +160,36 @@ The first thing Claude said was: *"This maps directly onto the architecture
 we've been designing"* — referring to the agents workflow/graph for self-improvement
 of the codebase.
 
-I had independently arrived at the same idea as the Meta Superintelligence Lab
-and Meta FAIR. Not in theory — in implementation. The builders loop already does
-plan -> execute -> review -> learn -> iterate with automatic learning extraction
-and correction promotion. Wrapping a meta-agent around that graph — treating the
-whole workflow as both a pipeline of agents AND an agent itself — was already on
-the roadmap with skeletal tests and code. The Hyperagents paper formalized the
-theoretical construct. We were already a good way through building a working
-prototype.
+Here's the honest timeline:
+
+In **January 2026** — nine weeks before HyperAgents was published — I shipped
+CoinSwarm: a biological-evolution-inspired trading swarm where agent populations
+self-improve through fitness-scored selection, mutation, crossover, ELO-rated
+head-to-head competition, trio voting, and memory reinforcement. Agents that
+perform well reproduce. Agents that fail die. The population gets smarter
+through evaluation pressure. 620-line evolution engine, 660-line fitness
+evaluator, 548-line memory system with reinforce/contradict/decay, 722-line
+ELO system. All against live exchange data with real money at stake.
+
+In **February 2026** — four weeks before HyperAgents — Maistro's trace
+reviewer had an agent reviewing another agent's execution traces and producing
+structured corrections. The Auditor/Mason pattern before those names existed.
+
+In **April 2026** — two weeks after HyperAgents was published, but before I
+knew it existed — Stronghold's feedback module shipped. The Auditor reviews
+Mason's PRs, extracts learnings, stores corrections in agent memory, tracks
+whether violations are decreasing.
+
+I discovered the HyperAgents paper on **April 16, 2026**. That's when the
+self-referential framing clicked — the improvement mechanism modifying itself.
+That specific insight came from reading the paper. I won't claim otherwise.
+
+But the core idea — agents should evaluate and improve other agents through
+structured feedback — I arrived at independently, through building systems
+where failure costs real money. CoinSwarm's fitness loops are not a research
+prototype. They're connected to 7 exchange APIs. The 7-tier memory with
+unforgettable regrets exists because a trading swarm that forgets a catastrophic
+loss will repeat it.
 
 We're calling it RASO: Reflexive Agentic Self-Optimization. The feedback loop
 is primarily agent-driven — tournament scoring, learning extraction, automated
@@ -176,6 +198,9 @@ gets integrated into the next cycle. The system doesn't require human feedback
 to improve, but it doesn't refuse it either. "Naive RLHF" was the old internal
 name, but the "H" was misleading — the humans are optional participants, not
 mandatory reviewers. RASO is what it actually is.
+
+Last week, Anthropic described the harness. This week, Meta published the math
+for self-improvement. The git history shows I was already building both.
 
 ---
 
