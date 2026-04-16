@@ -76,3 +76,42 @@ How Stronghold compares to 10 agent frameworks and platforms across 8 categories
 **Proactive behavior** — Stronghold's Reactor is a 1000Hz event loop that unifies event-driven, interval, time, and state triggers. OpenClaw has basic cron scheduling. No other framework has a general-purpose proactive agent runtime.
 
 **GitAgent import/export** — Unique to Stronghold. Clone a git repo, run `stronghold agent import`, and the agent's YAML, prompts, memories, tools, and strategy are loaded into the running system. Export round-trips cleanly. No other framework has a portable agent format.
+
+---
+
+## 3. Security & Governance
+
+This is Stronghold's primary differentiator. Security is not a feature — it is the architectural foundation. Every design decision starts with "how can this be exploited?" The entire security stack (Warden, Gate, Sentinel, trust tiers) shipped in the initial commit from Maistro (March 25, 2026), then redesigned with security as the unitary design principle rather than one concern among many.
+
+| Feature | Stronghold | Claude Code | OpenAI Agents SDK | MS Agent Framework | Archestra | LangGraph | CrewAI | OpenClaw | Hyperagents | Deep Agents | Pi |
+|---|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
+| Input scanning | ✅ Warden | ❌ | ✅ Input guardrails | ✅ Content Safety | ✅ Dual-LLM | 🟡 NeMo | 🟡 | ❌ | ❌ | ❌ | ❌ |
+| Tool result scanning | ✅ Warden | ❌ | ✅ Tool guardrails | ✅ Middleware | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| Output scanning | ✅ Sentinel | ✅ Sandboxed | ✅ Output guardrails | ✅ Content Safety | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| Trust tiers | ✅ 5-tier | ❌ | ❌ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| Schema validation & repair | ✅ Sentinel | ❌ | ✅ Pydantic | 🟡 | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| PII filtering | ✅ | ❌ | ❌ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| Config-driven RBAC | ✅ | 🟡 | ❌ | ✅ Entra ID | ✅ | 🟡 Platform | 🟡 AMP | ❌ | ❌ | ❌ | ❌ |
+| Per-agent tool permissions | ✅ | ❌ | ❌ | ✅ | ✅ | ❌ | ✅ | ❌ | ❌ | ❌ | ❌ |
+| Audit logging | ✅ | ❌ | ✅ Traces | ✅ | ✅ | 🟡 | 🟡 | ❌ | ❌ | ❌ | ❌ |
+| Rate limiting | ✅ | ❌ | ❌ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| Sandbox execution | ✅ Containers | ✅ bubblewrap | ✅ | ✅ | ✅ K8s | ❌ | ❌ | 🟡 Docker | ✅ Docker | ❌ | ❌ |
+| Zero-trust architecture | ✅ | ❌ | ❌ | 🟡 | 🟡 | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
+
+### Analysis
+
+**Stronghold's position:** The only framework where security is the foundational design principle, not an add-on. Three dedicated security components — Warden (threat detection), Sentinel (policy enforcement), Gate (input processing) — cover every trust boundary in the system. All shipped in the initial commit.
+
+**Three-boundary scanning** — Only 4 frameworks scan at all three boundaries (input, tool results, output): Stronghold, OpenAI Agents SDK, MS Agent Framework, and Archestra. The approaches differ significantly:
+- **Stronghold:** Warden uses cheap-to-expensive layering (regex → heuristics → LLM) that short-circuits on detection. Sentinel handles policy enforcement as a LiteLLM guardrail plugin. Both scan tool results — indirect prompt injection through tool output is one of the most underestimated attack vectors.
+- **OpenAI Agents SDK:** Input/output/tool guardrails run in parallel with agent execution, fail-fast. Clean design but guardrails must be explicitly wired per agent.
+- **MS Agent Framework:** Azure AI Content Safety integration with agent middleware pipeline. Strongest when deployed on Azure; less capable standalone.
+- **Archestra:** Dual-LLM architecture isolates dangerous tool responses in a security sub-agent. Novel approach to prompt injection prevention.
+
+**Trust tiers** — Only Stronghold and MS Agent Framework have tiered trust. Stronghold's 5-tier system (☠️ Skull → T3 Forged → T2 Community → T1 Installed → T0 Built-in) with earned promotion through automated validation is more granular. Output from the Forge agent starts at ☠️ and must pass security scanning to promote. No tool or agent auto-promotes past T3 without operator approval or tournament evidence.
+
+**Schema validation & repair** — Stronghold's Sentinel doesn't just validate tool-call arguments against MCP schemas — it repairs them. Fuzzy-matches hallucinated field names to real ones, coerces types, applies defaults. Repairs feed back into the learning system. OpenAI Agents SDK validates via Pydantic but doesn't repair.
+
+**Zero-trust** — Stronghold is the only framework designed zero-trust end-to-end: all user input is untrusted, all tool results are untrusted, all agent output is scanned before return. MS Agent Framework and Archestra have partial zero-trust (strong at the boundary, weaker internally).
+
+**OpenClaw security note:** OpenClaw accumulated 138 CVEs in its first 5 months (7 critical, 49 high). A systematic taxonomy paper (arXiv 2603.27517) catalogs 190 security advisories. Nvidia released NemoClaw as a third-party security add-on. Enterprise use without additional hardening is not recommended.
