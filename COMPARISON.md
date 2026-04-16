@@ -146,3 +146,29 @@ This is Stronghold's primary differentiator. Security is not a feature — it is
 **Memory decay & reinforcement** — Unique to Stronghold. Memories decay without reinforcement (observations fade, hypotheses weaken). Reinforced memories gain weight. This prevents unbounded memory growth while preserving structurally important knowledge. No other framework implements automatic decay.
 
 **RASO (Reflexive Agentic Self-Optimization)** — Roadmapped. Wraps a meta-agent around the builders loop graph so it can modify its own structure. This concept was on Stronghold's roadmap before Meta published the Hyperagents paper; Hyperagents has since informed the renewed design. Direction shifted April 16, 2026. Previously called "naive RLHF" internally — renamed because there's no human feedback in the loop, only agent feedback from tournaments, learning extraction, and quality gates.
+
+---
+
+## 5. Model Routing
+
+| Feature | Stronghold | Claude Code | OpenAI Agents SDK | MS Agent Framework | Archestra | LangGraph | CrewAI | OpenClaw | Hyperagents | Deep Agents | Pi |
+|---|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
+| Multi-model support | ✅ | 🟡 Anthropic | 🟡 OpenAI | ✅ Foundry | ✅ | ✅ Portkey | ✅ LiteLLM | ✅ | 🟡 | 🟡 | ✅ |
+| Intelligent cost/quality routing | ✅ Scarcity-based | ❌ | ❌ | ❌ | ✅ Dynamic optimizer | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| Automatic fallback (429/5xx) | ✅ | ❌ | ❌ | ✅ | ✅ | 🟡 | 🟡 | ✅ | ❌ | ❌ | ✅ |
+| Task-type speed bonuses | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| Token budget enforcement | ✅ | ❌ | ❌ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ |
+
+### Analysis
+
+**Stronghold's position:** Scarcity-based model routing was one of the 8 innovations preserved from Maistro (initial commit, March 25, 2026). The scoring formula `score = quality^(qw*p) / (1/ln(remaining_tokens))^cw` makes cost rise smoothly as provider token pools deplete — no cliffs, no manual rebalancing. The router module (scorer, scarcity, speed, filter, selector) totals ~400 lines.
+
+**Intelligent routing** — Only Stronghold and Archestra have cost/quality-aware routing:
+- **Stronghold:** Scarcity-based scoring. Filters by tier/quota/status, scores by quality/speed/strength, selects best model. Task-type bonuses shift weights (voice gets speed, code gets quality).
+- **Archestra:** Dynamic optimizer claims up to 96% cost reduction by automatically switching to cheaper models when quality thresholds are met. Different approach — Archestra optimizes for cost floor, Stronghold optimizes for quality ceiling within budget.
+
+**Task-type speed bonuses** — Unique to Stronghold. The router weights quality, speed, and strength differently based on the classified task type. A voice request prioritizes latency. A code request prioritizes reasoning quality. A search request prioritizes throughput. No other framework adjusts model selection based on task classification.
+
+**Multi-model support** — Most frameworks are model-agnostic through middleware (LiteLLM, Portkey, direct SDK calls). Claude Code and OpenAI Agents SDK are optimized for their own models but support alternatives. Stronghold routes through LiteLLM, giving access to any provider LiteLLM supports.
+
+**Fallback** — Stronghold, MS Agent Framework, Archestra, OpenClaw, and Pi all handle provider failures with automatic fallback to alternative models. LangGraph and CrewAI have partial support through their LLM middleware layers.
