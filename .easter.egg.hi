@@ -140,11 +140,21 @@ evidence. The trust model is one-directional by default: you earn your way up.
 
 ---
 
-## And Then This Morning
+## And Then This Week
 
-I saw the Hyperagents paper on arXiv (2603.19461). Meta FAIR — self-referential
-agents that can modify their own improvement mechanisms. I dropped it into Claude
-Code alongside this repo.
+Last week, Anthropic published ["Trustworthy Agents in Practice"](https://www.anthropic.com/research/trustworthy-agents)
+— a research post defining a four-component agent architecture. Component #2:
+"a harness — instructions and guardrails." Five core principles: keeping humans
+in control, securing agent interactions, maintaining transparency, protecting
+privacy. They described what a trustworthy agent system should look like.
+
+We were already building it. Warden, Sentinel, Gate, trust tiers, config-driven
+RBAC, OTEL tracing, PII filtering, memory scoping — that's the harness Anthropic
+described, fully realized.
+
+Then this morning, I saw the Hyperagents paper on arXiv (2603.19461). Meta
+FAIR — self-referential agents that can modify their own improvement mechanisms.
+I dropped it into Claude Code alongside this repo.
 
 The first thing Claude said was: *"This maps directly onto the architecture
 we've been designing"* — referring to the agents workflow/graph for self-improvement
