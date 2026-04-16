@@ -6,13 +6,13 @@
 
 See [ARCHITECTURE.md](ARCHITECTURE.md) for the full system design.
 
-### Origin
+## Origin
 
 Stronghold is extracted from **Project Maistro** (a.k.a. Conductor), a private homelab AI gateway that proved the core concepts — routing, memory, multi-agent orchestration, and basic security. Maistro was *security and function*. Stronghold is **security-first design, then function** — security is not a feature bolted on top, it is the foundation upon which every architectural decision is made.
 
 The initial commit (March 25, 2026) ported ~520 files and 2,785 tests from Maistro, already shipping the full Warden/Gate/Sentinel security stack, 6-agent roster, scarcity-based model routing, and self-improving memory. Everything since is Stronghold-native development built on the security-first redesign.
 
-### Timeline
+## Timeline
 
 | Date | Milestone |
 |---|---|
