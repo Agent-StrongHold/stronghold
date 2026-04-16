@@ -2,9 +2,27 @@
 
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 
-Secure Agent Governance Platform. Wraps any LLM in a secure execution harness with intelligent routing, self-improving memory, and zero-trust security.
+**Security-first agent governance platform.** Every design decision in Stronghold starts with "how can this be exploited?" and works backward to function. It wraps any LLM in a zero-trust execution harness with defense-in-depth threat detection, intelligent model routing, self-improving memory, and protocol-driven extensibility.
 
 See [ARCHITECTURE.md](ARCHITECTURE.md) for the full system design.
+
+### Origin
+
+Stronghold is extracted from **Project Maistro** (a.k.a. Conductor), a private homelab AI gateway that proved the core concepts — routing, memory, multi-agent orchestration, and basic security. Maistro was *security and function*. Stronghold is **security-first design, then function** — security is not a feature bolted on top, it is the foundation upon which every architectural decision is made.
+
+The initial commit (March 25, 2026) ported ~520 files and 2,785 tests from Maistro, already shipping the full Warden/Gate/Sentinel security stack, 6-agent roster, scarcity-based model routing, and self-improving memory. Everything since is Stronghold-native development built on the security-first redesign.
+
+### Timeline
+
+| Date | Milestone |
+|---|---|
+| Pre-2026 | Project Maistro — homelab AI gateway proving routing, memory, multi-agent concepts |
+| **Mar 25** | **Stronghold v0.1.0** — initial commit, ~520 files, 2,785 tests. Full security stack (Warden, Gate, Sentinel), 6-agent roster, model routing, memory, skills. Ported from Maistro with security-first redesign. |
+| Apr 1 | Frank + Mason builder pipeline, deterministic strategies, issue-driven feedback loops |
+| Apr 2 | Builders 2.0 — unified agent architecture, learning strategy with repo recon and self-diagnosis |
+| Apr 6–9 | CI hardening, ruff cleanup, lint/type strictness across all modules |
+| Apr 12 | 95% test coverage — 550+ tests, 6 bug fixes |
+| **Apr 16** | Feature comparison; RASO direction shift influenced by [Hyperagents](https://arxiv.org/abs/2603.19461) paper |
 
 ## Quick Start
 
@@ -17,7 +35,7 @@ curl http://localhost:8100/health
 
 How Stronghold compares to other agent frameworks and platforms. Stronghold is an opinionated governance platform — not just an orchestration library or a coding agent — so some comparisons are apples-to-oranges by design.
 
-**Legend:** ✅ = Implemented&ensp; 🟡 = Partial&ensp; 🗺️ = Roadmapped&ensp; ❌ = No competitor
+**Legend:** ✅ = Implemented&ensp; 🟡 = Partial / requires integration&ensp; 🗺️ = Roadmapped&ensp; ❌ = No competitor offers this
 
 > Full feature-by-feature breakdown with detailed analysis: **[COMPARISON.md](COMPARISON.md)**
 
