@@ -35,7 +35,7 @@ How Stronghold compares to 10 agent frameworks and platforms across 8 categories
 
 ### Analysis
 
-**Stronghold's position:** Full-stack self-hosted platform with both Docker Compose (dev) and Kubernetes + Helm (production). Protocol-driven DI means every external dependency (LiteLLM, PostgreSQL, Arize) is behind a swappable interface — 20 protocols, zero direct imports in business logic. Ported from Maistro (March 25, 2026) with security-first redesign.
+**Stronghold's position:** Full-stack self-hosted platform with both Docker Compose (dev) and Kubernetes + Helm (production). Protocol-driven DI means every external dependency (LiteLLM, PostgreSQL, Arize) is behind a swappable interface — 20 protocols, zero direct imports in business logic. Complete redesign from Maistro/Conductor learnings (March 25, 2026).
 
 **Closest competitors:**
 - **MS Agent Framework** is the only other framework with comparable deployment maturity (K8s, Helm) AND protocol-driven architecture. However, its full feature set is tightly coupled to Azure AI Foundry.
@@ -63,7 +63,7 @@ How Stronghold compares to 10 agent frameworks and platforms across 8 categories
 
 ### Analysis
 
-**Stronghold's position:** Ships 6 production-ready specialist agents (Arbiter, Artificer, Scribe, Ranger, Warden-at-Arms, Forge) — no other framework does this. All orchestration features were ported from Maistro in the initial commit; the Builders 2.0 pipeline (Frank + Mason) and learning strategy were added in the first week (April 1–2, 2026).
+**Stronghold's position:** Ships 6 production-ready specialist agents (Arbiter, Artificer, Scribe, Ranger, Warden-at-Arms, Forge) — no other framework does this. All orchestration features were in the initial commit, redesigned from Maistro/Conductor learnings; the Builders 2.0 pipeline (Frank + Mason) and learning strategy were added in the first week (April 1–2, 2026).
 
 **Shipped agent roster** — Every other framework expects you to build your own agents from primitives. Stronghold ships opinionated specialists with defined roles, trust boundaries, and tool permissions. CrewAI's role/goal/backstory pattern is conceptually similar but requires you to define every agent yourself.
 
@@ -81,7 +81,7 @@ How Stronghold compares to 10 agent frameworks and platforms across 8 categories
 
 ## 3. Security & Governance
 
-This is Stronghold's primary differentiator. Security is not a feature — it is the architectural foundation. Every design decision starts with "how can this be exploited?" The entire security stack (Warden, Gate, Sentinel, trust tiers) shipped in the initial commit from Maistro (March 25, 2026), then redesigned with security as the unitary design principle rather than one concern among many.
+This is Stronghold's primary differentiator. Security is not a feature — it is the architectural foundation. Every design decision starts with "how can this be exploited?" The entire security stack (Warden, Gate, Sentinel, trust tiers) was designed from first principles for the initial commit (March 25, 2026), informed by Maistro/Conductor learnings but rebuilt with security as the unitary design principle rather than one concern among many.
 
 | Feature | Stronghold | Claude Code | OpenAI Agents SDK | MS Agent Framework | Archestra | LangGraph | CrewAI | OpenClaw | Hyperagents | Deep Agents | Pi |
 |---|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
@@ -133,7 +133,7 @@ This is Stronghold's primary differentiator. Security is not a feature — it is
 
 ### Analysis
 
-**Stronghold's position:** Memory is where Stronghold is most differentiated. No other platform combines learning extraction, tiered episodic memory with decay, 5-level scoping, and auto-promotion of corrections. The learning store and episodic memory were ported from Maistro in the initial commit; the builders learning strategy (repo recon + self-diagnosis) was added April 2, 2026.
+**Stronghold's position:** Memory is where Stronghold is most differentiated. No other platform combines learning extraction, tiered episodic memory with decay, 5-level scoping, and auto-promotion of corrections. The learning store and episodic memory were redesigned from Maistro patterns for the initial commit; the builders learning strategy (repo recon + self-diagnosis) was added April 2, 2026.
 
 **7-tier episodic memory** — Unique to Stronghold. Memories have structural weight bounds by tier: observations can decay to zero, but regrets can never drop below 0.6, and wisdom (≥0.9) is near-permanent. This means the system structurally cannot forget its worst mistakes or most important lessons. No other framework has tiered memory with enforced weight floors.
 
@@ -161,7 +161,7 @@ This is Stronghold's primary differentiator. Security is not a feature — it is
 
 ### Analysis
 
-**Stronghold's position:** Scarcity-based model routing was one of the 8 innovations preserved from Maistro (initial commit, March 25, 2026). The scoring formula `score = quality^(qw*p) / (1/ln(remaining_tokens))^cw` makes cost rise smoothly as provider token pools deplete — no cliffs, no manual rebalancing. The router module (scorer, scarcity, speed, filter, selector) totals ~400 lines.
+**Stronghold's position:** Scarcity-based model routing was one of the 8 innovations carried forward from Maistro into Stronghold's redesign (initial commit, March 25, 2026). The scoring formula `score = quality^(qw*p) / (1/ln(remaining_tokens))^cw` makes cost rise smoothly as provider token pools deplete — no cliffs, no manual rebalancing. The router module (scorer, scarcity, speed, filter, selector) totals ~400 lines.
 
 **Intelligent routing** — Only Stronghold and Archestra have cost/quality-aware routing:
 - **Stronghold:** Scarcity-based scoring. Filters by tier/quota/status, scores by quality/speed/strength, selects best model. Task-type bonuses shift weights (voice gets speed, code gets quality).
@@ -186,7 +186,7 @@ This is Stronghold's primary differentiator. Security is not a feature — it is
 
 ### Analysis
 
-**Stronghold's position:** MCP support via LiteLLM gateway (not a custom implementation), OpenAPI auto-conversion, skill marketplace, and the Forge agent for AI-driven tool creation. All shipped in the initial commit from Maistro.
+**Stronghold's position:** MCP support via LiteLLM gateway (not a custom implementation), OpenAPI auto-conversion, skill marketplace, and the Forge agent for AI-driven tool creation. All in the initial commit, redesigned from Maistro/Conductor learnings.
 
 **Forge (AI tool/agent creation)** — Unique to Stronghold. The Forge agent creates tools and agents autonomously, validates them through security scanning, and starts output at ☠️ trust tier. The creation loop (generate → scan → validate schema → test → iterate, max 10 rounds) ensures created artifacts meet minimum viability before promotion to T3. No other framework has an agent that creates other agents and tools with automated security validation.
 

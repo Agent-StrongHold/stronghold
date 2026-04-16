@@ -8,16 +8,18 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) for the full system design.
 
 ## Origin
 
-Stronghold is extracted from **Project Maistro** (a.k.a. Conductor), a private homelab AI gateway that proved the core concepts — routing, memory, multi-agent orchestration, and basic security. Maistro was *security and function*. Stronghold is **security-first design, then function** — security is not a feature bolted on top, it is the foundation upon which every architectural decision is made.
+**Project Maistro** (a.k.a. Conductor, Feb 19, 2026 – present) is a parallel project — a more secure implementation of the autonomous agent harness popularized by OpenClaw. Maistro proved the core concepts: routing, memory, multi-agent orchestration, and functional security. It remains an active project.
 
-The initial commit (March 25, 2026) ported ~520 files and 2,785 tests from Maistro, already shipping the full Warden/Gate/Sentinel security stack, 6-agent roster, scarcity-based model routing, and self-improving memory. Everything since is Stronghold-native development built on the security-first redesign.
+**Stronghold is a complete redesign**, not a port. Built from the learnings of Maistro and Conductor, Stronghold was designed from first principles with security as the unitary architectural foundation. Maistro was *security and function*. Stronghold is **security-first design, then function** — every architectural decision is derived from the security model, not constrained by it after the fact.
+
+The initial commit (March 25, 2026) established the security-first architecture with the Warden/Gate/Sentinel stack, 6-agent roster, scarcity-based model routing, and self-improving memory — informed by Maistro's battle-tested patterns but redesigned for zero-trust from the ground up.
 
 ## Timeline
 
 | Date | Milestone |
 |---|---|
-| Pre-2026 | Project Maistro — homelab AI gateway proving routing, memory, multi-agent concepts |
-| **Mar 25** | **Stronghold v0.1.0** — initial commit, ~520 files, 2,785 tests. Full security stack (Warden, Gate, Sentinel), 6-agent roster, model routing, memory, skills. Ported from Maistro with security-first redesign. |
+| **Feb 19** | **Project Maistro** begins — autonomous agent harness with routing, memory, multi-agent orchestration (parallel project, still active) |
+| **Mar 25** | **Stronghold v0.1.0** — complete redesign from Maistro/Conductor learnings. Security-first architecture, ~520 files, 2,785 tests. Warden/Gate/Sentinel, 6-agent roster, model routing, memory, skills. |
 | Apr 1 | Frank + Mason builder pipeline, deterministic strategies, issue-driven feedback loops |
 | Apr 2 | Builders 2.0 — unified agent architecture, learning strategy with repo recon and self-diagnosis |
 | Apr 6–9 | CI hardening, ruff cleanup, lint/type strictness across all modules |
