@@ -74,7 +74,7 @@ How Stronghold compares to other agent frameworks and platforms. Stronghold is a
 | Knowledge/RAG (pgvector) | ✅ | ❌ | 🟡 | ✅ | ❌ | 🟡 | 🟡 | ❌ | ❌ | ❌ | ❌ |
 | Memory decay & reinforcement | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
 | Auto-promotion of corrections | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
-| Metacognitive self-modification | 🗺️ Native | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ Research | ❌ | ❌ |
+| Naive RLHF / self-modification | 🗺️ Native | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ Research | ❌ | ❌ |
 
 ### Model Routing
 
@@ -124,7 +124,7 @@ Most agent frameworks give you **building blocks** (LangGraph, OpenAI Agents SDK
 - **Tournament-based agent evolution** — Agents compete head-to-head on live traffic; winners earn routes. No other framework has this.
 - **Protocol-driven DI with zero direct external imports** — Business logic depends only on protocols. LiteLLM, Arize, PostgreSQL — all swappable without touching a single line of business logic.
 
-**Roadmap — Metacognitive self-modification:** Stronghold's builders loop already implements plan → execute → review → learn → iterate with automatic learning extraction and correction promotion. The roadmap wraps a meta-agent around this graph, treating the entire workflow as both a pipeline of agents *and* an agent itself — enabling the graph to modify its own structure (add/remove/reorder nodes, adjust strategy selection, tune scoring weights). This is a native implementation of the [Hyperagents](https://arxiv.org/abs/2603.19461) theoretical construct, built from existing Stronghold primitives under Apache 2.0 with no external dependency on Meta's non-commercial research code.
+**Roadmap — Naive RLHF:** Stronghold's builders loop already implements plan → execute → review → learn → iterate with automatic learning extraction and correction promotion. The roadmap wraps a meta-agent around this graph, treating the entire workflow as both a pipeline of agents *and* an agent itself — enabling the graph to modify its own structure (add/remove/reorder nodes, adjust strategy selection, tune scoring weights). Internally called "naive RLHF", this is a native implementation of the [Hyperagents](https://arxiv.org/abs/2603.19461) theoretical construct, built from existing Stronghold primitives under Apache 2.0 with no external dependency on Meta's non-commercial research code.
 
 ## License
 
