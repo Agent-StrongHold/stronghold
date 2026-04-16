@@ -142,7 +142,7 @@ evidence. The trust model is one-directional by default: you earn your way up.
 
 ## And Then This Morning
 
-I saw the Hyperagents paper on arXiv (2603.19461). Meta research — self-referential
+I saw the Hyperagents paper on arXiv (2603.19461). Meta FAIR — self-referential
 agents that can modify their own improvement mechanisms. I dropped it into Claude
 Code alongside this repo.
 
@@ -150,17 +150,19 @@ The first thing Claude said was: *"This maps directly onto the architecture
 we've been designing"* — referring to the agents workflow/graph for self-improvement
 of the codebase.
 
-The builders loop already does plan -> execute -> review -> learn -> iterate with
-automatic learning extraction and correction promotion. Wrapping a meta-agent
-around that graph — treating the whole workflow as both a pipeline of agents AND
-an agent itself — is the natural next step. We're calling it RASO: Reflexive
-Agentic Self-Optimization. The concept was on our roadmap before the paper
-dropped. The paper gave it a name and validated the direction.
+I had independently arrived at the same idea as the Meta Superintelligence Lab
+and Meta FAIR. Not in theory — in implementation. The builders loop already does
+plan -> execute -> review -> learn -> iterate with automatic learning extraction
+and correction promotion. Wrapping a meta-agent around that graph — treating the
+whole workflow as both a pipeline of agents AND an agent itself — was already on
+the roadmap with skeletal tests and code. The Hyperagents paper formalized the
+theoretical construct. We were already a good way through building a working
+prototype.
 
-No human feedback in the loop. Agent feedback from tournament scoring, learning
-extraction, and automated quality gates. "Naive RLHF" was the old internal name,
-but there's nothing human about the feedback, so that was wrong. RASO is what it
-actually is.
+We're calling it RASO: Reflexive Agentic Self-Optimization. No human feedback
+in the loop. Agent feedback from tournament scoring, learning extraction, and
+automated quality gates. "Naive RLHF" was the old internal name, but there's
+nothing human about the feedback, so that was wrong. RASO is what it actually is.
 
 ---
 
