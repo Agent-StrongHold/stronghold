@@ -18,36 +18,30 @@ Azure Workload Identity, and the Stronghold Helm chart.
 
 ### Azure services used
 
-- **AKS** — Kubernetes runtime
+- **AKS** — Kubernetes runtime (free control plane)
 - **Azure Container Registry (ACR)** — container image storage
-- **Azure Disk CSI** — persistent volumes (enabled by default on AKS 1.29+)
-- **Application Gateway Ingress Controller (AGIC)** — L7 ingress (or nginx)
+- **Azure Database for PostgreSQL Flexible Server** — managed postgres with pgvector
 - **Entra ID (Azure AD)** — user authentication via OIDC/JWT
 - **Azure Key Vault** — secrets (optional, via External Secrets Operator)
+- **KEDA** — scale-to-zero for builders on spot nodes
 
 ## 1. Provision the AKS cluster
 
-The default profile uses burstable B-series nodes with cluster autoscaler.
-Pods start tiny and HPA scales them out; the cluster autoscaler adds nodes
-when pods are unschedulable and removes them when idle.
+Two node pools: on-demand (core stack) and spot (burst builders).
 
 ```bash
 RESOURCE_GROUP=stronghold-rg
 CLUSTER_NAME=stronghold-aks
 LOCATION=eastus2
 
-# Create resource group
 az group create --name $RESOURCE_GROUP --location $LOCATION
 
-# Create AKS cluster — B4ms (4 vCPU / 16GB, burstable) with autoscaler
+# On-demand pool: 2x B2ms (2 vCPU / 8GB each) — core stack
 az aks create \
   --resource-group $RESOURCE_GROUP \
   --name $CLUSTER_NAME \
-  --node-count 1 \
-  --min-count 1 \
-  --max-count 5 \
-  --node-vm-size Standard_B4ms \
-  --enable-cluster-autoscaler \
+  --node-count 2 \
+  --node-vm-size Standard_B2ms \
   --network-plugin azure \
   --network-policy calico \
   --enable-oidc-issuer \
@@ -55,43 +49,103 @@ az aks create \
   --enable-managed-identity \
   --generate-ssh-keys
 
-# Tune autoscaler for aggressive response
-az aks update \
+# Spot pool: B2s (2 vCPU / 4GB), autoscaler 0→5 — burst builders
+az aks nodepool add \
   --resource-group $RESOURCE_GROUP \
-  --name $CLUSTER_NAME \
-  --cluster-autoscaler-profile \
-    scale-down-delay-after-add=5m \
-    scale-down-unneeded-time=5m \
-    scan-interval=10s \
-    max-graceful-termination-sec=30
+  --cluster-name $CLUSTER_NAME \
+  --name spot \
+  --node-count 0 \
+  --min-count 0 \
+  --max-count 5 \
+  --node-vm-size Standard_B2s \
+  --enable-cluster-autoscaler \
+  --priority Spot \
+  --eviction-policy Delete \
+  --spot-max-price -1
 
-# Get credentials
 az aks get-credentials --resource-group $RESOURCE_GROUP --name $CLUSTER_NAME
 ```
 
-For larger teams or sustained high load, use `Standard_D4s_v5` (dedicated
-compute) instead of B-series burstable.
-
-### Install nginx-ingress
-
-The default `values-aks.yaml` uses nginx-ingress (cheap — backed by a
-Standard Load Balancer at ~$18/mo):
+### Install KEDA + nginx-ingress
 
 ```bash
+# KEDA — scales builders from 0 on spot nodes
+helm repo add kedacore https://kedacore.github.io/charts
+helm install keda kedacore/keda --namespace keda --create-namespace
+
+# nginx-ingress (Standard LB, ~$18/mo)
 helm repo add ingress-nginx https://kubernetes.github.io/ingress-nginx
 helm install ingress-nginx ingress-nginx/ingress-nginx \
   --namespace ingress-nginx --create-namespace
 ```
 
-If you need WAF or L7 path routing, use AGIC instead:
+### 1b. Provision Azure Database for PostgreSQL Flexible Server
+
+No in-cluster postgres. Use managed Flexible Server with pgvector.
 
 ```bash
-az aks enable-addons \
+PG_SERVER=stronghold-pg
+PG_ADMIN=stronghold
+PG_PASSWORD=$(openssl rand -base64 24)
+
+az postgres flexible-server create \
   --resource-group $RESOURCE_GROUP \
-  --name $CLUSTER_NAME \
-  --addons ingress-appgw \
-  --appgw-subnet-cidr "10.225.0.0/16"
-# Then override: --set ingressRoutes.className=azure-application-gateway
+  --name $PG_SERVER \
+  --location $LOCATION \
+  --admin-user $PG_ADMIN \
+  --admin-password "$PG_PASSWORD" \
+  --sku-name Standard_B1ms \
+  --tier Burstable \
+  --storage-size 32 \
+  --version 16 \
+  --public-access 0.0.0.0
+
+# Allow AKS subnet access (get the AKS vnet/subnet)
+AKS_SUBNET=$(az aks show -g $RESOURCE_GROUP -n $CLUSTER_NAME \
+  --query 'agentPoolProfiles[0].vnetSubnetId' -o tsv)
+az postgres flexible-server firewall-rule create \
+  --resource-group $RESOURCE_GROUP \
+  --name $PG_SERVER \
+  --rule-name aks-access \
+  --start-ip-address 0.0.0.0 \
+  --end-ip-address 255.255.255.255  # Tighten to AKS egress IP in production
+
+# Enable pgvector extension
+az postgres flexible-server parameter set \
+  --resource-group $RESOURCE_GROUP \
+  --server-name $PG_SERVER \
+  --name azure.extensions \
+  --value vector
+
+# Create the databases
+az postgres flexible-server db create \
+  --resource-group $RESOURCE_GROUP \
+  --server-name $PG_SERVER \
+  --database-name stronghold
+
+az postgres flexible-server db create \
+  --resource-group $RESOURCE_GROUP \
+  --server-name $PG_SERVER \
+  --database-name phoenix
+
+# Connect and enable extensions (requires psql)
+PG_HOST="${PG_SERVER}.postgres.database.azure.com"
+PGPASSWORD="$PG_PASSWORD" psql -h "$PG_HOST" -U "$PG_ADMIN" -d stronghold \
+  -c "CREATE EXTENSION IF NOT EXISTS vector; CREATE EXTENSION IF NOT EXISTS pg_trgm;"
+
+echo "PG_HOST=$PG_HOST"
+echo "PG_PASSWORD=$PG_PASSWORD"
+```
+
+### 1c. Create the database secret
+
+```bash
+kubectl create namespace stronghold-platform
+
+kubectl -n stronghold-platform create secret generic postgres-flexible-credentials \
+  --from-literal=POSTGRES_USER=$PG_ADMIN \
+  --from-literal=POSTGRES_PASSWORD="$PG_PASSWORD" \
+  --from-literal=POSTGRES_DB=stronghold
 ```
 
 ## 2. Set up Azure Container Registry
@@ -224,15 +278,25 @@ helm upgrade --install stronghold deploy/helm/stronghold \
   --set serviceAccounts.litellm.annotations."azure\.workload\.identity/client-id"="$IDENTITY_CLIENT_ID" \
   --set strongholdApi.image.registry="${ACR_NAME}.azurecr.io" \
   --set strongholdApi.image.tag="latest" \
+  --set builders.image.registry="${ACR_NAME}.azurecr.io" \
+  --set builders.image.tag="latest" \
   --set ingressRoutes.stronghold.host="stronghold.yourdomain.com"
 ```
 
-### Using nginx-ingress instead of AGIC
-
-If you installed nginx-ingress instead of AGIC, override the ingress class:
+For dev (single replicas, relaxed security):
 
 ```bash
---set ingressRoutes.className=nginx
+helm upgrade --install stronghold deploy/helm/stronghold \
+  --namespace stronghold-platform --create-namespace \
+  -f deploy/helm/stronghold/values-vanilla-k8s.yaml \
+  -f deploy/helm/stronghold/values-aks.yaml \
+  -f deploy/helm/stronghold/values-dev.yaml \
+  --set auth.entraId.tenantId="$TENANT_ID" \
+  --set auth.entraId.clientId="$CLIENT_ID" \
+  --set strongholdApi.image.registry="${ACR_NAME}.azurecr.io" \
+  --set strongholdApi.image.tag="latest" \
+  --set builders.image.registry="${ACR_NAME}.azurecr.io" \
+  --set builders.image.tag="latest"
 ```
 
 ## 6. Verify the deployment
@@ -329,61 +393,58 @@ model_list:
 ## Architecture on AKS
 
 ```
-                    Internet
-                       |
-                  nginx-ingress
-              (Standard Load Balancer)
-                       |
-          +------------+------------+
-          |                         |
-   stronghold-api (1→8)     litellm (1→6)     ← HPA-managed
-          |                    |
-          +--------+-----------+
-                   |
-            postgres (StatefulSet)
-            Azure Managed Disk (CSI)
-                   |
-            phoenix (observability)
+                       Internet
+                          |
+                     nginx-ingress
+                  (Standard Load Balancer)
+                          |
+             +------------+------------+
+             |                         |
+      stronghold-api (x2)       litellm (x1)      ← on-demand nodes
+             |                    |
+             +--------+-----------+
+                      |
+         Azure Flexible Server (B1ms)
+          PostgreSQL 16 + pgvector
+                      |
+               phoenix (x1)
 
-Auth: Entra ID (JWT) ──> stronghold-api
+   stronghold-builders (x1)    ← on-demand, always warm
+   stronghold-builders-spot    ← spot nodes, KEDA 0→5
+
+Auth:    Entra ID (JWT) ──> stronghold-api
 Secrets: Azure Key Vault ──> ESO ──> K8s Secrets
 Identity: Azure Workload Identity (no stored credentials)
-Scaling: HPA (pods) + cluster autoscaler (nodes, 1→5 B4ms)
+Scaling: HPA (api pods) + KEDA (builders) + cluster autoscaler (spot nodes)
 ```
-
-At idle, everything fits on a single B4ms node. Under load, HPA adds pods
-and the cluster autoscaler adds nodes within ~30s.
 
 ## Cost estimates
 
-### Minimal / startup (1-node idle, autoscales to 5)
+### Dev (idle, spot pool at 0)
 
 | Resource | SKU | Estimated monthly cost |
 |---|---|---|
-| AKS node at idle (1x B4ms) | Pay-as-you-go | ~$120 |
+| AKS on-demand (2x B2ms) | Pay-as-you-go | ~$120 |
+| AKS spot pool (0 at idle) | Spot | ~$0 |
+| Azure Flexible Server | B1ms burstable | ~$13 |
 | Azure Load Balancer | Standard (nginx-ingress) | ~$18 |
-| Azure Disk (8Gi) | managed-csi | ~$1 |
+| Azure Disk (2Gi workspace) | managed-csi | ~$1 |
 | ACR | Standard | ~$5 |
-| Azure Key Vault | Standard | ~$1 |
-| **Total at idle** | | **~$145/month** |
+| AKS control plane | Free tier | $0 |
+| **Total at idle** | | **~$157/month** |
 
-Under sustained load with 3 nodes active: ~$385/month. Nodes scale back
-to 1 after 5 minutes of low utilization.
+Under load with 3 spot builders active: +~$35/month for spot B2s nodes.
 
 ### Production (dedicated compute, AGIC)
 
 | Resource | SKU | Estimated monthly cost |
 |---|---|---|
-| AKS cluster (3x D4s_v5) | Pay-as-you-go | ~$400 |
+| AKS on-demand (3x D4s_v5) | Pay-as-you-go | ~$400 |
+| AKS spot pool (0-5x B2s) | Spot (~60% discount) | ~$0-50 |
+| Azure Flexible Server | GP D2s_v3 | ~$100 |
 | Application Gateway (v2) | Standard_v2 | ~$250 |
-| Azure Disk (32Gi) | managed-csi-premium | ~$5 |
 | ACR | Standard | ~$5 |
-| Azure Key Vault | Standard | ~$1 |
-| **Total** | | **~$660/month** |
-
-For production, use dedicated D-series VMs (no CPU throttling) and
-Application Gateway for WAF. Override in Helm:
-`--set ingressRoutes.className=azure-application-gateway`.
+| **Total** | | **~$755/month (idle) — ~$805/month (loaded)** |
 
 ## Troubleshooting
 
@@ -403,6 +464,21 @@ namespace has the label `networking.k8s.io/ingress=true`, or set
 `ingressClassName` is `azure-application-gateway`. Check AGIC logs:
 `kubectl logs -n kube-system -l app=ingress-appgw`.
 
-**PostgreSQL PVC pending:** Verify the `managed-csi` StorageClass exists:
-`kubectl get sc`. On older AKS clusters, create it manually or use
-`managed-csi-premium`.
+**Flexible Server connection refused:** Ensure the firewall rule allows AKS
+egress IPs. Check with `az postgres flexible-server firewall-rule list`.
+Verify the `postgres-flexible-credentials` secret has the correct host
+(`<server>.postgres.database.azure.com`).
+
+**pgvector extension not found:** Run
+`az postgres flexible-server parameter set --name azure.extensions --value vector`
+then connect via psql and run `CREATE EXTENSION IF NOT EXISTS vector;`.
+
+**KEDA not scaling builders:** Check KEDA operator logs:
+`kubectl -n keda logs deploy/keda-operator`. Verify the Prometheus address
+in the ScaledObject is reachable. Check `/metrics` on stronghold-api returns
+`builders_queue_actionable`.
+
+**Spot builders evicted frequently:** This is expected — spot VMs can be
+reclaimed at any time. The cluster autoscaler provisions new spot nodes.
+Work in progress is lost on eviction; the pipeline retries from the last
+completed stage.
