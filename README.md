@@ -17,100 +17,63 @@ curl http://localhost:8100/health
 
 How Stronghold compares to other agent frameworks and platforms. Stronghold is an opinionated governance platform — not just an orchestration library or a coding agent — so some comparisons are apples-to-oranges by design.
 
-**Legend:** ✅ = Full support&ensp; 🟡 = Partial / requires integration&ensp; 🗺️ = Roadmapped&ensp; ❌ = Not available
+**Legend:** ✅ = Implemented&ensp; 🟡 = Partial&ensp; 🗺️ = Roadmapped&ensp; ❌ = No competitor
 
-### Architecture & Deployment
+> Full feature-by-feature breakdown with detailed analysis: **[COMPARISON.md](COMPARISON.md)**
 
-| Feature | Stronghold | Claude Code | OpenAI Agents SDK | MS Agent Framework | Archestra | LangGraph | CrewAI | OpenClaw | Hyperagents | Deep Agents | Pi |
-|---|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
-| Open source | ✅ Apache 2.0 | Source-avail. | ✅ MIT | ✅ MIT | ✅ AGPL-3.0 | ✅ MIT | ✅ MIT | ✅ MIT | CC BY-NC-SA | ✅ MIT | ✅ MIT |
-| Self-hosted | ✅ | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| Kubernetes native | ✅ | ❌ | ❌ | ✅ | ✅ | 🟡 | 🟡 | ❌ | ❌ | ❌ | ❌ |
-| Helm charts | ✅ | ❌ | ❌ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
-| Docker Compose | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ❌ | ❌ |
-| Protocol-driven DI | ✅ | ❌ | ❌ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
-| Language | Python | TS/Rust | Python/TS | .NET/Python | Go | Python/TS | Python | TS | Python | Python | TS |
-
-### Multi-Agent Orchestration
-
-| Feature | Stronghold | Claude Code | OpenAI Agents SDK | MS Agent Framework | Archestra | LangGraph | CrewAI | OpenClaw | Hyperagents | Deep Agents | Pi |
-|---|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
-| Multi-agent support | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | 🟡 | ❌ |
-| Shipped agent roster | ✅ 6 agents | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
-| Reasoning strategies | ✅ 4 generic + custom | ❌ | ❌ | ✅ | ❌ | ✅ | ✅ | ❌ | ✅ | ❌ | ❌ |
-| A2A communication | ✅ | ✅ | ✅ Handoffs | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ | ✅ | ❌ |
-| Intent classification | ✅ Keyword + LLM | ❌ | ❌ | ❌ | ❌ | 🟡 | ❌ | ❌ | ❌ | ❌ | ❌ |
-| Multi-intent parallel dispatch | ✅ | ❌ | ❌ | ✅ | ❌ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ |
-| Tournament evolution | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
-| Dynamic intent creation | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
-| Proactive behavior (Reactor) | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | 🟡 Cron | ❌ | ❌ | ❌ |
-| Agent import/export | ✅ GitAgent | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
-
-### Security & Governance
-
-| Feature | Stronghold | Claude Code | OpenAI Agents SDK | MS Agent Framework | Archestra | LangGraph | CrewAI | OpenClaw | Hyperagents | Deep Agents | Pi |
-|---|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
-| Input scanning | ✅ Warden | ❌ | ✅ Input guardrails | ✅ Content Safety | ✅ Dual-LLM | 🟡 NeMo | 🟡 | ❌ | ❌ | ❌ | ❌ |
-| Tool result scanning | ✅ Warden | ❌ | ✅ Tool guardrails | ✅ Middleware | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
-| Output scanning | ✅ Sentinel | ✅ Sandboxed | ✅ Output guardrails | ✅ Content Safety | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
-| Trust tiers | ✅ 5-tier | ❌ | ❌ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
-| Schema validation & repair | ✅ Sentinel | ❌ | ✅ Pydantic | 🟡 | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
-| PII filtering | ✅ | ❌ | ❌ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
-| Config-driven RBAC | ✅ | 🟡 | ❌ | ✅ Entra ID | ✅ | 🟡 Platform | 🟡 AMP | ❌ | ❌ | ❌ | ❌ |
-| Per-agent tool permissions | ✅ | ❌ | ❌ | ✅ | ✅ | ❌ | ✅ | ❌ | ❌ | ❌ | ❌ |
-| Audit logging | ✅ | ❌ | ✅ Traces | ✅ | ✅ | 🟡 | 🟡 | ❌ | ❌ | ❌ | ❌ |
-| Rate limiting | ✅ | ❌ | ❌ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
-| Sandbox execution | ✅ Containers | ✅ bubblewrap | ✅ | ✅ | ✅ K8s | ❌ | ❌ | 🟡 Docker | ✅ Docker | ❌ | ❌ |
-| Zero-trust architecture | ✅ | ❌ | ❌ | 🟡 | 🟡 | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
-
-### Memory & Learning
-
-| Feature | Stronghold | Claude Code | OpenAI Agents SDK | MS Agent Framework | Archestra | LangGraph | CrewAI | OpenClaw | Hyperagents | Deep Agents | Pi |
-|---|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
-| Session memory | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ✅ | ✅ |
-| Episodic memory (7-tier) | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
-| Self-improving learnings | ✅ | 🟡 Auto-memory | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ | ❌ |
-| Memory scopes (5 levels) | ✅ | ❌ | ❌ | 🟡 | ❌ | ❌ | 🟡 | ❌ | ❌ | ❌ | ❌ |
-| Knowledge/RAG (pgvector) | ✅ | ❌ | 🟡 | ✅ | ❌ | 🟡 | 🟡 | ❌ | ❌ | ❌ | ❌ |
-| Memory decay & reinforcement | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
-| Auto-promotion of corrections | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
-| RASO (self-modifying agent graph) | 🗺️ Native | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ Research | ❌ | ❌ |
-
-### Model Routing
-
-| Feature | Stronghold | Claude Code | OpenAI Agents SDK | MS Agent Framework | Archestra | LangGraph | CrewAI | OpenClaw | Hyperagents | Deep Agents | Pi |
-|---|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
-| Multi-model support | ✅ | 🟡 Anthropic | 🟡 OpenAI | ✅ Foundry | ✅ | ✅ Portkey | ✅ LiteLLM | ✅ | 🟡 | 🟡 | ✅ |
-| Intelligent cost/quality routing | ✅ Scarcity-based | ❌ | ❌ | ❌ | ✅ Dynamic optimizer | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
-| Automatic fallback (429/5xx) | ✅ | ❌ | ❌ | ✅ | ✅ | 🟡 | 🟡 | ✅ | ❌ | ❌ | ✅ |
-| Task-type speed bonuses | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
-| Token budget enforcement | ✅ | ❌ | ❌ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ |
-
-### Tool Ecosystem
-
-| Feature | Stronghold | Claude Code | OpenAI Agents SDK | MS Agent Framework | Archestra | LangGraph | CrewAI | OpenClaw | Hyperagents | Deep Agents | Pi |
-|---|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
-| MCP support | ✅ via LiteLLM | ✅ | ✅ | ✅ | ✅ Registry | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
-| AI tool/agent creation (Forge) | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
-| OpenAPI auto-conversion | ✅ via LiteLLM | ❌ | ❌ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
-| Skill marketplace | ✅ | ❌ | ❌ | ✅ Foundry | ✅ 858+ servers | ❌ | ❌ | ✅ ClawHub | ❌ | ❌ | ❌ |
-
-### Observability
-
-| Feature | Stronghold | Claude Code | OpenAI Agents SDK | MS Agent Framework | Archestra | LangGraph | CrewAI | OpenClaw | Hyperagents | Deep Agents | Pi |
-|---|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
-| OTEL tracing | ✅ Phoenix | ✅ | ✅ | ✅ | ✅ Prometheus | ✅ LangSmith | ✅ | ❌ | ❌ | 🟡 | ❌ |
-| Prompt management | ✅ PostgreSQL | ❌ | ❌ | ❌ | ❌ | 🟡 LangSmith | ❌ | ❌ | ❌ | ❌ | ❌ |
-| Cost tracking | ✅ LiteLLM | ❌ | ❌ | ✅ | ✅ | 🟡 Portkey | ❌ | ❌ | ❌ | ❌ | ✅ |
-
-### Enterprise & Multi-Tenant
-
-| Feature | Stronghold | Claude Code | OpenAI Agents SDK | MS Agent Framework | Archestra | LangGraph | CrewAI | OpenClaw | Hyperagents | Deep Agents | Pi |
-|---|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
-| Multi-tenant isolation | 🗺️ | ❌ | ❌ | ✅ | ✅ | ✅ Platform | 🟡 AMP | ❌ | ❌ | ❌ | ❌ |
-| SSO / OIDC | ✅ Keycloak + Entra | ✅ Enterprise | ❌ | ✅ Entra ID | ❌ | ✅ Platform | 🟡 | ❌ | ❌ | ❌ | ❌ |
-| Namespace-scoped secrets | 🗺️ | ❌ | ❌ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
-| Agent marketplace | 🗺️ | ❌ | ❌ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| Feature | Stronghold | Closest Competitor | Gap |
+|---|:---:|---|---|
+| **Architecture & Deployment** | | | |
+| Open source (Apache 2.0) | ✅ | Most frameworks (MIT) | Archestra is AGPL-3.0; Hyperagents CC BY-NC-SA |
+| Self-hosted + K8s native | ✅ | MS Agent Framework, Archestra | Both also ship Helm charts; most others are library-only |
+| Protocol-driven DI (20 protocols) | ✅ | MS Agent Framework | Only other framework with pluggable protocol interfaces |
+| **Multi-Agent Orchestration** | | | |
+| Shipped agent roster (6 agents) | ✅ | ❌ | No framework ships production-ready specialist agents |
+| 4 reasoning strategies + custom | ✅ | LangGraph, CrewAI | Graph nodes (LangGraph) and process types (CrewAI) are comparable |
+| Intent classification (keyword + LLM) | ✅ | LangGraph 🟡 | LangGraph supports conditional routing but no built-in classifier |
+| Multi-intent parallel dispatch | ✅ | MS Agent Framework, LangGraph, CrewAI | All support parallel execution; none have built-in intent splitting |
+| Tournament-based agent evolution | ✅ | ❌ | Unique to Stronghold |
+| Dynamic intent creation | ✅ | ❌ | Unique to Stronghold |
+| Proactive behavior (Reactor) | ✅ | OpenClaw 🟡 | OpenClaw has basic cron; no framework has a 1000Hz event-driven reactor |
+| GitAgent import/export | ✅ | ❌ | Unique to Stronghold |
+| **Security & Governance** | | | |
+| Input scanning (Warden) | ✅ | OpenAI Agents SDK, MS Agent Framework, Archestra | All four scan user input; approaches differ (regex+LLM vs guardrails vs dual-LLM) |
+| Tool result scanning (Warden) | ✅ | OpenAI Agents SDK, MS Agent Framework, Archestra | Stronghold + these three are the only ones scanning tool results |
+| Output scanning (Sentinel) | ✅ | OpenAI Agents SDK, MS Agent Framework, Archestra, Claude Code | Claude Code uses OS-level sandboxing rather than content scanning |
+| Trust tiers (☠️→T0) | ✅ | MS Agent Framework | Only other framework with tiered trust; Stronghold has 5 tiers with earned promotion |
+| Schema validation & repair | ✅ | OpenAI Agents SDK | OpenAI uses Pydantic validation; Stronghold adds fuzzy repair of hallucinated args |
+| PII filtering | ✅ | MS Agent Framework, Archestra | All three scan outbound responses |
+| Config-driven RBAC | ✅ | MS Agent Framework, Archestra | MS uses Entra ID; Archestra uses org/team scoping; Stronghold supports both Keycloak + Entra |
+| Per-agent tool permissions | ✅ | MS Agent Framework, Archestra, CrewAI | Stronghold enforces via LiteLLM per-key config |
+| Rate limiting | ✅ | MS Agent Framework, Archestra | All three enforce at the gateway level |
+| Zero-trust architecture | ✅ | MS Agent Framework 🟡, Archestra 🟡 | Stronghold is the only framework designed zero-trust end-to-end |
+| **Memory & Learning** | | | |
+| 7-tier episodic memory | ✅ | ❌ | Unique to Stronghold — regrets (≥0.6) structurally unforgettable |
+| Self-improving learnings (fail→succeed) | ✅ | Hyperagents ✅, Claude Code 🟡 | Hyperagents: research-only metacognitive loop; Claude Code: static auto-memory |
+| 5 memory scopes (global→session) | ✅ | MS Agent Framework 🟡 | MS has pluggable memory backends but not 5-level scoped retrieval |
+| Memory decay & reinforcement | ✅ | ❌ | Unique to Stronghold |
+| Auto-promotion of corrections | ✅ | ❌ | Unique to Stronghold |
+| Knowledge/RAG (pgvector) | ✅ | MS Agent Framework | Both have built-in vector retrieval |
+| RASO (self-modifying agent graph) | 🗺️ | Hyperagents (research) | Hyperagents is CC BY-NC-SA research code; Stronghold builds natively from existing primitives |
+| **Model Routing** | | | |
+| Intelligent cost/quality routing | ✅ | Archestra | Archestra uses a dynamic optimizer (up to 96% cost reduction); Stronghold uses scarcity-based scoring |
+| Automatic fallback (429/5xx) | ✅ | MS Agent Framework, Archestra, Pi | All four handle provider failures with automatic model fallback |
+| Task-type speed bonuses | ✅ | ❌ | Unique to Stronghold — voice gets speed weight, code gets quality weight |
+| Token budget enforcement | ✅ | MS Agent Framework, Archestra, Pi | All four enforce per-request token budgets |
+| **Tool Ecosystem** | | | |
+| MCP support | ✅ | Claude Code, OpenAI Agents SDK, MS Agent Framework, Archestra | Stronghold via LiteLLM gateway; Archestra has 858+ server registry |
+| AI tool/agent creation (Forge) | ✅ | ❌ | Unique to Stronghold — agents create tools, validated via security scanner |
+| OpenAPI auto-conversion | ✅ | MS Agent Framework | Both auto-convert OpenAPI specs to callable tools |
+| Skill marketplace | ✅ | Archestra, MS Agent Framework, OpenClaw | Archestra has largest catalog (858+ servers) |
+| **Observability** | | | |
+| OTEL tracing | ✅ | MS Agent Framework, OpenAI Agents SDK, LangGraph | All use OTEL; Stronghold routes to Arize Phoenix |
+| Prompt management (PostgreSQL) | ✅ | LangGraph 🟡 | LangGraph uses LangSmith (SaaS); Stronghold uses self-hosted PostgreSQL |
+| Cost tracking | ✅ | MS Agent Framework, Archestra, Pi | All four track per-request costs |
+| **Enterprise & Multi-Tenant** | | | |
+| SSO / OIDC | ✅ | MS Agent Framework, LangGraph Platform | Stronghold supports both Keycloak and Entra ID |
+| Multi-tenant isolation | 🗺️ | MS Agent Framework, Archestra, LangGraph Platform | All three have production multi-tenancy today |
+| Namespace-scoped secrets | 🗺️ | MS Agent Framework, Archestra | Both have per-tenant secret management |
+| Agent marketplace | 🗺️ | MS Agent Framework, Archestra | Both have agent/tool registries |
 
 ### What Makes Stronghold Different
 
