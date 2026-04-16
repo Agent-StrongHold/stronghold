@@ -18,6 +18,7 @@ The initial commit (March 25, 2026) established the security-first architecture 
 
 | Date | Milestone |
 |---|---|
+| Pre-2026 | **CoinSwarm** — biological-evolution-inspired hybrid micro-agent + statistical engine swarm for crypto/equities trading. Origin of the 7-tier episodic memory model (regrets structurally unforgettable, wisdom near-permanent). |
 | **Feb 19** | **Project Maistro** begins — autonomous agent harness with routing, memory, multi-agent orchestration (parallel project, still active) |
 | **Mar 25** | **Stronghold v0.1.0** — complete redesign from Maistro/Conductor learnings. Security-first architecture, ~520 files, 2,785 tests. Warden/Gate/Sentinel, 6-agent roster, model routing, memory, skills. |
 | Apr 1 | Frank + Mason builder pipeline, deterministic strategies, issue-driven feedback loops |
