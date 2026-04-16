@@ -53,7 +53,7 @@ How Stronghold compares to other agent frameworks and platforms. Stronghold is a
 | 4 reasoning strategies + custom | ✅ | LangGraph, CrewAI | Graph nodes (LangGraph) and process types (CrewAI) are comparable |
 | Intent classification (keyword + LLM) | ✅ | LangGraph 🟡 | LangGraph supports conditional routing but no built-in classifier |
 | Multi-intent parallel dispatch | ✅ | MS Agent Framework, LangGraph, CrewAI | All support parallel execution; none have built-in intent splitting |
-| Tournament-based agent evolution | ✅ | ❌ | Unique to Stronghold |
+| Tournament-based agent evolution | 🟡 | ❌ | Scaffolding implemented (Elo scoring, battle recording); not yet wired to production routing (v1.1) |
 | Dynamic intent creation | ✅ | ❌ | Unique to Stronghold |
 | Proactive behavior (Reactor) | ✅ | OpenClaw 🟡 | OpenClaw has basic cron; no framework has a 1000Hz event-driven reactor |
 | GitAgent import/export | ✅ | ❌ | Unique to Stronghold |
@@ -61,7 +61,7 @@ How Stronghold compares to other agent frameworks and platforms. Stronghold is a
 | Input scanning (Warden) | ✅ | OpenAI Agents SDK, MS Agent Framework, Archestra | All four scan user input; approaches differ (regex+LLM vs guardrails vs dual-LLM) |
 | Tool result scanning (Warden) | ✅ | OpenAI Agents SDK, MS Agent Framework, Archestra | Stronghold + these three are the only ones scanning tool results |
 | Output scanning (Sentinel) | ✅ | OpenAI Agents SDK, MS Agent Framework, Archestra, Claude Code | Claude Code uses OS-level sandboxing rather than content scanning |
-| Trust tiers (☠️→T0) | ✅ | MS Agent Framework | Only other framework with tiered trust; Stronghold has 5 tiers with earned promotion |
+| Trust tiers (☠️→T0) | ✅ | MS Agent Framework | 5 tiers with tier-based access control. Auto-promotion gates roadmapped (v1.1); currently manual. |
 | Schema validation & repair | ✅ | OpenAI Agents SDK | OpenAI uses Pydantic validation; Stronghold adds fuzzy repair of hallucinated args |
 | PII filtering | ✅ | MS Agent Framework, Archestra | All three scan outbound responses |
 | Config-driven RBAC | ✅ | MS Agent Framework, Archestra | MS uses Entra ID; Archestra uses org/team scoping; Stronghold supports both Keycloak + Entra |
@@ -75,7 +75,7 @@ How Stronghold compares to other agent frameworks and platforms. Stronghold is a
 | Memory decay & reinforcement | ✅ | ❌ | Unique to Stronghold |
 | Auto-promotion of corrections | ✅ | ❌ | Unique to Stronghold |
 | Knowledge/RAG (pgvector) | ✅ | MS Agent Framework | Both have built-in vector retrieval |
-| RASO (self-modifying agent graph) | 🗺️ | Hyperagents (research) | Hyperagents is CC BY-NC-SA research code; Stronghold builds natively from existing primitives |
+| RASO (self-modifying agent graph) | 🗺️ v1.2–1.3 | Hyperagents (research) | Inner feedback loop shipped. Meta-agent roadmapped v1.2 (Phase 1) → v1.3 (Phase 2). |
 | **Model Routing** | | | |
 | Intelligent cost/quality routing | ✅ | Archestra | Archestra uses a dynamic optimizer (up to 96% cost reduction); Stronghold uses scarcity-based scoring |
 | Automatic fallback (429/5xx) | ✅ | MS Agent Framework, Archestra, Pi | All four handle provider failures with automatic model fallback |
@@ -83,7 +83,7 @@ How Stronghold compares to other agent frameworks and platforms. Stronghold is a
 | Token budget enforcement | ✅ | MS Agent Framework, Archestra, Pi | All four enforce per-request token budgets |
 | **Tool Ecosystem** | | | |
 | MCP support | ✅ | Claude Code, OpenAI Agents SDK, MS Agent Framework, Archestra | Stronghold via LiteLLM gateway; Archestra has 858+ server registry |
-| AI tool/agent creation (Forge) | ✅ | ❌ | Unique to Stronghold — agents create tools, validated via security scanner |
+| AI tool/agent creation (Forge) | 🟡 | ❌ | Generate → security scan → save implemented. Test→iterate loop roadmapped (v1.2). |
 | OpenAPI auto-conversion | ✅ | MS Agent Framework | Both auto-convert OpenAPI specs to callable tools |
 | Skill marketplace | ✅ | Archestra, MS Agent Framework, OpenClaw | Archestra has largest catalog (858+ servers) |
 | **Observability** | | | |
@@ -92,9 +92,9 @@ How Stronghold compares to other agent frameworks and platforms. Stronghold is a
 | Cost tracking | ✅ | MS Agent Framework, Archestra, Pi | All four track per-request costs |
 | **Enterprise & Multi-Tenant** | | | |
 | SSO / OIDC | ✅ | MS Agent Framework, LangGraph Platform | Stronghold supports both Keycloak and Entra ID |
-| Multi-tenant isolation | 🗺️ | MS Agent Framework, Archestra, LangGraph Platform | All three have production multi-tenancy today |
-| Namespace-scoped secrets | 🗺️ | MS Agent Framework, Archestra | Both have per-tenant secret management |
-| Agent marketplace | 🗺️ | MS Agent Framework, Archestra | Both have agent/tool registries |
+| Multi-tenant isolation | 🗺️ v1.3 | MS Agent Framework, Archestra, LangGraph Platform | All three have production multi-tenancy today |
+| Namespace-scoped secrets | 🗺️ v1.3 | MS Agent Framework, Archestra | Both have per-tenant secret management |
+| Agent marketplace | 🗺️ v1.3 | MS Agent Framework, Archestra | Both have agent/tool registries |
 
 ### What Makes Stronghold Different
 
@@ -105,7 +105,7 @@ Most agent frameworks give you **building blocks** (LangGraph, OpenAI Agents SDK
 - **5-tier trust system** — Tools and agents earn trust through automated validation and operator approval (☠️ → T3 → T2 → T1 → T0). Only MS Agent Framework has comparable trust tiers.
 - **Self-improving memory** — Learns from tool-call failures (fail→succeed extraction), auto-promotes corrections after N successful uses, bridges to 7-tier episodic memory with structural weight floors. No other platform combines learning extraction with tiered episodic memory and decay.
 - **Scarcity-based model routing** — Cost rises smoothly as provider token pools deplete. No cliffs, no manual rebalancing. Only Archestra has comparable intelligent routing (via a dynamic optimizer).
-- **Tournament-based agent evolution** — Agents compete head-to-head on live traffic; winners earn routes. No other framework has this.
+- **Tournament-based agent evolution** — Elo scoring and battle recording implemented. Wiring to live traffic routing in v1.1. No other framework has this pattern.
 - **Protocol-driven DI with zero direct external imports** — Business logic depends only on protocols. LiteLLM, Arize, PostgreSQL — all swappable without touching a single line of business logic.
 
 **Roadmap — Reflexive Agentic Self-Optimization (RASO):** Stronghold's builders loop implements plan → execute → review → learn → iterate with automatic learning extraction and correction promotion. The underlying concept — agents improving via structured feedback from other agents — traces back to CoinSwarm's evolutionary fitness loops (January 2026, where agent populations self-improve through evaluation pressure, memory reinforcement, and trait inheritance) and Maistro's trace reviewer (February 2026, where an agent reviews another agent's execution traces and produces structured corrections). Stronghold's feedback module (April 2, 2026) was developed independently of Meta's [Hyperagents](https://arxiv.org/abs/2603.19461) paper (published March 19, 2026; discovered April 16, 2026). The RASO roadmap — wrapping a meta-agent around the builders graph so it can modify its own structure — was influenced by HyperAgents after discovery. Previously called "naive RLHF" internally; renamed because the feedback is primarily agent-driven (tournaments, learning extraction, quality gates), with optional human feedback via PR comments. *Direction shifted April 16, 2026 based on influence of Hyperagents paper.*
