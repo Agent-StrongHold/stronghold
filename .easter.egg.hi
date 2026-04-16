@@ -159,10 +159,13 @@ the roadmap with skeletal tests and code. The Hyperagents paper formalized the
 theoretical construct. We were already a good way through building a working
 prototype.
 
-We're calling it RASO: Reflexive Agentic Self-Optimization. No human feedback
-in the loop. Agent feedback from tournament scoring, learning extraction, and
-automated quality gates. "Naive RLHF" was the old internal name, but there's
-nothing human about the feedback, so that was wrong. RASO is what it actually is.
+We're calling it RASO: Reflexive Agentic Self-Optimization. The feedback loop
+is primarily agent-driven — tournament scoring, learning extraction, automated
+quality gates — but human feedback is welcome. Leave a comment on the PR and it
+gets integrated into the next cycle. The system doesn't require human feedback
+to improve, but it doesn't refuse it either. "Naive RLHF" was the old internal
+name, but the "H" was misleading — the humans are optional participants, not
+mandatory reviewers. RASO is what it actually is.
 
 ---
 
