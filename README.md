@@ -12,15 +12,15 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) for the full system design.
 
 **Stronghold is a complete redesign**, not a port. Built from the learnings of Maistro and Conductor, Stronghold was designed from first principles with security as the unitary architectural foundation. Maistro was *security and function*. Stronghold is **security-first design, then function** — every architectural decision is derived from the security model, not constrained by it after the fact.
 
-The initial commit (March 25, 2026) established the security-first architecture with the Warden/Gate/Sentinel stack, 6-agent roster, scarcity-based model routing, and self-improving memory — informed by Maistro's battle-tested patterns but redesigned for zero-trust from the ground up.
+The initial commit (March 25, 2026) established the security-first architecture with 481 files — the Warden/Gate/Sentinel stack, 6-agent roster, scarcity-based model routing, and self-improving memory — informed by Maistro's and Conductor's battle-tested patterns but redesigned for zero-trust from the ground up.
 
 ## Timeline
 
 | Date | Milestone |
 |---|---|
-| Pre-2026 | **CoinSwarm** — biological-evolution-inspired hybrid micro-agent + statistical engine swarm for crypto/equities trading. Origin of the 7-tier episodic memory model (regrets structurally unforgettable, wisdom near-permanent). |
+| **Jan 15** | **CoinSwarm** — biological-evolution-inspired hybrid micro-agent + statistical engine swarm for crypto/equities trading. Evolutionary fitness loops, ELO scoring, trio voting, memory reinforcement/contradiction/decay. Origin of the 7-tier episodic memory model. Production system against 7 exchange APIs. |
 | **Feb 19** | **Project Maistro** begins — autonomous agent harness with routing, memory, multi-agent orchestration (parallel project, still active) |
-| **Mar 25** | **Stronghold v0.1.0** — complete redesign from Maistro/Conductor learnings. Security-first architecture, ~520 files, 2,785 tests. Warden/Gate/Sentinel, 6-agent roster, model routing, memory, skills. |
+| **Mar 25** | **Stronghold v0.1.0** — complete redesign from Maistro/Conductor learnings. Security-first architecture, 481 files. 4-layer Warden, Gate, Sentinel, 6-agent roster, scarcity routing, 7-tier memory, 203 unique attack payloads in test suite. |
 | Apr 1 | Frank + Mason builder pipeline, deterministic strategies, issue-driven feedback loops |
 | Apr 2 | Builders 2.0 — unified agent architecture, learning strategy with repo recon and self-diagnosis |
 | Apr 6–9 | CI hardening, ruff cleanup, lint/type strictness across all modules |
@@ -53,7 +53,7 @@ How Stronghold compares to other agent frameworks and platforms. Stronghold is a
 | 4 reasoning strategies + custom | ✅ | LangGraph, CrewAI | Graph nodes (LangGraph) and process types (CrewAI) are comparable |
 | Intent classification (keyword + LLM) | ✅ | LangGraph 🟡 | LangGraph supports conditional routing but no built-in classifier |
 | Multi-intent parallel dispatch | ✅ | MS Agent Framework, LangGraph, CrewAI | All support parallel execution; none have built-in intent splitting |
-| Tournament-based agent evolution | ✅ | ❌ | Unique to Stronghold |
+| Tournament-based agent evolution | 🟡 | ❌ | Scaffolding implemented (Elo scoring, battle recording); not yet wired to production routing (v1.1) |
 | Dynamic intent creation | ✅ | ❌ | Unique to Stronghold |
 | Proactive behavior (Reactor) | ✅ | OpenClaw 🟡 | OpenClaw has basic cron; no framework has a 1000Hz event-driven reactor |
 | GitAgent import/export | ✅ | ❌ | Unique to Stronghold |
@@ -61,13 +61,13 @@ How Stronghold compares to other agent frameworks and platforms. Stronghold is a
 | Input scanning (Warden) | ✅ | OpenAI Agents SDK, MS Agent Framework, Archestra | All four scan user input; approaches differ (regex+LLM vs guardrails vs dual-LLM) |
 | Tool result scanning (Warden) | ✅ | OpenAI Agents SDK, MS Agent Framework, Archestra | Stronghold + these three are the only ones scanning tool results |
 | Output scanning (Sentinel) | ✅ | OpenAI Agents SDK, MS Agent Framework, Archestra, Claude Code | Claude Code uses OS-level sandboxing rather than content scanning |
-| Trust tiers (☠️→T0) | ✅ | MS Agent Framework | Only other framework with tiered trust; Stronghold has 5 tiers with earned promotion |
+| Trust tiers (☠️→T0) | ✅ | MS Agent Framework | 5 tiers with tier-based access control. Auto-promotion gates roadmapped (v1.1); currently manual. |
 | Schema validation & repair | ✅ | OpenAI Agents SDK | OpenAI uses Pydantic validation; Stronghold adds fuzzy repair of hallucinated args |
 | PII filtering | ✅ | MS Agent Framework, Archestra | All three scan outbound responses |
 | Config-driven RBAC | ✅ | MS Agent Framework, Archestra | MS uses Entra ID; Archestra uses org/team scoping; Stronghold supports both Keycloak + Entra |
 | Per-agent tool permissions | ✅ | MS Agent Framework, Archestra, CrewAI | Stronghold enforces via LiteLLM per-key config |
 | Rate limiting | ✅ | MS Agent Framework, Archestra | All three enforce at the gateway level |
-| Zero-trust architecture | ✅ | MS Agent Framework 🟡, Archestra 🟡 | Stronghold is the only framework designed zero-trust end-to-end |
+| Zero-trust architecture | ✅ | MS Agent Framework 🟡, Archestra 🟡 | Stronghold scans all three boundaries (input, tool-result, output); MS and Archestra have partial zero-trust |
 | **Memory & Learning** | | | |
 | 7-tier episodic memory | ✅ | ❌ | Unique to Stronghold — regrets (≥0.6) structurally unforgettable |
 | Self-improving learnings (fail→succeed) | ✅ | Hyperagents ✅, Claude Code 🟡 | Hyperagents: research-only metacognitive loop; Claude Code: static auto-memory |
@@ -75,7 +75,7 @@ How Stronghold compares to other agent frameworks and platforms. Stronghold is a
 | Memory decay & reinforcement | ✅ | ❌ | Unique to Stronghold |
 | Auto-promotion of corrections | ✅ | ❌ | Unique to Stronghold |
 | Knowledge/RAG (pgvector) | ✅ | MS Agent Framework | Both have built-in vector retrieval |
-| RASO (self-modifying agent graph) | 🗺️ | Hyperagents (research) | Hyperagents is CC BY-NC-SA research code; Stronghold builds natively from existing primitives |
+| RASO (self-modifying agent graph) | 🗺️ v1.2–1.3 | Hyperagents (research) | Inner feedback loop shipped. Meta-agent roadmapped v1.2 (Phase 1) → v1.3 (Phase 2). |
 | **Model Routing** | | | |
 | Intelligent cost/quality routing | ✅ | Archestra | Archestra uses a dynamic optimizer (up to 96% cost reduction); Stronghold uses scarcity-based scoring |
 | Automatic fallback (429/5xx) | ✅ | MS Agent Framework, Archestra, Pi | All four handle provider failures with automatic model fallback |
@@ -83,7 +83,7 @@ How Stronghold compares to other agent frameworks and platforms. Stronghold is a
 | Token budget enforcement | ✅ | MS Agent Framework, Archestra, Pi | All four enforce per-request token budgets |
 | **Tool Ecosystem** | | | |
 | MCP support | ✅ | Claude Code, OpenAI Agents SDK, MS Agent Framework, Archestra | Stronghold via LiteLLM gateway; Archestra has 858+ server registry |
-| AI tool/agent creation (Forge) | ✅ | ❌ | Unique to Stronghold — agents create tools, validated via security scanner |
+| AI tool/agent creation (Forge) | 🟡 | ❌ | Generate → security scan → save implemented. Test→iterate loop roadmapped (v1.2). |
 | OpenAPI auto-conversion | ✅ | MS Agent Framework | Both auto-convert OpenAPI specs to callable tools |
 | Skill marketplace | ✅ | Archestra, MS Agent Framework, OpenClaw | Archestra has largest catalog (858+ servers) |
 | **Observability** | | | |
@@ -92,23 +92,33 @@ How Stronghold compares to other agent frameworks and platforms. Stronghold is a
 | Cost tracking | ✅ | MS Agent Framework, Archestra, Pi | All four track per-request costs |
 | **Enterprise & Multi-Tenant** | | | |
 | SSO / OIDC | ✅ | MS Agent Framework, LangGraph Platform | Stronghold supports both Keycloak and Entra ID |
-| Multi-tenant isolation | 🗺️ | MS Agent Framework, Archestra, LangGraph Platform | All three have production multi-tenancy today |
-| Namespace-scoped secrets | 🗺️ | MS Agent Framework, Archestra | Both have per-tenant secret management |
-| Agent marketplace | 🗺️ | MS Agent Framework, Archestra | Both have agent/tool registries |
+| Multi-tenant isolation | 🗺️ v1.3 | MS Agent Framework, Archestra, LangGraph Platform | All three have production multi-tenancy today |
+| Namespace-scoped secrets | 🗺️ v1.3 | MS Agent Framework, Archestra | Both have per-tenant secret management |
+| Agent marketplace | 🗺️ v1.3 | MS Agent Framework, Archestra | Both have agent/tool registries |
 
 ### What Makes Stronghold Different
 
 Most agent frameworks give you **building blocks** (LangGraph, OpenAI Agents SDK) or a **finished product** (Claude Code, OpenClaw). Stronghold is an **opinionated governance platform** — it ships with a complete agent roster, security scanning at every trust boundary, self-improving memory, and intelligent model routing, all behind swappable protocol interfaces.
 
-**Unique to Stronghold:**
-- **Defense-in-depth security** — Warden scans both user input *and* tool results before they enter LLM context. Sentinel enforces policy at every boundary crossing. No other framework scans tool results by default.
-- **5-tier trust system** — Tools and agents earn trust through automated validation and operator approval (☠️ → T3 → T2 → T1 → T0). Only MS Agent Framework has comparable trust tiers.
-- **Self-improving memory** — Learns from tool-call failures (fail→succeed extraction), auto-promotes corrections after N successful uses, bridges to 7-tier episodic memory with structural weight floors. No other platform combines learning extraction with tiered episodic memory and decay.
-- **Scarcity-based model routing** — Cost rises smoothly as provider token pools deplete. No cliffs, no manual rebalancing. Only Archestra has comparable intelligent routing (via a dynamic optimizer).
-- **Tournament-based agent evolution** — Agents compete head-to-head on live traffic; winners earn routes. No other framework has this.
-- **Protocol-driven DI with zero direct external imports** — Business logic depends only on protocols. LiteLLM, Arize, PostgreSQL — all swappable without touching a single line of business logic.
+**Unique among shipping frameworks** (no other framework implements these):
+- **Three-boundary security scanning** — Warden scans both user input *and* tool results before they enter LLM context. Sentinel scans output before it reaches the user. Most frameworks scan input only; Stronghold scans all three trust boundaries.
+- **7-tier episodic memory with structural weight floors** — Regrets (≥0.6) are structurally unforgettable. Wisdom (≥0.9) is near-permanent. Originated in CoinSwarm (a trading swarm where forgetting catastrophic losses is prohibited). No other framework has tiered memory with enforced decay bounds.
+- **Self-improving learnings with auto-promotion** — Extracts fail→succeed corrections from tool-call history, stores with trigger keywords, auto-promotes to permanent prompt after N successful injections, bridges to episodic memory. No other framework combines extraction + promotion + episodic bridge.
+- **Scarcity-based model routing** — `cost = 1/ln(remaining_daily_tokens)`. Cost rises smoothly as provider token pools deplete. No comparable formula found in frameworks or in our literature review. Archestra has a dynamic optimizer but uses a different approach.
+- **Tournament-based agent evolution** — Elo scoring and battle recording implemented (production wiring in v1.1). Pattern originated in CoinSwarm (January 2026, 3 weeks before EvoMAS). No other framework has this.
+- **1000Hz Reactor** — Deterministic tick loop (inspired by game loop architecture) that unifies all proactive behavior into one evaluation cycle. The design choice is driven by security: in async fire-and-forget, a hanging thread or a missing callback can silently become a positive result — an agent proceeds because it didn't hear "no." In agent security, no answer must be a failure mode, not a pass. A deterministic loop guarantees consistent evaluation ordering, no race conditions, and no silent timeouts that an agent misinterprets as approval. The broader design principle: maximize determinism everywhere between LLM calls. The LLM is the minimally required non-deterministic element — everything else (routing, scanning, policy enforcement, trigger evaluation) is deterministic by design. Four typed trigger modes (event, interval, time, state), per-trigger circuit breakers, blocking gates (≤1ms). The starting design comp was OpenClaw, where the agent brain evaluates on a 15-minute heartbeat. The Reactor evaluates at 1000Hz — a 900,000x improvement in evaluation frequency for 0.46% of one logical core on a 4-generation-old 13th gen Intel. Not because agents need to act 1,000 times per second, but because the system should never be waiting 15 minutes to discover that something needs attention. No comparable system found in frameworks or in our literature review.
 
-**Roadmap — Reflexive Agentic Self-Optimization (RASO):** Stronghold's builders loop already implements plan → execute → review → learn → iterate with automatic learning extraction and correction promotion. The RASO roadmap wraps a meta-agent around this graph so it can modify its own structure (add/remove/reorder nodes, adjust strategy selection, tune scoring weights), treating the entire workflow as both a pipeline of agents *and* an agent itself. This concept was on Stronghold's roadmap with skeletal tests and code snippets before Meta published their [Hyperagents](https://arxiv.org/abs/2603.19461) paper (March 2026); Hyperagents has since informed the renewed design. Previously called "naive RLHF" internally, but renamed: there's no human feedback in the loop — it's agent feedback from tournament scoring, learning extraction, and automated quality gates. *Direction shifted April 16, 2026 based on influence of Hyperagents paper.* Built entirely from existing Stronghold primitives under Apache 2.0.
+**Unique among shipping frameworks, with comparable research** (published in papers but not implemented in any framework):
+- **5-tier earned trust** — ☠️ → T3 → T2 → T1 → T0 with tier-based access control. Auto-promotion gates roadmapped (v1.1); currently manual. MS Agent Framework has trust tiers. Governance Architecture paper (arXiv:2603.07191) describes a comparable framework.
+- **Memory decay & reinforcement** — Memories weaken without reinforcement, strengthen with use. Adaptive Memory Admission Control (arXiv:2603.04549) describes comparable mechanisms. Stronghold shipped it first (via CoinSwarm, January 2026).
+- **Protocol-driven DI with zero direct external imports** — 20 protocols, 32+ Protocol classes. Business logic depends only on protocols. Standard software engineering pattern but no other agent framework applies it at this scale.
+
+**Roadmapped** (inner loop shipped, meta-layer planned):
+- **RASO (v1.2–v1.3)** — Reflexive Agentic Self-Optimization. The Auditor→Mason feedback cycle is shipped and functional. The meta-agent that modifies the graph structure itself is roadmapped. Meta FAIR's Hyperagents paper describes the theoretical construct; Stronghold's inner feedback loop predates it (CoinSwarm January 2026, Maistro February 2026), but the self-referential framing was influenced by the paper after discovery on April 16.
+- **Forge iteration loop (v1.2)** — Currently generate→scan→save. Test→iterate loop with sample/adversarial inputs planned.
+- **Multi-tenant isolation (v1.3)** — K8s namespace-per-tenant, scoped secrets, agent marketplace.
+
+**Roadmap — Reflexive Agentic Self-Optimization (RASO):** Stronghold's builders loop implements plan → execute → review → learn → iterate with automatic learning extraction and correction promotion. The underlying concept — agents improving via structured feedback from other agents — traces back to CoinSwarm's evolutionary fitness loops (January 2026, where agent populations self-improve through evaluation pressure, memory reinforcement, and trait inheritance) and Maistro's trace reviewer (February 2026, where an agent reviews another agent's execution traces and produces structured corrections). Stronghold's feedback module (April 2, 2026) was developed independently of Meta's [Hyperagents](https://arxiv.org/abs/2603.19461) paper (published March 19, 2026; discovered April 16, 2026). The RASO roadmap — wrapping a meta-agent around the builders graph so it can modify its own structure — was influenced by HyperAgents after discovery. Previously called "naive RLHF" internally; renamed because the feedback is primarily agent-driven (tournaments, learning extraction, quality gates), with optional human feedback via PR comments. *Direction shifted April 16, 2026 based on influence of Hyperagents paper.*
 
 ## License
 

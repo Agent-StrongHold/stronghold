@@ -112,7 +112,7 @@ This is Stronghold's primary differentiator. Security is not a feature — it is
 
 **Schema validation & repair** — Stronghold's Sentinel doesn't just validate tool-call arguments against MCP schemas — it repairs them. Fuzzy-matches hallucinated field names to real ones, coerces types, applies defaults. Repairs feed back into the learning system. OpenAI Agents SDK validates via Pydantic but doesn't repair.
 
-**Zero-trust** — Stronghold is the only framework designed zero-trust end-to-end: all user input is untrusted, all tool results are untrusted, all agent output is scanned before return. MS Agent Framework and Archestra have partial zero-trust (strong at the boundary, weaker internally).
+**Zero-trust** — Stronghold scans all three trust boundaries (user input, tool results, agent output) with dedicated components at each. MS Agent Framework and Archestra have partial zero-trust postures (strong at the boundary, weaker internally). The March 2026 "Governance Architecture for Autonomous Agent Systems" paper (arXiv:2603.07191) describes a comparable 4-layer security framework — Maistro's input scanning (February 19) predates it, but the convergence validates the multi-layer approach.
 
 **OpenClaw security note:** OpenClaw accumulated 138 CVEs in its first 5 months (7 critical, 49 high). A systematic taxonomy paper (arXiv 2603.27517) catalogs 190 security advisories. Nvidia released NemoClaw as a third-party security add-on. Enterprise use without additional hardening is not recommended.
 
@@ -145,7 +145,7 @@ This is Stronghold's primary differentiator. Security is not a feature — it is
 
 **Memory decay & reinforcement** — Unique to Stronghold. Memories decay without reinforcement (observations fade, hypotheses weaken). Reinforced memories gain weight. This prevents unbounded memory growth while preserving structurally important knowledge. No other framework implements automatic decay.
 
-**RASO (Reflexive Agentic Self-Optimization)** — Roadmapped. Wraps a meta-agent around the builders loop graph so it can modify its own structure. This concept was on Stronghold's roadmap before Meta published the Hyperagents paper; Hyperagents has since informed the renewed design. Direction shifted April 16, 2026. Previously called "naive RLHF" internally — renamed because there's no human feedback in the loop, only agent feedback from tournaments, learning extraction, and quality gates.
+**RASO (Reflexive Agentic Self-Optimization)** — Roadmapped. The core concept — agents improving via structured feedback from other agents — traces back to CoinSwarm's evolutionary fitness loops (January 2026, 9 weeks before Meta's [Hyperagents](https://arxiv.org/abs/2603.19461) paper) and Maistro's trace reviewer (February 2026, 4 weeks before). Stronghold's feedback module (April 2, 2026) was developed without knowledge of HyperAgents (discovered April 16). The RASO meta-layer — wrapping a meta-agent around the builders graph so it can modify its own structure — was influenced by HyperAgents after discovery. Previously called "naive RLHF" internally; renamed because the feedback is primarily agent-driven (tournaments, learning extraction, quality gates), with optional human feedback via PR comments.
 
 ---
 
@@ -161,7 +161,7 @@ This is Stronghold's primary differentiator. Security is not a feature — it is
 
 ### Analysis
 
-**Stronghold's position:** Scarcity-based model routing was one of the 8 innovations carried forward from Maistro into Stronghold's redesign (initial commit, March 25, 2026). The scoring formula `score = quality^(qw*p) / (1/ln(remaining_tokens))^cw` makes cost rise smoothly as provider token pools deplete — no cliffs, no manual rebalancing. The router module (scorer, scarcity, speed, filter, selector) totals ~400 lines.
+**Stronghold's position:** Scarcity-based model routing was originally developed in the Conductor routing layer and first git-committed in Stronghold's initial commit (March 25, 2026). The scoring formula `score = quality^(qw*p) / (1/ln(remaining_tokens))^cw` makes cost rise smoothly as provider token pools deplete — no cliffs, no manual rebalancing. The router module (scorer, scarcity, speed, filter, selector) totals ~400 lines.
 
 **Intelligent routing** — Only Stronghold and Archestra have cost/quality-aware routing:
 - **Stronghold:** Scarcity-based scoring. Filters by tier/quota/status, scores by quality/speed/strength, selects best model. Task-type bonuses shift weights (voice gets speed, code gets quality).
@@ -188,7 +188,7 @@ This is Stronghold's primary differentiator. Security is not a feature — it is
 
 **Stronghold's position:** MCP support via LiteLLM gateway (not a custom implementation), OpenAPI auto-conversion, skill marketplace, and the Forge agent for AI-driven tool creation. All in the initial commit, redesigned from Maistro/Conductor learnings.
 
-**Forge (AI tool/agent creation)** — Unique to Stronghold. The Forge agent creates tools and agents autonomously, validates them through security scanning, and starts output at ☠️ trust tier. The creation loop (generate → scan → validate schema → test → iterate, max 10 rounds) ensures created artifacts meet minimum viability before promotion to T3. No other framework has an agent that creates other agents and tools with automated security validation.
+**Forge (AI tool/agent creation)** — Unique to Stronghold. The Forge agent creates tools and agents autonomously, validates them through security scanning, and starts output at ☠️ trust tier. The creation flow (LLM generates SKILL.md → security scan → schema validation → save) ensures created artifacts pass security review before promotion to T3. No other framework has an agent that creates other agents and tools with automated security validation.
 
 **MCP support** — 5 frameworks support MCP natively: Stronghold (via LiteLLM), Claude Code, OpenAI Agents SDK, MS Agent Framework, and Archestra. Archestra has the largest registry (858+ MCP servers). Stronghold delegates MCP protocol handling entirely to LiteLLM rather than implementing its own gateway — this means Stronghold gets MCP improvements for free as LiteLLM evolves.
 
