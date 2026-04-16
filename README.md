@@ -74,7 +74,7 @@ How Stronghold compares to other agent frameworks and platforms. Stronghold is a
 | Knowledge/RAG (pgvector) | ✅ | ❌ | 🟡 | ✅ | ❌ | 🟡 | 🟡 | ❌ | ❌ | ❌ | ❌ |
 | Memory decay & reinforcement | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
 | Auto-promotion of corrections | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
-| Naive RLHF / self-modification | 🗺️ Native | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ Research | ❌ | ❌ |
+| RASO (self-modifying agent graph) | 🗺️ Native | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ Research | ❌ | ❌ |
 
 ### Model Routing
 
@@ -124,7 +124,7 @@ Most agent frameworks give you **building blocks** (LangGraph, OpenAI Agents SDK
 - **Tournament-based agent evolution** — Agents compete head-to-head on live traffic; winners earn routes. No other framework has this.
 - **Protocol-driven DI with zero direct external imports** — Business logic depends only on protocols. LiteLLM, Arize, PostgreSQL — all swappable without touching a single line of business logic.
 
-**Roadmap — Naive RLHF (self-modifying agent graph):** Stronghold's builders loop already implements plan → execute → review → learn → iterate with automatic learning extraction and correction promotion. This concept — wrapping a meta-agent around the graph so it can modify its own structure (add/remove/reorder nodes, adjust strategy selection, tune scoring weights), treating the entire workflow as both a pipeline of agents *and* an agent itself — was on Stronghold's roadmap with skeletal tests and code snippets before Meta published their [Hyperagents](https://arxiv.org/abs/2603.19461) paper. Hyperagents has since informed the renewed design. Internally called "naive RLHF", though the name is a misnomer: there's no human feedback in the loop — it's agent feedback from tournament scoring, learning extraction, and automated quality gates. Whether it truly qualifies as reinforcement learning is an open question. Built entirely from existing Stronghold primitives under Apache 2.0.
+**Roadmap — Reflexive Agentic Self-Optimization (RASO):** Stronghold's builders loop already implements plan → execute → review → learn → iterate with automatic learning extraction and correction promotion. The RASO roadmap wraps a meta-agent around this graph so it can modify its own structure (add/remove/reorder nodes, adjust strategy selection, tune scoring weights), treating the entire workflow as both a pipeline of agents *and* an agent itself. This concept was on Stronghold's roadmap with skeletal tests and code snippets before Meta published their [Hyperagents](https://arxiv.org/abs/2603.19461) paper (March 2026); Hyperagents has since informed the renewed design. Previously called "naive RLHF" internally, but renamed: there's no human feedback in the loop — it's agent feedback from tournament scoring, learning extraction, and automated quality gates. *Direction shifted April 16, 2026 based on influence of Hyperagents paper.* Built entirely from existing Stronghold primitives under Apache 2.0.
 
 ## License
 
