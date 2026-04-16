@@ -115,3 +115,34 @@ This is Stronghold's primary differentiator. Security is not a feature — it is
 **Zero-trust** — Stronghold is the only framework designed zero-trust end-to-end: all user input is untrusted, all tool results are untrusted, all agent output is scanned before return. MS Agent Framework and Archestra have partial zero-trust (strong at the boundary, weaker internally).
 
 **OpenClaw security note:** OpenClaw accumulated 138 CVEs in its first 5 months (7 critical, 49 high). A systematic taxonomy paper (arXiv 2603.27517) catalogs 190 security advisories. Nvidia released NemoClaw as a third-party security add-on. Enterprise use without additional hardening is not recommended.
+
+---
+
+## 4. Memory & Learning
+
+| Feature | Stronghold | Claude Code | OpenAI Agents SDK | MS Agent Framework | Archestra | LangGraph | CrewAI | OpenClaw | Hyperagents | Deep Agents | Pi |
+|---|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
+| Session memory | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ✅ | ✅ |
+| Episodic memory (7-tier) | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| Self-improving learnings | ✅ | 🟡 Auto-memory | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ | ❌ |
+| Memory scopes (5 levels) | ✅ | ❌ | ❌ | 🟡 | ❌ | ❌ | 🟡 | ❌ | ❌ | ❌ | ❌ |
+| Knowledge/RAG (pgvector) | ✅ | ❌ | 🟡 | ✅ | ❌ | 🟡 | 🟡 | ❌ | ❌ | ❌ | ❌ |
+| Memory decay & reinforcement | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| Auto-promotion of corrections | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| RASO (self-modifying agent graph) | 🗺️ Native | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ Research | ❌ | ❌ |
+
+### Analysis
+
+**Stronghold's position:** Memory is where Stronghold is most differentiated. No other platform combines learning extraction, tiered episodic memory with decay, 5-level scoping, and auto-promotion of corrections. The learning store and episodic memory were ported from Maistro in the initial commit; the builders learning strategy (repo recon + self-diagnosis) was added April 2, 2026.
+
+**7-tier episodic memory** — Unique to Stronghold. Memories have structural weight bounds by tier: observations can decay to zero, but regrets can never drop below 0.6, and wisdom (≥0.9) is near-permanent. This means the system structurally cannot forget its worst mistakes or most important lessons. No other framework has tiered memory with enforced weight floors.
+
+**Self-improving learnings** — Stronghold extracts fail→succeed patterns from tool-call history automatically. When a tool call fails with args A and succeeds with args B, the system stores the correction with trigger keywords. After N successful injections, the correction auto-promotes to a permanent prompt addition and optionally bridges to episodic memory (LESSON tier). Closest comparisons:
+- **Claude Code** has auto-memory that saves build commands and debugging insights across sessions, but these are static notes, not extracted from failure patterns.
+- **Hyperagents** has the most advanced self-improvement (metacognitive self-modification where the improvement mechanism itself is editable), but it's research code under CC BY-NC-SA — non-commercial, not importable as a library.
+
+**5 memory scopes** — global (all agents, all users) → team (same domain) → user (all agents, one user) → agent (one agent) → session (one conversation). Retrieval is a single query ranked by `similarity(content, query) * weight` with scope filtering. MS Agent Framework has pluggable memory backends (Mem0, Redis, Neo4j) but no structured scope hierarchy. CrewAI has custom memory interfaces but less documented.
+
+**Memory decay & reinforcement** — Unique to Stronghold. Memories decay without reinforcement (observations fade, hypotheses weaken). Reinforced memories gain weight. This prevents unbounded memory growth while preserving structurally important knowledge. No other framework implements automatic decay.
+
+**RASO (Reflexive Agentic Self-Optimization)** — Roadmapped. Wraps a meta-agent around the builders loop graph so it can modify its own structure. This concept was on Stronghold's roadmap before Meta published the Hyperagents paper; Hyperagents has since informed the renewed design. Direction shifted April 16, 2026. Previously called "naive RLHF" internally — renamed because there's no human feedback in the loop, only agent feedback from tournaments, learning extraction, and quality gates.
