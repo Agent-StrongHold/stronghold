@@ -474,8 +474,8 @@ class TestBuilderPipelineWithSpec:
         assert run.status == "completed"
         assert "spec" not in run.context
 
-    async def test_spec_not_found_runs_normally(self) -> None:
-        """If spec_store has no spec for the issue, pipeline runs without verification."""
+    async def test_spec_not_found_emits_and_runs(self) -> None:
+        """If spec_store has no spec, pipeline emits one and runs with verification."""
         from tests.fakes import FakeSpecStore, FakeSpecVerifier
 
         engine = FakeEngine()
@@ -489,7 +489,9 @@ class TestBuilderPipelineWithSpec:
             )
 
         assert run.status == "completed"
-        assert verifier.verify_calls == []
+        emitted = await store.get(999)
+        assert emitted is not None
+        assert emitted.title == "Missing spec"
 
     async def test_verification_results_stored_in_context(self) -> None:
         """Verification results are stored in run.context['verifications']."""

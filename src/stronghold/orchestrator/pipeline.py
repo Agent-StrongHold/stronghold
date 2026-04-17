@@ -47,6 +47,33 @@ def build_spec_summary(spec: Any) -> str:
     return summary
 
 
+def _emit_and_save_spec(issue_number: int, title: str, body: str, store: Any) -> Any:
+    """Create a Spec from issue metadata via the spec emitter."""
+    from stronghold.builders.spec_emitter import emit_spec
+
+    return emit_spec(issue_number=issue_number, title=title, body=body)
+
+
+def _enrich_spec_with_property_tests(spec: Any) -> Any:
+    """Generate property tests for a Spec's invariants and return updated Spec."""
+    from stronghold.builders.property_gen import generate_property_tests
+    from stronghold.types.spec import Spec
+
+    tests = generate_property_tests(spec)
+    return Spec(
+        issue_number=spec.issue_number,
+        title=spec.title,
+        protocols_touched=spec.protocols_touched,
+        invariants=spec.invariants,
+        acceptance_criteria=spec.acceptance_criteria,
+        files_touched=spec.files_touched,
+        property_tests=tuple(tests),
+        complexity=spec.complexity,
+        status=spec.status,
+        created_at=spec.created_at,
+    )
+
+
 class StageStatus(Enum):
     PENDING = "pending"
     RUNNING = "running"
@@ -260,6 +287,15 @@ class BuilderPipeline:
             if stage.skip_if == "atomic" and skip_decompose:
                 stage.status = StageStatus.SKIPPED
                 logger.info("Pipeline %s: skipping %s (atomic issue)", run_id, stage.name)
+
+                # Emit spec from issue metadata when decompose is skipped
+                if stage.name == "decompose" and spec is None and self._spec_store is not None:
+                    spec = _emit_and_save_spec(issue_number, title, "", self._spec_store)
+                    await self._spec_store.save(spec)
+                    run.context["spec"] = spec.to_dict()
+                    run.context["verifications"] = []
+                    spec_summary = build_spec_summary(spec)
+
                 continue
 
             _clean_signals = ("no violations", "lgtm", "approved", "all checks pass", "clean")
@@ -365,6 +401,21 @@ class BuilderPipeline:
                 prev_output = ""
 
             logger.info("Pipeline %s: %s completed", run_id, stage.name)
+
+            # Post-stage spec hooks
+            if self._spec_store is not None:
+                if stage.name == "decompose" and spec is None:
+                    spec = _emit_and_save_spec(issue_number, title, prev_output, self._spec_store)
+                    await self._spec_store.save(spec)
+                    run.context["spec"] = spec.to_dict()
+                    run.context["verifications"] = []
+                    spec_summary = build_spec_summary(spec)
+
+                if stage.name == "scaffold" and spec is not None:
+                    spec = _enrich_spec_with_property_tests(spec)
+                    await self._spec_store.save(spec)
+                    run.context["spec"] = spec.to_dict()
+                    spec_summary = build_spec_summary(spec)
 
             # Verify against spec if verifier is available
             if spec is not None and self._spec_verifier is not None:
