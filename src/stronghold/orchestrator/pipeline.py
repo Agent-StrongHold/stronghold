@@ -173,10 +173,21 @@ class BuilderPipeline:
         run = await pipeline.execute(
             issue_number=42, title="Add caching", repo="Agent-StrongHold/stronghold",
         )
+
+    With spec-driven verification:
+        pipeline = BuilderPipeline(engine, spec_store=store, spec_verifier=verifier)
     """
 
-    def __init__(self, engine: Any) -> None:
+    def __init__(
+        self,
+        engine: Any,
+        *,
+        spec_store: Any | None = None,
+        spec_verifier: Any | None = None,
+    ) -> None:
         self._engine = engine
+        self._spec_store = spec_store
+        self._spec_verifier = spec_verifier
         self._runs: dict[str, PipelineRun] = {}
 
     async def execute(
@@ -201,6 +212,14 @@ class BuilderPipeline:
         )
         self._runs[run_id] = run
         run.status = "running"
+
+        # Load spec if store is available
+        spec = None
+        if self._spec_store is not None:
+            spec = await self._spec_store.get(issue_number)
+            if spec is not None:
+                run.context["spec"] = spec.to_dict()
+                run.context["verifications"] = []
 
         prev_output = ""
         for i, stage in enumerate(stages):
@@ -314,6 +333,24 @@ class BuilderPipeline:
                 prev_output = ""
 
             logger.info("Pipeline %s: %s completed", run_id, stage.name)
+
+            # Verify against spec if verifier is available
+            if spec is not None and self._spec_verifier is not None:
+                verification = await self._spec_verifier.verify(
+                    spec, stage.name, stage.result or {}
+                )
+                run.context["verifications"].append(verification.to_dict())
+                if not verification.passed:
+                    stage.status = StageStatus.FAILED
+                    stage.error = f"Spec verification failed: {', '.join(verification.failures)}"
+                    run.status = f"failed at {stage.name}"
+                    logger.error(
+                        "Pipeline %s: %s FAILED spec verification: %s",
+                        run_id,
+                        stage.name,
+                        verification.failures,
+                    )
+                    break
 
         if run.status == "running":
             run.status = "completed"
