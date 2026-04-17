@@ -23,6 +23,29 @@ from typing import Any
 
 logger = logging.getLogger("stronghold.orchestrator.pipeline")
 
+_SPEC_SUMMARY_LIMIT = 2000
+
+
+def build_spec_summary(spec: Any) -> str:
+    """Build a text summary of a Spec for injection into pipeline prompts."""
+    parts: list[str] = [f"Spec: {spec.title}"]
+
+    if spec.protocols_touched:
+        parts.append(f"Protocols: {', '.join(spec.protocols_touched)}")
+
+    if spec.invariants:
+        inv_lines = [f"  - {inv.name}: {inv.description}" for inv in spec.invariants]
+        parts.append("Invariants:\n" + "\n".join(inv_lines))
+
+    if spec.acceptance_criteria:
+        crit_lines = [f"  - {c}" for c in spec.acceptance_criteria]
+        parts.append("Acceptance criteria:\n" + "\n".join(crit_lines))
+
+    summary = "\n".join(parts)
+    if len(summary) > _SPEC_SUMMARY_LIMIT:
+        summary = summary[: _SPEC_SUMMARY_LIMIT - 3] + "..."
+    return summary
+
 
 class StageStatus(Enum):
     PENDING = "pending"
@@ -108,11 +131,13 @@ BUILDER_PIPELINE = [
         agent_name="archie",
         prompt_template=(
             "Read issue #{issue_number}: {title}\n\n"
+            "{spec_summary}\n\n"
             "Create the scaffolding for this implementation:\n"
             "1. Define any new protocols in src/stronghold/protocols/\n"
             "2. Add fake implementations to tests/fakes.py\n"
             "3. Create empty module files with docstrings\n"
-            "4. Update ARCHITECTURE.md if adding new components\n\n"
+            "4. Update ARCHITECTURE.md if adding new components\n"
+            "5. Generate property test stubs from spec invariants\n\n"
             "Previous stage output:\n{prev_output}\n\n"
             "DO NOT write implementation code. Only structure."
         ),
@@ -123,11 +148,13 @@ BUILDER_PIPELINE = [
         prompt_template=(
             "Implement issue #{issue_number}: {title}\n\n"
             "Repository: https://github.com/{repo}\n\n"
+            "{spec_summary}\n\n"
             "Follow your TDD pipeline:\n"
-            "1. Write failing tests based on acceptance criteria\n"
+            "1. Write failing tests based on acceptance criteria and spec invariants\n"
             "2. Implement minimum code to pass tests\n"
-            "3. Run quality gates: pytest, ruff, mypy, bandit\n"
-            "4. Create a PR when all gates pass\n\n"
+            "3. Verify all spec invariants hold via property tests\n"
+            "4. Run quality gates: pytest, ruff, mypy, bandit\n"
+            "5. Create a PR when all gates pass\n\n"
             "Scaffold from previous stage:\n{prev_output}\n\n"
             "Create a focused PR with your changes."
         ),
@@ -137,7 +164,9 @@ BUILDER_PIPELINE = [
         agent_name="auditor",
         prompt_template=(
             "Review the PR created for issue #{issue_number}: {title}\n\n"
+            "{spec_summary}\n\n"
             "Check for:\n"
+            "- Spec invariant coverage (all invariants must have property tests)\n"
             "- Test coverage and quality\n"
             "- Security issues (injection, XSS, SSRF)\n"
             "- Multi-tenant isolation (org_id on all queries)\n"
@@ -221,6 +250,8 @@ class BuilderPipeline:
                 run.context["spec"] = spec.to_dict()
                 run.context["verifications"] = []
 
+        spec_summary = build_spec_summary(spec) if spec is not None else ""
+
         prev_output = ""
         for i, stage in enumerate(stages):
             run.current_stage = i
@@ -257,6 +288,7 @@ class BuilderPipeline:
                 title=title,
                 repo=repo,
                 prev_output=prev_output[:2000],
+                spec_summary=spec_summary,
             )
 
             # Dispatch through orchestrator engine
