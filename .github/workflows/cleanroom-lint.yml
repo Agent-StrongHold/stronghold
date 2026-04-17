@@ -9,11 +9,11 @@ on:
   pull_request:
     branches:
       - integration
-      - develop
       - main
   push:
     branches:
       - integration
+      - main
 
 concurrency:
   group: cleanroom-lint-${{ github.ref }}

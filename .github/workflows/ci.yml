@@ -4,13 +4,13 @@ on:
   push:
     branches-ignore:
       - main
-      - develop
+      - integration
       - 'feature/**'
   pull_request:
     branches:
       - 'feature/**'
       - integration
-      - develop
+      - main
 
 concurrency:
   group: ci-${{ github.ref }}
@@ -253,8 +253,8 @@ jobs:
             --cov-report=xml:coverage.xml \
             --cov-fail-under=85
 
-      - name: "Tier 3: Full test suite + 90% coverage (PR to develop)"
-        if: github.event_name == 'pull_request' && github.base_ref == 'develop'
+      - name: "Tier 3: Full test suite + 90% coverage (PR to integration or main)"
+        if: github.event_name == 'pull_request' && (github.base_ref == 'integration' || github.base_ref == 'main')
         env:
           DATABASE_URL: postgresql://stronghold:stronghold@localhost:5433/stronghold
         run: |

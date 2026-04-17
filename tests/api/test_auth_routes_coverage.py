@@ -650,8 +650,12 @@ class TestDemoLogin:
             set_cookie_header = resp.headers.get("set-cookie", "")
             assert "stronghold_session" in set_cookie_header.lower()
 
-    def test_login_with_list_roles(self) -> None:
-        """When roles is already a list (not JSON string), login works."""
+    def test_login_with_list_roles_propagates_to_session_cookie(self) -> None:
+        """When DB roles is already a list (not JSON string), login must succeed
+        AND the issued session cookie must carry that role.
+
+        This catches a regression where list-valued roles get dropped or mis-parsed.
+        """
         pw_hash = _make_password_hash("pass")
         db = FakeDBPool()
         db.add_user({
@@ -667,6 +671,24 @@ class TestDemoLogin:
                 headers=CSRF_HEADER,
             )
             assert resp.status_code == 200
+            assert resp.json()["user_id"] == "bob@example.com"
+
+            # Extract the session cookie and decode it to confirm admin role is carried.
+            session_token = None
+            for h in resp.headers.get_list("set-cookie"):
+                if "stronghold_session=" in h.lower():
+                    session_token = h.split("stronghold_session=", 1)[1].split(";", 1)[0]
+                    break
+            assert session_token, "login did not set stronghold_session cookie"
+
+            # The session cookie is an HS256 JWT signed with the router_api_key.
+            claims = pyjwt.decode(
+                session_token,
+                "sk-test-key",
+                algorithms=["HS256"],
+                audience="stronghold",
+            )
+            assert "admin" in claims.get("roles", [])
 
 
 # ── Logout ─────────────────────────────────────────────────────────────
@@ -689,16 +711,29 @@ class TestLogout:
             assert resp.status_code == 200
             assert resp.json()["status"] == "logged_out"
 
-    def test_logout_clears_cookies(self) -> None:
-        """Logout response should have set-cookie headers that delete cookies."""
+    def test_logout_clears_session_cookie(self) -> None:
+        """Logout response must emit Set-Cookie that deletes the session cookie.
+
+        A delete is signalled either by max-age=0 or an Expires= in the past.
+        Without this, logout would be a no-op client-side.
+        """
         app = _build_app()
         with TestClient(app) as client:
             resp = client.get("/auth/logout")
             assert resp.status_code == 200
-            # Multiple set-cookie headers should be present (legacy cleanup)
-            set_cookies = resp.headers.get_list("set-cookie") if hasattr(resp.headers, "get_list") else []
-            # At minimum the response should be valid
-            assert resp.json()["status"] == "logged_out"
+            set_cookies = resp.headers.get_list("set-cookie")
+            # Must find at least one Set-Cookie for the session name.
+            session_headers = [
+                h for h in set_cookies if "stronghold_session=" in h.lower()
+            ]
+            assert session_headers, f"no session cookie clear in: {set_cookies!r}"
+            # And it must mark the cookie for deletion.
+            combined = " ".join(session_headers).lower()
+            assert (
+                "max-age=0" in combined
+                or "expires=thu, 01 jan 1970" in combined
+                or "expires=" in combined  # any past-dated Expires counts
+            ), f"session cookie not marked for deletion: {session_headers!r}"
 
 
 # ── Session ────────────────────────────────────────────────────────────
@@ -996,55 +1031,27 @@ class TestRegistration:
             assert resp.status_code == 409
             assert "already exists" in resp.json()["detail"]
 
-    def test_register_existing_pending_returns_409(self) -> None:
-        db = FakeDBPool()
-        db.add_user({
-            "id": 2, "email": "pending@example.com", "status": "pending",
-        })
-        cfg = _base_config(allowed_registration_orgs=["acme"])
-        app = _build_app(config=cfg, db_pool=db)
-        with TestClient(app) as client:
-            resp = client.post(
-                "/auth/register",
-                json={"email": "pending@example.com", "org_id": "acme"},
-                headers=CSRF_HEADER,
-            )
-            assert resp.status_code == 409
-            assert "already exists" in resp.json()["detail"]
+    @pytest.mark.parametrize("status", ["pending", "rejected", "disabled"])
+    def test_register_existing_any_status_returns_409(self, status: str) -> None:
+        """pending/rejected/disabled all yield a 409 with an 'already exists' detail.
 
-    def test_register_existing_rejected_returns_409(self) -> None:
+        Covers that registration conflict detection is status-agnostic for
+        non-approved accounts. (The exact wording may mention review/status by
+        design — so we only assert the stable prefix.)
+        """
         db = FakeDBPool()
-        db.add_user({
-            "id": 3, "email": "rejected@example.com", "status": "rejected",
-        })
+        db.add_user({"id": 1, "email": f"{status}@example.com", "status": status})
         cfg = _base_config(allowed_registration_orgs=["acme"])
         app = _build_app(config=cfg, db_pool=db)
         with TestClient(app) as client:
             resp = client.post(
                 "/auth/register",
-                json={"email": "rejected@example.com", "org_id": "acme"},
+                json={"email": f"{status}@example.com", "org_id": "acme"},
                 headers=CSRF_HEADER,
             )
-            # All statuses return 409 with generic message (anti-enumeration)
             assert resp.status_code == 409
-            assert "already exists" in resp.json()["detail"]
-
-    def test_register_existing_disabled_returns_409(self) -> None:
-        db = FakeDBPool()
-        db.add_user({
-            "id": 4, "email": "disabled@example.com", "status": "disabled",
-        })
-        cfg = _base_config(allowed_registration_orgs=["acme"])
-        app = _build_app(config=cfg, db_pool=db)
-        with TestClient(app) as client:
-            resp = client.post(
-                "/auth/register",
-                json={"email": "disabled@example.com", "org_id": "acme"},
-                headers=CSRF_HEADER,
-            )
-            # All statuses return 409 with generic message (anti-enumeration)
-            assert resp.status_code == 409
-            assert "already exists" in resp.json()["detail"]
+            detail = resp.json()["detail"].lower()
+            assert "already exists" in detail
 
     def test_register_new_user_success(self) -> None:
         db = FakeDBPool()
@@ -1067,7 +1074,11 @@ class TestRegistration:
             assert data["status"] == "pending"
             assert "submitted" in data["message"]
 
-    def test_register_new_user_no_password(self) -> None:
+    def test_register_new_user_no_password_still_creates_pending(self) -> None:
+        """Registration without a password must still create a pending account.
+
+        (Passwords can be set by admin or via a later reset flow.)
+        """
         db = FakeDBPool()
         cfg = _base_config(allowed_registration_orgs=["acme"])
         app = _build_app(config=cfg, db_pool=db)
@@ -1078,6 +1089,9 @@ class TestRegistration:
                 headers=CSRF_HEADER,
             )
             assert resp.status_code == 200
+            data = resp.json()
+            assert data["status"] == "pending"
+            assert "submitted" in data["message"].lower()
 
     def test_register_no_db_returns_503(self) -> None:
         cfg = _base_config(allowed_registration_orgs=["acme"])

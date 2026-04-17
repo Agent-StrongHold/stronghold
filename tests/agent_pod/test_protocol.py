@@ -27,9 +27,16 @@ class TestAgentPodInfo:
 
 
 class TestProtocolCompliance:
-    def test_fake_implements_protocol(self) -> None:
+    def test_fake_implements_protocol_methods(self) -> None:
+        """Protocol acceptance plus a spot-check that every required method
+        is actually callable on the fake — guards against a regression
+        where a method is deleted but the runtime-checkable protocol still
+        passes because attribute lookup succeeds via ``__getattr__``."""
         fake = FakeAgentPodDiscovery()
         assert isinstance(fake, AgentPodDiscovery)
+        for name in ("get_user_pod", "register_pod", "unregister_pod", "close"):
+            attr = getattr(fake, name, None)
+            assert callable(attr), f"{name} must be callable on the fake"
 
 
 class TestGetUserPod:

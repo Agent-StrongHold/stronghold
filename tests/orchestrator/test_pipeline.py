@@ -120,7 +120,13 @@ class TestPipelineRun:
         assert run.current_stage == 0
         assert run.status == "pending"
         assert run.stages == []
-        assert isinstance(run.created_at, datetime)
+        # created_at defaults to a real UTC-aware timestamp, not None.
+        assert run.created_at is not None
+        assert run.created_at.tzinfo is not None
+        # Must be close to "now" (within a wide 60-second window to avoid flakiness).
+        now = datetime.now(UTC)
+        delta_seconds = abs((now - run.created_at).total_seconds())
+        assert delta_seconds < 60, f"created_at drift too large: {delta_seconds}s"
 
     def test_to_dict_empty_stages(self) -> None:
         run = PipelineRun(id="r2", issue_number=2, title="T", repo="o/r")

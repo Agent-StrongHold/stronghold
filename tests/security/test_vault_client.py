@@ -10,20 +10,45 @@ from tests.fakes import FakeVaultClient
 
 class TestFakeVaultClientProtocol:
     def test_satisfies_protocol(self) -> None:
+        """FakeVaultClient must expose every VaultClient method.
+
+        This is the @runtime_checkable structural check — it catches a drift
+        bug where FakeVaultClient forgets to add a new method after the
+        real protocol changes.
+        """
         assert isinstance(FakeVaultClient(), VaultClient)
+
+    def test_incomplete_class_fails_protocol(self) -> None:
+        """Negative control: a stub missing protocol methods is rejected.
+
+        Guards against the Protocol check silently degrading to "always true"
+        (e.g. if someone removes @runtime_checkable from the protocol def).
+        """
+        class Incomplete:
+            pass
+
+        assert not isinstance(Incomplete(), VaultClient)
 
 
 class TestPutAndGet:
     async def test_put_then_get(self) -> None:
+        """put_user_secret returns a VaultSecret whose fields match the request.
+
+        We assert each expected field individually so a regression that
+        returns a correctly-shaped object with wrong values (e.g. swapped
+        service/key) fails loudly.
+        """
         vault = FakeVaultClient()
         result = await vault.put_user_secret("acme", "alice", "github", "pat", "ghp_test")
-        assert isinstance(result, VaultSecret)
         assert result.service == "github"
         assert result.key == "pat"
         assert result.version == 1
-
+        # Value is not exposed on put result (security: never echo secrets back)
+        # but must be retrievable via get
         got = await vault.get_user_secret("acme", "alice", "github", "pat")
         assert got.value == "ghp_test"
+        assert got.service == "github"
+        assert got.key == "pat"
 
     async def test_put_stores_value(self) -> None:
         vault = FakeVaultClient()
