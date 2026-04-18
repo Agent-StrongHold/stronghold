@@ -1048,7 +1048,7 @@ class TestHighAdminOrgScoping:
         app.state.container = _C()
 
         with TestClient(app) as client:
-            resp = client.put(
+            client.put(
                 "/v1/stronghold/admin/users/42/roles",
                 json={"roles": ["user"]},
                 headers={"Authorization": "Bearer x"},
