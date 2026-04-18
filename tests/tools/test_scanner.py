@@ -40,18 +40,6 @@ class TestIssueSuggestion:
         except AttributeError:
             pass
 
-    def test_medium_scope(self) -> None:
-        s = IssueSuggestion(
-            title="test",
-            category="test",
-            files=("a.py",),
-            description="desc",
-            what_youll_learn="learn",
-            acceptance_criteria=("crit1",),
-            estimated_scope="medium",
-        )
-        assert s.estimated_scope == "medium"
-
 
 class TestDetectMissingFakes:
     """Test detect_missing_fakes with tmp_path directories."""

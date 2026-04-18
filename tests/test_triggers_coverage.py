@@ -66,32 +66,103 @@ class TestRegisterCoreTriggers:
                 assert st.spec.event_pattern, f"{st.spec.name} missing event_pattern"
 
 
-class TestLearningPromotionTrigger:
-    async def test_skipped_when_no_promoter(self) -> None:
+import pytest
+
+
+@pytest.mark.parametrize(
+    "trigger_name",
+    [
+        "learning_promotion_check",
+        "tournament_evaluation",
+        "canary_deployment_check",
+        "rlhf_feedback",
+        "mason_pr_review",
+    ],
+)
+class TestTriggerSkipsWhenDependencyMissing:
+    """Consolidated check: each of these triggers has an optional collaborator
+    (learning_promoter, tournament, canary_manager, review_result, pr_number).
+    With a bare container, they must report ``skipped: True`` and not crash.
+
+    Previously this was five near-identical single-assertion tests — see
+    commit history. Keeping the coverage while cutting copy-paste.
+    """
+
+    async def test_returns_skipped_without_dependency(
+        self, trigger_name: str
+    ) -> None:
         c = _make_container()
         register_core_triggers(c)
-        _, handler = _find_trigger(c, "learning_promotion_check")
-        result = await handler(Event("tick", {}))
-        assert result["skipped"] is True
+        _, handler = _find_trigger(c, trigger_name)
+        # rlhf_feedback listens on pr.reviewed; mason_pr_review on its own
+        # event. Others are tick-driven. Use the matching event type so we
+        # exercise the real handler entry path, not a silent mismatch.
+        event_name = {
+            "rlhf_feedback": "pr.reviewed",
+            "mason_pr_review": "mason.pr_review_requested",
+        }.get(trigger_name, "tick")
+        result = await handler(Event(event_name, {}))
+        assert result.get("skipped") is True, (
+            f"{trigger_name} should skip without its dependency, got {result!r}"
+        )
 
 
 class TestRateLimitEvictionTrigger:
-    async def test_eviction_runs(self) -> None:
+    async def test_eviction_reports_count_and_never_negative(self) -> None:
+        """Eviction trigger returns a count — non-negative and matches the
+        limiter's real eviction output.
+
+        The old form only asserted ``>= 0`` on ``evicted`` which is true by
+        construction (it is a count). We also assert the key is present and
+        the result is a dict, to catch regressions where the handler starts
+        returning ``None`` or raising.
+        """
         c = _make_container()
         register_core_triggers(c)
         _, handler = _find_trigger(c, "rate_limit_eviction")
         result = await handler(Event("tick", {}))
+        assert isinstance(result, dict)
         assert "evicted" in result
+        assert isinstance(result["evicted"], int)
         assert result["evicted"] >= 0
 
 
 class TestOutcomeStatsTrigger:
-    async def test_returns_stats(self) -> None:
+    async def test_empty_outcomes_returns_zero_stats(self) -> None:
+        """With no recorded outcomes, snapshot returns zeroed stats — not crash."""
         c = _make_container()
         register_core_triggers(c)
         _, handler = _find_trigger(c, "outcome_stats_snapshot")
         result = await handler(Event("tick", {}))
+        # Snapshot should expose a stats shape we can act on.
+        assert isinstance(result, dict)
         assert "total" in result or "rate" in result
+        total = result.get("total", 0)
+        assert isinstance(total, int)
+        # Freshly-built container has no outcomes.
+        assert total == 0
+
+    async def test_outcome_stats_counts_real_outcomes(self) -> None:
+        """After recording outcomes, the snapshot reflects the real counts.
+
+        This is the invariant the trigger exists to surface — the old test
+        only confirmed the handler returns *some* dict.
+        """
+        from stronghold.types.memory import Outcome
+
+        c = _make_container()
+        # Record a couple of outcomes against the container's store.
+        await c.outcome_store.record(
+            Outcome(task_type="code", model_used="m1", success=True)
+        )
+        await c.outcome_store.record(
+            Outcome(task_type="code", model_used="m1", success=False)
+        )
+        register_core_triggers(c)
+        _, handler = _find_trigger(c, "outcome_stats_snapshot")
+        result = await handler(Event("tick", {}))
+        # The snapshot must count both recorded outcomes.
+        assert result.get("total", 0) == 2
 
 
 class TestSecurityRescanTrigger:
@@ -149,51 +220,32 @@ class TestPostToolLearningTrigger:
         assert result["success"] is False
 
 
-class TestTournamentCheckTrigger:
-    async def test_skipped_when_no_tournament(self) -> None:
-        c = _make_container()
-        register_core_triggers(c)
-        _, handler = _find_trigger(c, "tournament_evaluation")
-        result = await handler(Event("tick", {}))
-        assert result["skipped"] is True
-
-
-class TestCanaryCheckTrigger:
-    async def test_skipped_when_no_canary_manager(self) -> None:
-        c = _make_container()
-        register_core_triggers(c)
-        _, handler = _find_trigger(c, "canary_deployment_check")
-        result = await handler(Event("tick", {}))
-        assert result["skipped"] is True
-
-
-class TestRlhfFeedbackTrigger:
-    async def test_skipped_when_no_review_result(self) -> None:
-        c = _make_container()
-        register_core_triggers(c)
-        _, handler = _find_trigger(c, "rlhf_feedback")
-        result = await handler(Event("pr.reviewed", {}))
-        assert result["skipped"] is True
-
-
 class TestIssueBacklogScanner:
-    async def test_skipped_when_no_github_token(self) -> None:
-        """Scanner skips when no GitHub App credentials available."""
+    async def test_skipped_when_no_github_token(self, monkeypatch: Any) -> None:
+        """Scanner skips (no dispatch, no network) when GITHUB_TOKEN is unset.
+
+        Previously this test silently hit live github.com and was flaky —
+        it would dispatch real issues on a developer machine if a token
+        happened to be exported. We now force-unset GITHUB_TOKEN and
+        assert the handler skips without scanning.
+        """
+        import respx
+
+        monkeypatch.delenv("GITHUB_TOKEN", raising=False)
         c = _make_container()
         register_core_triggers(c)
         _, handler = _find_trigger(c, "issue_backlog_scanner")
-        # Without real app credentials, token generation returns ""
-        result = await handler(Event("tick", {}))
-        assert result.get("skipped") is True or result.get("error") is not None
 
+        # No token => handler should not make HTTP calls. respx.mock with
+        # assert_all_called=False and no registered routes will raise on
+        # any outgoing request, which catches the old flaky path.
+        with respx.mock(assert_all_called=False):
+            result = await handler(Event("tick", {}))
 
-class TestMasonPrReviewTrigger:
-    async def test_skipped_when_no_pr_number(self) -> None:
-        c = _make_container()
-        register_core_triggers(c)
-        _, handler = _find_trigger(c, "mason_pr_review")
-        result = await handler(Event("mason.pr_review_requested", {}))
-        assert result["skipped"] is True
+        # The handler reports skipped=True (or scanned=0 with no dispatches)
+        # and must not have dispatched anything.
+        assert result.get("dispatched", 0) == 0
+        assert result.get("skipped") is True or result.get("scanned", 0) == 0
 
 
 class TestLearningPromotionWithPromoter:
@@ -333,11 +385,20 @@ class _ScannerTestBase:
 class TestIssueBacklogScannerBasics(_ScannerTestBase):
     """Token, API, and empty backlog tests."""
 
-    async def test_no_token_skips(self) -> None:
+    async def test_no_token_skips(self, monkeypatch: Any) -> None:
+        """No GITHUB_TOKEN => scanner must skip without hitting live GitHub."""
+        import respx
+
+        monkeypatch.delenv("GITHUB_TOKEN", raising=False)
         c = _make_container()
         handler = self._get_handler(c)
-        result = await handler(Event("tick", {}))
+
+        with respx.mock(assert_all_called=False):
+            result = await handler(Event("tick", {}))
+
         assert result.get("skipped") is True
+        # Hard guarantee: zero dispatched when we lack credentials.
+        assert result.get("dispatched", 0) == 0
 
     async def test_empty_backlog_returns_zero(self, monkeypatch: Any) -> None:
         import respx

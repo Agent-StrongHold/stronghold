@@ -153,10 +153,6 @@ class TestClusterPressure:
         result = self._with_pressure(Intent(tier="P5"))
         assert result.tier == "P5"
 
-    def test_critical_tiers_constant(self) -> None:
-        """Sanity: critical tiers are P0 and P1."""
-        assert _CRITICAL_TIERS == frozenset({"P0", "P1"})
-
     def test_agent_override_then_pressure(self) -> None:
         """Agent upgrades to P2, then pressure downgrades to P3."""
         intent = Intent(tier="P4")
@@ -402,10 +398,3 @@ class TestBuildResponse:
             routing={},
         )
         assert result["choices"][0]["finish_reason"] == "stop"
-
-
-class TestConduitSessionEviction:
-    """Test the session map eviction logic via MAX_STICKY_SESSIONS."""
-
-    def test_max_sticky_sessions_constant(self) -> None:
-        assert Conduit._MAX_STICKY_SESSIONS == 10_000

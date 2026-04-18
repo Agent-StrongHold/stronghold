@@ -213,6 +213,24 @@ class TestGetOutcomes:
 
 class TestGetAuditLog:
     def test_admin_returns_entries(self, admin_app: FastAPI) -> None:
+        """Pre-populate the audit log and verify the endpoint surfaces
+        the entry. Prior version only asserted ``isinstance(data, list)``
+        so any 200-returning bug (e.g. empty list regardless of state)
+        would have slipped through."""
+        from stronghold.types.security import AuditEntry
+
+        audit_log = admin_app.state.container.audit_log
+        asyncio.get_event_loop().run_until_complete(
+            audit_log.log(
+                AuditEntry(
+                    user_id="alice",
+                    org_id="__system__",
+                    boundary="user_input",
+                    verdict="allowed",
+                    detail="test entry",
+                )
+            )
+        )
         with TestClient(admin_app) as client:
             resp = client.get(
                 "/v1/stronghold/admin/audit",
@@ -220,7 +238,13 @@ class TestGetAuditLog:
             )
             assert resp.status_code == 200
             data = resp.json()
-            assert isinstance(data, list)
+            # Two entries expected: the one we seeded + the admin GET itself
+            # which is logged by Sentinel. Locate our seeded entry by detail.
+            ours = [e for e in data if e.get("detail") == "test entry"]
+            assert len(ours) == 1
+            assert ours[0]["user_id"] == "alice"
+            assert ours[0]["boundary"] == "user_input"
+            assert ours[0]["verdict"] == "allowed"
 
 
 class TestGetQuota:
@@ -234,7 +258,6 @@ class TestGetQuota:
             data = resp.json()
             assert "providers" in data
             assert "summary" in data
-            assert isinstance(data["providers"], list)
             assert len(data["providers"]) == 1
             prov = data["providers"][0]
             assert prov["provider"] == "test"
@@ -301,7 +324,9 @@ class TestGetQuotaUsage:
             data = resp.json()
             assert data["group_by"] == "user_id"
             assert data["days"] == 7
-            assert isinstance(data["data"], list)
+            # With no outcomes recorded the breakdown must be empty, not
+            # None / missing / {"error": ...}.
+            assert data["data"] == []
 
     def test_breakdown_with_recorded_outcomes(self, admin_app: FastAPI) -> None:
         import asyncio
@@ -416,7 +441,9 @@ class TestGetQuotaTimeseries:
             assert resp.status_code == 200
             data = resp.json()
             assert data["days"] == 7
-            assert isinstance(data["series"], list)
+            # No recorded outcomes means an empty series — regression guard
+            # against returning None / "series": {"error": ...}.
+            assert data["series"] == []
 
     def test_timeseries_with_data(self, admin_app: FastAPI) -> None:
         import asyncio
@@ -671,6 +698,10 @@ class TestStrikeEndpoints:
             assert resp.json()["strike_count"] == 0
 
     def test_remove_strikes(self, admin_app: FastAPI) -> None:
+        """Removing N strikes must decrement the stored count. Previously
+        only status 200 was asserted so a no-op handler would pass. The
+        fixture pre-populates exactly one strike for alice, so after
+        removing one the count must be zero."""
         with TestClient(admin_app) as client:
             resp = client.post(
                 "/v1/stronghold/admin/strikes/alice/remove",
@@ -678,6 +709,18 @@ class TestStrikeEndpoints:
                 headers={"Authorization": "Bearer sk-test", "X-Stronghold-Request": "1"},
             )
             assert resp.status_code == 200
+            body = resp.json()
+            assert body["user_id"] == "alice"
+            # After removing the single seeded strike the count is 0.
+            assert body["strike_count"] == 0
+
+            # Follow-up GET must confirm the persisted state.
+            follow = client.get(
+                "/v1/stronghold/admin/strikes/alice",
+                headers={"Authorization": "Bearer sk-test", "X-Stronghold-Request": "1"},
+            )
+            assert follow.status_code == 200
+            assert follow.json()["strike_count"] == 0
 
     def test_remove_strikes_unknown_user(self, admin_app: FastAPI) -> None:
         with TestClient(admin_app) as client:
@@ -689,12 +732,41 @@ class TestStrikeEndpoints:
             assert resp.status_code == 404
 
     def test_unlock_user(self, admin_app: FastAPI) -> None:
+        """Unlocking a locked user must clear the locked_until timer
+        without removing strikes. Previously only status 200 was
+        asserted, admitting a no-op handler. We put alice into a
+        locked state directly on the tracker, call the endpoint, and
+        verify both the response body and the tracker's post-state
+        reflect the unlock."""
+        from datetime import UTC, datetime, timedelta
+
+        tracker = admin_app.state.container.strike_tracker
+        # Set alice's locked_until into the future so is_locked is True.
+        alice = tracker._records["alice"]
+        alice.locked_until = datetime.now(UTC) + timedelta(hours=1)
+        assert alice.is_locked is True
+        strikes_before = alice.strike_count
+
         with TestClient(admin_app) as client:
             resp = client.post(
                 "/v1/stronghold/admin/strikes/alice/unlock",
                 headers={"Authorization": "Bearer sk-test", "X-Stronghold-Request": "1"},
             )
-            assert resp.status_code == 200
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["user_id"] == "alice"
+        # locked_until cleared, is_locked flips to False.
+        assert body["locked_until"] is None
+        assert body["is_locked"] is False
+        # Strikes are NOT removed by unlock -- this is contract.
+        assert body["strike_count"] == strikes_before
+
+        # Persisted state confirms the mutation.
+        post = asyncio.get_event_loop().run_until_complete(tracker.get("alice"))
+        assert post is not None
+        assert post.locked_until is None
+        assert post.is_locked is False
+        assert post.strike_count == strikes_before
 
     def test_unlock_unknown_user(self, admin_app: FastAPI) -> None:
         with TestClient(admin_app) as client:
@@ -705,12 +777,33 @@ class TestStrikeEndpoints:
             assert resp.status_code == 404
 
     def test_enable_user(self, admin_app: FastAPI) -> None:
+        """Re-enabling a disabled user must flip the disabled flag
+        without removing strikes. Previously only status 200 was
+        asserted. We set alice.disabled on the tracker, call the
+        endpoint, and verify both the body and the persisted state."""
+
+        tracker = admin_app.state.container.strike_tracker
+        alice = tracker._records["alice"]
+        alice.disabled = True
+        assert alice.disabled is True
+        strikes_before = alice.strike_count
+
         with TestClient(admin_app) as client:
             resp = client.post(
                 "/v1/stronghold/admin/strikes/alice/enable",
                 headers={"Authorization": "Bearer sk-test", "X-Stronghold-Request": "1"},
             )
-            assert resp.status_code == 200
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["user_id"] == "alice"
+        # disabled cleared, but strikes preserved.
+        assert body["disabled"] is False
+        assert body["strike_count"] == strikes_before
+
+        post = asyncio.get_event_loop().run_until_complete(tracker.get("alice"))
+        assert post is not None
+        assert post.disabled is False
+        assert post.strike_count == strikes_before
 
     def test_enable_unknown_user(self, admin_app: FastAPI) -> None:
         with TestClient(admin_app) as client:
@@ -922,8 +1015,9 @@ class TestQuotaAnalyzeDataGathering:
             )
             assert resp.status_code == 200
             data = resp.json()
-            assert "answer" in data
-            assert isinstance(data["answer"], str)
+            # Must include a non-empty answer string — prior test only
+            # asserted the type, so an empty answer body would have passed.
+            assert isinstance(data["answer"], str) and data["answer"].strip()
 
     def test_analyze_with_timeseries_data(self, admin_app: FastAPI) -> None:
         """Timeseries section is built when daily data exists."""
@@ -1236,8 +1330,19 @@ class TestCoinEndpoints:
 class TestDaysInCycleExtended:
     """Extended tests for the days_in_cycle helper."""
 
-    def test_unknown_cycle_returns_positive(self) -> None:
+    def test_unknown_cycle_falls_back_to_day_of_month(self) -> None:
+        """Unknown billing cycles (e.g. 'weekly') must fall through to the
+        monthly-style max(now.day, 1) branch so callers never get 0
+        (which would cause division-by-zero in burn-rate math).
+
+        The old test only asserted result >= 1, which silently accepts
+        a constant 1 — bypassing the real fallback entirely.
+        """
+        from datetime import UTC, datetime
+
         from stronghold.api.routes.admin import days_in_cycle
 
         result = days_in_cycle("weekly")
-        assert result >= 1
+        today = max(datetime.now(UTC).day, 1)
+        # Must match the documented day-of-month fallback.
+        assert result == today

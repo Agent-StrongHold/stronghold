@@ -63,8 +63,25 @@ def test_custom_budget_limit() -> None:
 
 
 def test_protocol_compliance() -> None:
+    """InMemoryTaskAcceptancePolicy conforms to the runtime-checkable Protocol.
+
+    Catches a drift bug where the fake loses a required method after the
+    protocol is extended.
+    """
     p = InMemoryTaskAcceptancePolicy()
     assert isinstance(p, TaskAcceptancePolicy)
+
+
+def test_protocol_rejects_incomplete_impl() -> None:
+    """Negative control: a bare class missing policy methods is not accepted.
+
+    Guards against the Protocol silently degrading (e.g. if @runtime_checkable
+    is removed) and making the positive test always pass.
+    """
+    class Incomplete:
+        pass
+
+    assert not isinstance(Incomplete(), TaskAcceptancePolicy)
 
 
 def test_all_tiers_have_defaults() -> None:

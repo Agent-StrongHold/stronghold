@@ -17,14 +17,26 @@ class TestWardenIsolation:
         assert "open(" not in source
         assert "pathlib" not in source
 
-    def test_scan_returns_verdict_only(self) -> None:
+    def test_scan_returns_only_verdict_no_side_channels(self) -> None:
+        """Warden.scan must return a WardenVerdict carrying the scan result.
+
+        Stronger than a type check: we verify the returned object's
+        observable fields match what callers rely on. A regression that
+        returned a bare dict or a subclass with leaked internals (e.g.
+        exposing caller-private Warden state like seen_inputs) would fail.
+        """
+        import asyncio
+
         from stronghold.security.warden.detector import Warden
         from stronghold.types.security import WardenVerdict
 
         warden = Warden()
-        import asyncio
-
-        verdict = asyncio.get_event_loop().run_until_complete(
+        verdict = asyncio.new_event_loop().run_until_complete(
             warden.scan("hello", "user_input"),
         )
-        assert isinstance(verdict, WardenVerdict)
+        # Type invariant: real dataclass, not a subclass that smuggles state
+        assert type(verdict) is WardenVerdict
+        # Behavioral invariants for a clean input
+        assert verdict.clean is True
+        assert verdict.flags == ()
+        assert verdict.blocked is False
