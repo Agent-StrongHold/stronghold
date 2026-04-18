@@ -13,17 +13,15 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from stronghold.cache.redis_pool import _mask_url, close_redis, get_redis
+from stronghold.cache.redis_pool import _mask_url, _pool, close_redis, get_redis
 
 
 @pytest.fixture(autouse=True)
 def reset_pool():
     """Reset the module-level singleton before/after each test."""
-    import stronghold.cache.redis_pool as mod
-
-    mod._pool = None
+    _pool = None
     yield
-    mod._pool = None
+    _pool = None
 
 
 class TestGetRedisAndCloseRedis:
@@ -72,27 +70,24 @@ class TestGetRedisAndCloseRedis:
         test stubbed out close_redis itself, so the assertion could
         never fire — this version drives the real function.
         """
-        import stronghold.cache.redis_pool as mod
-
         mock_redis = AsyncMock()
         mock_redis.ping = AsyncMock(return_value=True)
         mock_redis.aclose = AsyncMock()
         mock_from_url.return_value = mock_redis
 
         await get_redis()
-        assert mod._pool is mock_redis
+        assert _pool is mock_redis
 
         await close_redis()
         mock_redis.aclose.assert_awaited_once()
-        assert mod._pool is None
+        assert _pool is None
 
     async def test_close_redis_no_op_when_never_opened(self) -> None:
         """Calling close_redis before get_redis is safe (idempotent)."""
         # No raise — pool was never opened, close is a no-op.
         await close_redis()
-        import stronghold.cache.redis_pool as mod
 
-        assert mod._pool is None
+        assert _pool is None
 
 
 class TestMaskUrl:
