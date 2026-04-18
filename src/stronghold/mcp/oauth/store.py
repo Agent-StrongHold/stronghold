@@ -14,7 +14,6 @@ from argon2.exceptions import InvalidHashError, VerifyMismatchError
 
 from stronghold.mcp.oauth.types import AuthorizationCode, OAuthClient, OAuthToken, TokenClaims
 
-
 _PASSWORD_HASHER = PasswordHasher()
 
 
