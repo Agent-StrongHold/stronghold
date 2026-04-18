@@ -164,10 +164,14 @@ def _get_app_installation_token(bot: str = "gatekeeper") -> str:
         resp.raise_for_status()
         token = resp.json().get("token", "")
         if token:
-            logger.info("GitHub App token generated for bot=%s", bot)
+            logger.info("GitHub App installation authenticated for bot=%s", bot)
         return token
     except Exception:
-        logger.warning("Failed to generate GitHub App token for bot=%s", bot, exc_info=True)
+        logger.warning(
+            "GitHub App installation auth exchange failed for bot=%s",
+            bot,
+            exc_info=True,
+        )
         return ""
 
 

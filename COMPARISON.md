@@ -249,14 +249,14 @@ Requirements:
 - **Container** — Hadolint (Dockerfile lint), optionally Trivy for image CVEs
 - **Code flow** — CodeQL (GHAS) for multi-language security queries
 
-| Tool | Stronghold | Claude Code | OpenAI SDK | MS Agent | Archestra | LangGraph | CrewAI | OpenClaw | Hyperagents | Deep Agents | Pi |
-|---|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
-| Bandit | ✅ blocking | ❓ | ❓ | ❓ | ❓ | ❓ | ❓ | ❓ | ❓ | ❓ | ❓ |
-| Semgrep | ✅ blocking | ❓ | ❓ | ❓ | ❓ | ❓ | ❓ | ❓ | ❓ | ❓ | ❓ |
-| pip-audit / dependabot | ✅ warn | 🟡 dependabot | 🟡 dependabot | 🟡 dependabot | 🟡 dependabot | 🟡 dependabot | 🟡 dependabot | 🟡 dependabot | ❓ | ❓ | ❓ |
-| Gitleaks | ✅ blocking | ❓ | ❓ | ❓ | ❓ | ❓ | ❓ | ❓ | ❓ | ❓ | ❓ |
-| Hadolint | ✅ blocking | N/A | N/A | ❓ | ❓ | N/A | N/A | N/A | N/A | N/A | N/A |
-| CodeQL | ✅ blocking | ❓ | ❓ | ❓ | ❓ | ❓ | ❓ | ❓ | ❓ | ❓ | ❓ |
+| Tool | Stronghold | Claude Code | OpenAI SDK | MS Agent | LangGraph | CrewAI | OpenClaw | Hyperagents | Deep Agents | Pi |
+|---|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
+| Bandit | ✅ blocking | ❓ | ❓ | ❓ | ❓ | ❓ | ❓ | ❓ | ❓ | ❓ |
+| Semgrep | ✅ blocking | ❓ | ❓ | ❓ | ❓ | ❓ | ❓ | ❓ | ❓ | ❓ |
+| pip-audit / dependabot | ✅ warn | 🟡 dependabot | 🟡 dependabot | 🟡 dependabot | 🟡 dependabot | 🟡 dependabot | 🟡 dependabot | ❓ | ❓ | ❓ |
+| Gitleaks | ✅ blocking | ❓ | ❓ | ❓ | ❓ | ❓ | ❓ | ❓ | ❓ | ❓ |
+| Hadolint | ✅ blocking | N/A | N/A | ❓ | N/A | N/A | N/A | N/A | N/A | N/A |
+| CodeQL | ✅ blocking | ❓ | ❓ | ❓ | ❓ | ❓ | ❓ | ❓ | ❓ | ❓ |
 
 **Industry baseline (OWASP ASVS L2, SLSA L2):** SAST required, supply-chain scanning required, secrets detection required, container hardening recommended. Most published CI configs for enterprise OSS ship 2-3 of these; Stronghold ships all 5 as blocking plus CodeQL.
 
