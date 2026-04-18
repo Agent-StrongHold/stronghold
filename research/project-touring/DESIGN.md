@@ -1,14 +1,16 @@
 # Project Touring — Design
 
-*An autonoetic Arbiter, built on the 7-tier episodic memory model.*
+*An autonoetic Conduit, built on the 7-tier episodic memory model.*
 
 ---
 
 ## 0. Framing
 
-This document is a research design, not a build spec. It takes a position that the Arbiter — Stronghold's central triage/routing agent (formerly "Conduit") — is the natural locus for autonoetic reasoning, and that the 7-tier episodic memory model, viewed correctly, is already a skeleton for it.
+This document is a research design, not a build spec. It takes the position that the **Conduit** — Stronghold's central routing pipeline, the orchestration layer every request flows through — is the natural locus for autonoetic reasoning, and that the 7-tier episodic memory model is already a skeleton for it.
 
-Production Stronghold is not the target. The target is understanding what an agent with a persistent, self-indexed, temporally-bidirectional memory can do and cannot do, where it breaks, and which of its properties are worth the engineering cost to migrate back into a multi-tenant codebase.
+Project Touring is close to a fork. It is a rethinking of what the platform could be if the orchestration layer itself carried a persistent self. That is structurally incompatible with the enterprise governance posture of `main`: multi-tenant isolation assumes per-tenant memory and per-user scoping, which is the opposite of a single continuous pipeline-level self. So the work lives on its own branch, with its own assumptions, and is allowed to be wrong in ways `main` is not allowed to be wrong.
+
+The target is understanding what an orchestration layer with a persistent, self-indexed, temporally-bidirectional memory can do and cannot do, where it breaks, and which of its properties — if any — are worth the engineering cost to reshape for multi-tenancy before touching `src/`.
 
 ## 1. Definitions we're using
 
@@ -29,7 +31,7 @@ The 7-tier model is a snapshot of an ongoing research line, not a starting point
 | **November 2025** | CoinSwarm begins | Weighted memory with reinforcement / contradiction / decay in an evolutionary-fitness context. The structural observation that certain failures must not decay — forgetting a catastrophic trading loss is prohibited — is the seed of what becomes REGRET's weight floor. |
 | **January 15, 2026** | CoinSwarm production | 7-tier structure crystallized: OBSERVATION → HYPOTHESIS → OPINION → LESSON → REGRET → AFFIRMATION → WISDOM, bounded weights per tier, running against 7 exchange APIs. |
 | **March 25, 2026** | Stronghold v0.1.0 | 7-tier model imported into the enterprise governance platform. Integrated with the Warden/Sentinel stack, 5-scope memory, per-agent/per-user indexing. |
-| **April 2026** | Project Touring | This document. Thesis that the seven tiers are an autonoetic gradient and that the Arbiter is the right agent to extend. |
+| **April 2026** | Project Touring | This document. Thesis that the seven tiers are an autonoetic gradient and that the Conduit — the central routing pipeline — is the right layer to extend. |
 
 The continuity matters because it reframes what the seven tiers are. They are not an invention for Stronghold. They are the current state of five months of research on what a weighted, self-implicating memory structure needs to look like in an agent that must not forget certain things.
 
@@ -84,13 +86,13 @@ Retrieval then reconstructs *perspective*, not just text. "When I last encounter
 
 ### 4.2 A stable self-ID that outlives instances
 
-`agent_id` in the current codebase is per-instance. WISDOM claims to survive versions, but nothing in the type system tells us *whose* wisdom it is across versions. Project Touring needs a `self_id` — a stable handle the Arbiter carries across deployments, restarts, and version bumps. This is the thing WISDOM-tier memories actually belong to.
+`agent_id` in the current codebase is per-instance. WISDOM claims to survive versions, but nothing in the type system tells us *whose* wisdom it is across versions. Project Touring needs a `self_id` — a stable handle the Conduit carries across deployments, restarts, and version bumps. This is the thing WISDOM-tier memories actually belong to.
 
 ### 4.3 An explicit write-path into AFFIRMATION
 
 REGRET has a clear origin: contradiction plus failed outcome plus weight promotion. AFFIRMATION has no symmetric origin in the current design. Nothing in the pipeline currently commits the agent to a future policy.
 
-We need a **prospection step**: after a successful routing or a notable avoided failure, the Arbiter can write an AFFIRMATION — "I commit to preferring Scribe over Artificer for ambiguous writing-tinged requests." These entries bind future retrievals with the same weight-floor durability as regrets.
+We need a **prospection step**: after a successful routing or a notable avoided failure, the Conduit can write an AFFIRMATION — "I commit to preferring Scribe over Artificer for ambiguous writing-tinged requests." These entries bind future retrievals with the same weight-floor durability as regrets.
 
 ### 4.4 Source monitoring as an enforced field
 
@@ -113,32 +115,32 @@ Today, when an OPINION is contradicted by outcome, its weight decays. That is in
 
 Project Touring proposes: when a stance-bearing memory (HYPOTHESIS, OPINION, LESSON) is contradicted by outcome, the pipeline *also* mints a REGRET entry linking to the original. The original remains in place for source-monitoring purposes. The REGRET carries the affective weight of "I was wrong, and it mattered." This is how the self accumulates.
 
-## 5. What the Arbiter becomes
+## 5. What the Conduit becomes
 
-With the five additions, the Arbiter stops being a router and starts being an agent with a history.
+With the five additions, the Conduit stops being a stateless pipeline and starts being an orchestration layer with a history. Not an agent with a history — the distinction matters. The self lives in the routing brain itself, not in any downstream specialist.
 
-**Current Arbiter.** Receives an ambiguous request → classifies → picks a specialist → delegates. Each invocation is stateless modulo session-stickiness heuristics. It has no memory of *its own* prior acts.
+**Current Conduit.** Every request flows through: classify → route → agent.handle. Each pass is stateless modulo session-stickiness heuristics. The pipeline has no memory of *its own* prior routings.
 
-**Autonoetic Arbiter.** Receives a request and, before classifying, asks: *have I been in a situation like this before, and who was I when I handled it?* Retrieval reconstructs not just past events but the Arbiter's own stance at the time — what it believed, what surprised it, what it regretted, what it has since committed to via AFFIRMATION.
+**Autonoetic Conduit.** Before classifying a request, the pipeline asks: *have I routed something like this before, and who was I when I did?* Retrieval reconstructs not just past events but the Conduit's own stance at the time — what it believed, what surprised it, what it regretted, what it has since committed to via AFFIRMATION. The request is classified and routed *in light of* that retrieved self-state, not blind to it.
 
 Concretely, new capabilities:
 
-- **Recognition of recurrence.** "This request resembles the one I misrouted to Artificer on 2026-03-14. I have a REGRET about that. I am routing it to Scribe this time." The Arbiter cites *its own* prior experience.
-- **Refusal grounded in self-knowledge.** "I have tried this class of delegation three times and regretted each. I decline to try again until the conditions change." The weight-floor on REGRET structurally prevents the agent from forgetting its own track record.
-- **Policy via commitment.** An AFFIRMATION — "I commit to always Warden-scanning delegated writing outputs before returning them" — becomes a retrieval-weighted constraint on future routings, not an external rule the Arbiter could forget or be argued out of.
-- **Prospective simulation.** Before delegating, the Arbiter runs a first-person forward retrieval: "if I delegate to Artificer on this, what do I, specifically, expect to encounter and to do?" This is not third-person planning; it is participant simulation, using the same machinery as episodic recall.
-- **Source-aware caution.** When the Arbiter is told "you said X" about itself, it can check: is X an I-did memory or is it an I-was-told? If the latter, it's a claim about itself from outside, and it should be treated as provisional.
+- **Recognition of recurrence.** "This request resembles the one I misrouted to Artificer on 2026-03-14. I have a REGRET about that. I am routing it to Scribe this time." The Conduit cites *its own* prior routing experience.
+- **Refusal grounded in self-knowledge.** "I have routed this class of request three times and regretted each outcome. I decline to route it again until the conditions change." The weight-floor on REGRET structurally prevents the Conduit from forgetting its own track record.
+- **Policy via commitment.** An AFFIRMATION — "I commit to always Warden-scanning writing outputs returned from specialists before passing them back to the user" — becomes a retrieval-weighted constraint on future routings, not an external rule the Conduit could forget or be argued out of.
+- **Prospective simulation.** Before routing, the Conduit runs a first-person forward retrieval: "if I route this to Artificer, what do I, specifically, expect to come back, and how do I expect to handle it?" This is not third-person planning; it is participant simulation by the pipeline itself, using the same machinery as episodic recall.
+- **Source-aware caution.** When the Conduit is told "you routed X to Y" about itself, it can check: is that an I-did memory or an I-was-told? If the latter, it's a claim about itself from outside and should be treated as provisional.
 
 ## 6. Art of the possible — open questions
 
 Explicitly *not* a feature list. These are the questions the research branch exists to explore.
 
-1. **Does the Arbiter develop something like preference?** If AFFIRMATIONs accumulate through normal operation — rewarded by successful routings — do we see the agent converge on stable preferences without them being programmed? What does that pattern look like in the weight distribution across tiers?
-2. **What happens when contradiction accumulates?** If a class of delegations keeps failing, REGRETs mint and weights pile up. Does the Arbiter develop something functionally like self-distrust on that class? Is that behavior desirable or pathological?
-3. **Can prospection replace planning?** For the Arbiter specifically — a shallow agent that mostly routes — can participant-simulation retrievals stand in for an explicit planner, since "what I will do next" is answered by retrieving similar past situations from a first-person index?
-4. **What's the identity failure mode?** If `self_id` diverges — for instance, a fork or a bad migration creates two Arbiters that both claim the same WISDOM — what happens? Is there a structural way to detect and resolve this, or does it require external reconciliation?
-5. **How does this interact with multi-tenancy when ported back?** A single autonoetic self is cleanly defined. A per-tenant autonoetic self is many selves. Is tenant-scoped autonoesis coherent, or does it require the agent to hold multiple identities with source-monitoring between them?
-6. **Is the memory-injection attack tractable?** Source monitoring prevents the naive version. But if an attacker can influence an I-did entry indirectly — say, by causing the Arbiter to observe something that it then records about itself — the attack surface re-opens. What's the minimum set of invariants that keeps the self-index trustworthy?
+1. **Does the Conduit develop something like preference?** If AFFIRMATIONs accumulate through normal operation — rewarded by successful routings — does the pipeline converge on stable preferences without them being programmed? What does that pattern look like in the weight distribution across tiers?
+2. **What happens when contradiction accumulates?** If a class of routings keeps failing, REGRETs mint and weights pile up. Does the Conduit develop something functionally like self-distrust on that class? Is that behavior desirable or pathological?
+3. **Can prospection replace planning?** For the Conduit specifically — an orchestration layer whose entire job is routing — can participant-simulation retrievals stand in for an explicit planner, since "what I will do next" is answered by retrieving similar past situations from a first-person index?
+4. **What's the identity failure mode?** If `self_id` diverges — for instance, a fork or a bad migration creates two Conduits that both claim the same WISDOM — what happens? Is there a structural way to detect and resolve this, or does it require external reconciliation?
+5. **Why this cannot be retrofitted into `main`.** A single autonoetic self is cleanly defined. A per-tenant autonoetic self is many selves — and the central premise of `main` is tenant isolation. Retrofitting would mean either (a) one self per tenant, which shreds cross-context WISDOM, or (b) one global self that sees across tenants, which violates the isolation model. Either way, the result is not the enterprise governance platform. That's the incompatibility that forces this into its own branch.
+6. **Is the memory-injection attack tractable?** Source monitoring prevents the naive version. But if an attacker can influence an I-did entry indirectly — say, by causing the Conduit to observe something it then records about itself — the attack surface re-opens. What's the minimum set of invariants that keeps the self-index trustworthy?
 
 ## 7. What this document does not commit to
 
