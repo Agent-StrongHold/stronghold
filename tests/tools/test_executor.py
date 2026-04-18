@@ -232,8 +232,6 @@ class TestHTTPFallbackDNS:
         getaddrinfo=None,
         http_handler=None,
     ) -> str:
-        import stronghold.tools.executor as mod
-
         if getaddrinfo is not None:
             # Patch the socket module used internally in _resolve_blocks_private
             monkeypatch.setattr("socket.getaddrinfo", getaddrinfo)
@@ -252,7 +250,7 @@ class TestHTTPFallbackDNS:
         reg.register(
             ToolDefinition(name="x", description="", endpoint=endpoint),
         )
-        d = mod.ToolDispatcher(reg, default_timeout=1.0)
+        d = ToolDispatcher(reg, default_timeout=1.0)
         return await d.execute("x", {"q": 1})
 
     async def test_http_fallback_malformed_url_returns_malformed_error(
