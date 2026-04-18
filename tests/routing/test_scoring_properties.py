@@ -11,6 +11,8 @@ Properties:
 - Candidates sorted descending by score
 """
 
+import math
+
 from stronghold.router.scorer import score_candidate
 from tests.factories import (
     build_intent,
@@ -115,7 +117,7 @@ class TestCandidateFields:
 
         # Score is a strictly positive real number (not NaN, not 0).
         assert result.score > 0.0
-        assert result.score == result.score  # NaN-check: NaN != NaN.
+        assert not math.isnan(result.score)
 
         # Adjusted quality lives in (0, 1] per the cap rule.
         assert 0.0 < result.quality <= 1.0
