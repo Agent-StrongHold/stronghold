@@ -217,8 +217,6 @@ class TestGetAuditLog:
         the entry. Prior version only asserted ``isinstance(data, list)``
         so any 200-returning bug (e.g. empty list regardless of state)
         would have slipped through."""
-        import asyncio
-
         from stronghold.types.security import AuditEntry
 
         audit_log = admin_app.state.container.audit_log
