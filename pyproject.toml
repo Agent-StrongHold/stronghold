@@ -48,6 +48,7 @@ dev = [
     "hypothesis>=6.0.0",
     "diff-cover>=9.0.0",
     "fakeredis>=2.20.0",
+    "aiosqlite>=0.20.0",
 ]
 
 [tool.setuptools.packages.find]
