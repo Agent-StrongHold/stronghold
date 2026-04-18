@@ -781,7 +781,6 @@ class TestStrikeEndpoints:
         without removing strikes. Previously only status 200 was
         asserted. We set alice.disabled on the tracker, call the
         endpoint, and verify both the body and the persisted state."""
-        import asyncio
 
         tracker = admin_app.state.container.strike_tracker
         alice = tracker._records["alice"]
