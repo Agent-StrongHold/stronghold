@@ -109,10 +109,10 @@ jobs:
         if: steps.failure.outputs.pr_number != ''
         env:
           GH_TOKEN: ${{ github.token }}
+          HEAD_BRANCH: ${{ github.event.workflow_run.head_branch }}
         run: |
           PR_NUMBER="${{ steps.failure.outputs.pr_number }}"
           FAILED_JOBS="${{ steps.failure.outputs.failed_jobs }}"
-          HEAD_BRANCH="${{ github.event.workflow_run.head_branch }}"
           RUN_ID="${{ github.event.workflow_run.id }}"
 
           # Check if a repair issue already exists for this branch
