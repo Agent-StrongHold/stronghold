@@ -83,11 +83,10 @@ jobs:
         if: steps.failure.outputs.pr_number != ''
         env:
           GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ steps.failure.outputs.pr_number }}
+          FAILED_JOBS: ${{ steps.failure.outputs.failed_jobs }}
+          RUN_ID: ${{ github.event.workflow_run.id }}
         run: |
-          PR_NUMBER="${{ steps.failure.outputs.pr_number }}"
-          FAILED_JOBS="${{ steps.failure.outputs.failed_jobs }}"
-          RUN_ID="${{ github.event.workflow_run.id }}"
-
           gh pr comment "$PR_NUMBER" --body "$(cat <<COMMENT
           ## :wrench: CI Autofix Dispatched
 
