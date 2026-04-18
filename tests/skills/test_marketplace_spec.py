@@ -14,7 +14,6 @@ from typing import Any
 
 import pytest
 
-from stronghold.skills import marketplace as marketplace_mod
 from stronghold.skills.marketplace import (
     HTTPResponse,
     SkillMarketplaceImpl,
