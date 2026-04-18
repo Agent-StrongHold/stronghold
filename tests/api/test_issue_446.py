@@ -13,15 +13,16 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from stronghold.cache.redis_pool import _mask_url, _pool, close_redis, get_redis
+import stronghold.cache.redis_pool as redis_pool_mod
+from stronghold.cache.redis_pool import _mask_url, close_redis, get_redis
 
 
 @pytest.fixture(autouse=True)
 def reset_pool():
     """Reset the module-level singleton before/after each test."""
-    _pool = None
+    redis_pool_mod._pool = None
     yield
-    _pool = None
+    redis_pool_mod._pool = None
 
 
 class TestGetRedisAndCloseRedis:
@@ -76,18 +77,18 @@ class TestGetRedisAndCloseRedis:
         mock_from_url.return_value = mock_redis
 
         await get_redis()
-        assert _pool is mock_redis
+        assert redis_pool_mod._pool is mock_redis
 
         await close_redis()
         mock_redis.aclose.assert_awaited_once()
-        assert _pool is None
+        assert redis_pool_mod._pool is None
 
     async def test_close_redis_no_op_when_never_opened(self) -> None:
         """Calling close_redis before get_redis is safe (idempotent)."""
         # No raise — pool was never opened, close is a no-op.
         await close_redis()
 
-        assert _pool is None
+        assert redis_pool_mod._pool is None
 
 
 class TestMaskUrl:
