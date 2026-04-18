@@ -738,7 +738,6 @@ class TestStrikeEndpoints:
         locked state directly on the tracker, call the endpoint, and
         verify both the response body and the tracker's post-state
         reflect the unlock."""
-        import asyncio
         from datetime import UTC, datetime, timedelta
 
         tracker = admin_app.state.container.strike_tracker
