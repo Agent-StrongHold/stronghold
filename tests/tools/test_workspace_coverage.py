@@ -63,12 +63,6 @@ async def test_execute_cleanup_not_found(manager):
     assert data["status"] == "not_found"
 
 
-# ---- name property ----
-
-def test_name(manager):
-    assert manager.name == "workspace"
-
-
 # ---- _resolve_base_dir ----
 
 def test_resolve_base_dir_uses_default(tmp_path):

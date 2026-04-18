@@ -24,7 +24,20 @@ from tests.fakes import FakeToolPolicy
 
 class TestFakeToolPolicy:
     def test_satisfies_protocol(self) -> None:
+        """FakeToolPolicy structurally matches ToolPolicyProtocol.
+
+        This is the @runtime_checkable structural check - it catches a
+        drift bug where the fake loses a method after the protocol is
+        extended.
+        """
         assert isinstance(FakeToolPolicy(), ToolPolicyProtocol)
+
+    def test_protocol_rejects_incomplete_impl(self) -> None:
+        """Negative control: a bare class missing policy methods fails the check."""
+        class Incomplete:
+            pass
+
+        assert not isinstance(Incomplete(), ToolPolicyProtocol)
 
     def test_default_allows_tool_call(self) -> None:
         policy = FakeToolPolicy()
@@ -87,11 +100,21 @@ m = (r.sub == p.sub || p.sub == "*") && (r.org == p.org || p.org == "*") && (r.o
 
 class TestCasbinToolPolicy:
     def test_satisfies_protocol(self) -> None:
+        """Real CasbinToolPolicy matches the Protocol AND behaves correctly.
+
+        isinstance alone is weak (only checks method names); pair it with a
+        behavioral probe that exercises check_tool_call + check_task_creation
+        to catch signature or return-type regressions.
+        """
         model, policy = _write_casbin_files([
             "p, *, *, *, tool_call, allow",
+            "p, *, *, *, task_create, allow",
         ])
         tp = CasbinToolPolicy(model, policy)
         assert isinstance(tp, ToolPolicyProtocol)
+        # Behavioral probe: both methods must return a bool matching the rule
+        assert tp.check_tool_call("u", "o", "t") is True
+        assert tp.check_task_creation("u", "o", "a") is True
 
     def test_wildcard_allow_all(self) -> None:
         model, policy = _write_casbin_files([

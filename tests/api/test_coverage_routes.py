@@ -827,13 +827,22 @@ class TestSessionDeleteCrossOrg:
 class TestAgentsDashboard:
     """dashboard.py line 47: GET /dashboard/agents serves the agents page."""
 
-    def test_agents_dashboard_returns_html(self) -> None:
+    def test_agents_dashboard_unauth_redirects_or_serves_html(self) -> None:
+        """Without auth, /dashboard/agents redirects; with auth it serves real HTML.
+
+        The old version asserted ``status in (200, 404)`` which passes for
+        any response — even a misconfigured 404. The real contract is
+        auth-guarded: without a container the dashboard router redirects
+        unauthenticated users to /login.
+        """
         app = FastAPI()
         app.include_router(dashboard_router)
         with TestClient(app) as client:
-            resp = client.get("/dashboard/agents")
-            assert resp.status_code in (200, 404)
-            assert "text/html" in resp.headers["content-type"]
+            resp = client.get("/dashboard/agents", follow_redirects=False)
+            # No container on app.state => _check_auth returns False =>
+            # redirect to /login with 302.
+            assert resp.status_code == 302
+            assert resp.headers["location"] == "/login"
 
 
 # ── 12. RateLimitMiddleware: _extract_key with no auth, no IP ──────

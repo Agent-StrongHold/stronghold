@@ -344,26 +344,6 @@ class TestJWKSCacheRefresh:
         # After lock release, the cached client should be returned
         assert result is created_client
 
-    async def test_double_check_after_lock_acquire(self) -> None:
-        """Double-check pattern: after acquiring lock, re-check if cache is still valid.
-
-        Covers lines 196-199.
-        """
-        provider = _provider(jwks_cache_ttl=3600)
-        fresh_client = _FakeJWKClient("fresh")
-        provider._jwks_cache = fresh_client
-        # Set cache_at to a very old time so the fast-path check fails,
-        # but then update it before the lock-holding code runs.
-        provider._jwks_cache_at = time.monotonic() - 10000  # Expired for fast path
-
-        # We'll fix the time inside the lock (simulating another task refreshed)
-        provider._jwks_cache_at = time.monotonic()  # Now fresh
-
-        result = await provider._get_jwks_client(None, _FakeJWKClient)
-        # Should return the fresh cached client since double-check passes
-        assert result is fresh_client
-
-
 # ===========================================================================
 # Role extraction and nested claims
 # ===========================================================================

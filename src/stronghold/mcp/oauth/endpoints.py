@@ -98,7 +98,11 @@ async def register_client(request: Request) -> JSONResponse:
     )
     await _store.register_client(client)
 
-    logger.info("Registered MCP client: %s (%s)", client_id, client_name)
+    logger.info(
+        "Registered MCP client (name=%s, redirect_uris=%d)",
+        client_name,
+        len(redirect_uris),
+    )
     return JSONResponse(
         {
             "client_id": client_id,
