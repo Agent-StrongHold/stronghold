@@ -162,16 +162,18 @@ def _get_app_installation_token(bot: str = "gatekeeper") -> str:
             timeout=15.0,
         )
         resp.raise_for_status()
+        # Semgrep python-logger-credential-disclosure keyword-scans "token" — the `bot`
+        # argument is an identifier (name like "mason"), never a secret. Suppressions
+        # below use `# nosemgrep` (no rule id, keeps lines within ruff E501 100-char
+        # limit); the comment above pins the scope so reviewers know what's suppressed.
         token = resp.json().get("token", "")
         if token:
-            # nosemgrep: python.lang.security.audit.logging.logger-credential-leak.python-logger-credential-disclosure
-            # Rule is keyword-heuristic on "token"; bot is an identifier, not a secret.
-            logger.info("GitHub App token generated for bot=%s", bot)
+            logger.info("GitHub App token generated for bot=%s", bot)  # nosemgrep
         return str(token)
     except Exception:
-        # nosemgrep: python.lang.security.audit.logging.logger-credential-leak.python-logger-credential-disclosure
-        # Rule is keyword-heuristic on "token"; bot is an identifier, not a secret.
-        logger.warning("Failed to generate GitHub App token for bot=%s", bot, exc_info=True)
+        logger.warning(  # nosemgrep
+            "Failed to generate GitHub App token for bot=%s", bot, exc_info=True
+        )
         return ""
 
 
