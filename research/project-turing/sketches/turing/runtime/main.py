@@ -22,6 +22,7 @@ from ..self_identity import bootstrap_self_id
 from ..tuning import CoefficientTuner
 from .config import RuntimeConfig, load_config_from_env
 from .instrumentation import setup_logging
+from .metrics import MetricsCollector, start_metrics_server
 from .providers.base import Provider
 from .providers.fake import FakeProvider
 from .providers.gemini import GeminiProvider
@@ -125,6 +126,7 @@ def build_and_run(argv: list[str] | None = None) -> int:
     parser.add_argument("--providers", type=str, help="comma-separated: fake,gemini,openrouter,zai")
     parser.add_argument("--scenario", type=str)
     parser.add_argument("--duration", type=int, help="seconds to run before auto-stop (default: forever)")
+    parser.add_argument("--metrics-port", type=int, help="enable Prometheus endpoint on this port")
     args = parser.parse_args(argv)
 
     overrides: dict[str, Any] = {}
@@ -142,6 +144,8 @@ def build_and_run(argv: list[str] | None = None) -> int:
         )
     if args.scenario is not None:
         overrides["scenario"] = args.scenario
+    if args.metrics_port is not None:
+        overrides["metrics_port"] = args.metrics_port
 
     cfg = load_config_from_env(overrides=overrides)
     setup_logging(level=cfg.log_level, fmt=cfg.log_format)
@@ -214,6 +218,38 @@ def build_and_run(argv: list[str] | None = None) -> int:
             self_id=self_id,
         )
 
+    stop_metrics: Any = None
+    if cfg.metrics_port is not None:
+        collector = MetricsCollector()
+
+        def _refresh_metrics(tick: int) -> None:
+            status = reactor.get_status()
+            collector.update(
+                turing_tick_count=status.tick_count,
+                turing_drift_ms_p99=status.drift_ms_p99,
+            )
+            for pool, value in quota_tracker.pressure_vec().items():
+                collector.set_labeled("turing_pressure", (pool,), value)
+                window = quota_tracker.window(pool)
+                if window is not None:
+                    collector.set_labeled(
+                        "turing_quota_headroom", (pool,), window.headroom
+                    )
+            # Durable counts: cheap enough every tick, but only refresh
+            # every 10th tick to avoid DB thrash.
+            if tick % 10 == 0:
+                for tier in ("regret", "accomplishment", "affirmation", "wisdom"):
+                    n = repo.conn.execute(
+                        "SELECT COUNT(*) FROM durable_memory WHERE tier = ?",
+                        (tier,),
+                    ).fetchone()[0]
+                    collector.set_labeled(
+                        "turing_durable_memories_total", (tier,), n
+                    )
+
+        reactor.register(_refresh_metrics)
+        stop_metrics = start_metrics_server(collector, port=cfg.metrics_port)
+
     def _handle_signal(signum: int, _frame: Any) -> None:
         logger.info("signal %d received; stopping reactor", signum)
         reactor.stop()
@@ -233,6 +269,8 @@ def build_and_run(argv: list[str] | None = None) -> int:
         status.tick_count,
         status.drift_ms_p99,
     )
+    if stop_metrics is not None:
+        stop_metrics()
     repo.close()
     return 0
 
