@@ -24,10 +24,21 @@ from .config import RuntimeConfig, load_config_from_env
 from .instrumentation import setup_logging
 from .providers.base import Provider
 from .providers.fake import FakeProvider
+from .providers.gemini import GeminiProvider
+from .quota import FreeTierQuotaTracker
 from .reactor import RealReactor
 
 
 logger = logging.getLogger("turing.runtime.main")
+
+
+# Per-provider quality weights. Tuner may propose updates at runtime.
+DEFAULT_QUALITY_WEIGHTS: dict[str, float] = {
+    "fake": 0.1,
+    "gemini": 1.0,
+    "openrouter": 0.7,
+    "zai": 0.8,
+}
 
 
 def _build_providers(cfg: RuntimeConfig) -> dict[str, Provider]:
@@ -36,10 +47,11 @@ def _build_providers(cfg: RuntimeConfig) -> dict[str, Provider]:
         if name == "fake":
             providers[name] = FakeProvider(name="fake")
         elif name == "gemini":
-            # Chunk 2 wires the real client; chunk 1 stubs as FakeProvider so
-            # the structural path is exercised.
-            providers[name] = FakeProvider(name="gemini")
+            if not cfg.gemini_api_key:
+                raise ValueError("gemini selected but gemini_api_key unset")
+            providers[name] = GeminiProvider(api_key=cfg.gemini_api_key)
         elif name == "openrouter":
+            # chunk 3 wires the real client.
             providers[name] = FakeProvider(name="openrouter")
         elif name == "zai":
             providers[name] = FakeProvider(name="zai")
@@ -129,7 +141,12 @@ def build_and_run(argv: list[str] | None = None) -> int:
     scheduler = Scheduler(reactor, motivation)
 
     providers = _build_providers(cfg)
+    quota_tracker = FreeTierQuotaTracker()
     for pool_name, provider in providers.items():
+        quota_tracker.register(
+            provider,
+            quality_weight=DEFAULT_QUALITY_WEIGHTS.get(pool_name, 1.0),
+        )
         DaydreamProducer(
             pool_name=pool_name,
             self_id=self_id,
@@ -138,9 +155,14 @@ def build_and_run(argv: list[str] | None = None) -> int:
             repo=repo,
             imagine=_make_imagine_for_provider(provider),
         )
-        # Seed some pressure so the producer actually emits candidates during
-        # the smoke run. Chunk 2 replaces this with real quota tracking.
-        motivation.set_pressure(pool_name, 500.0)
+
+    # Per-tick: refresh pressure_vec from the quota tracker. O(len(providers))
+    # and cheap.
+    def _refresh_pressure(tick: int) -> None:
+        for pool_name, value in quota_tracker.pressure_vec().items():
+            motivation.set_pressure(pool_name, value)
+
+    reactor.register(_refresh_pressure)
 
     ContradictionDetector(
         repo=repo,
