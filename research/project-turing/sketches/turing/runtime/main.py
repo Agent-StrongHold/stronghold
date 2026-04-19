@@ -150,7 +150,14 @@ def build_and_run(argv: list[str] | None = None) -> int:
                         help="enable Obsidian vault writes at this directory")
     parser.add_argument("--rss-feeds", type=str,
                         help="comma-separated RSS/Atom feed URLs to subscribe to")
+    parser.add_argument("--smoke-test", action="store_true",
+                        help="run a brief acceptance smoke and exit 0/1")
     args = parser.parse_args(argv)
+
+    if args.smoke_test:
+        from .smoke import run_smoke
+
+        return run_smoke()
 
     overrides: dict[str, Any] = {}
     if args.tick_rate is not None:
