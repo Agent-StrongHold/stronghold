@@ -9,11 +9,16 @@ and proposes updates as new AFFIRMATIONs.
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Callable
+from concurrent.futures import Future
 from dataclasses import dataclass, field, fields, replace
 from datetime import UTC, datetime, timedelta
 from typing import Any
 from uuid import uuid4
+
+
+logger = logging.getLogger("turing.tuning")
 
 from .motivation import (
     PRESSURE_MAX,
@@ -204,11 +209,13 @@ class CoefficientTuner:
             self._analyze_pool_utilization,
             self._analyze_daydream_fire_rate,
         ]
+        self._pending: list[Future[list[CoefficientUpdate]]] = []
 
         motivation.register_dispatch("tuning_candidate", self._on_dispatch)
         reactor.register(self.on_tick)
 
     def on_tick(self, tick: int) -> None:
+        self._collect_completed()
         if tick - self._last_submitted_tick >= self._cadence_ticks:
             self._last_submitted_tick = tick
             self._motivation.insert(self._build_candidate())
@@ -227,20 +234,39 @@ class CoefficientTuner:
         )
 
     def _on_dispatch(self, item: BacklogItem, chosen_pool: str) -> None:
-        observations = self._motivation.observations
-        proposals: list[CoefficientUpdate] = []
-        for fn in self._signal_fns:
-            proposals.extend(fn(observations))
-        for p in proposals:
-            # Commit via an AFFIRMATION superseding any prior commitment on the
-            # same coefficient.
-            prior = self._find_prior(p.name)
-            handle_affirmation(
-                self._repo,
-                self._self_id,
-                content=p.to_content(),
-                supersedes=prior.memory_id if prior is not None else None,
-            )
+        observations = list(self._motivation.observations)
+        signal_fns = list(self._signal_fns)
+
+        def _analyze() -> list[CoefficientUpdate]:
+            proposals: list[CoefficientUpdate] = []
+            for fn in signal_fns:
+                proposals.extend(fn(observations))
+            return proposals
+
+        future = self._reactor.spawn(_analyze)
+        self._pending.append(future)
+        self._collect_completed()
+
+    def _collect_completed(self) -> None:
+        remaining: list[Future[list[CoefficientUpdate]]] = []
+        for future in self._pending:
+            if not future.done():
+                remaining.append(future)
+                continue
+            try:
+                proposals = future.result()
+            except Exception:
+                logger.exception("tuner analysis failed")
+                continue
+            for p in proposals:
+                prior = self._find_prior(p.name)
+                handle_affirmation(
+                    self._repo,
+                    self._self_id,
+                    content=p.to_content(),
+                    supersedes=prior.memory_id if prior is not None else None,
+                )
+        self._pending = remaining
 
     # ---- Signal analyses
 

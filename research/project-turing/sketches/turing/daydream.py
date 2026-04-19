@@ -15,10 +15,15 @@ See specs/daydreaming.md. This module exposes two things:
 
 from __future__ import annotations
 
+import logging
+from concurrent.futures import Future
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any, Protocol
 from uuid import uuid4
+
+
+logger = logging.getLogger("turing.daydream")
 
 from .motivation import (
     DAYDREAM_FIRE_FLOOR,
@@ -158,6 +163,7 @@ class DaydreamProducer:
         self._repo = repo
         self._imagine = imagine
         self._active_candidate_id: str | None = None
+        self._pending: list[tuple[Future[Any], EpisodicMemory, str]] = []
 
         motivation.register_dispatch("daydream_candidate", self._on_dispatch)
         reactor.register(self.on_tick)
@@ -165,6 +171,7 @@ class DaydreamProducer:
     # ---- Reactor loop
 
     def on_tick(self, tick: int) -> None:
+        self._collect_completed()
         p = self._motivation.pressure.get(self._pool_name, 0.0)
         if p <= 0.0:
             self._evict_if_present()
@@ -227,27 +234,49 @@ class DaydreamProducer:
             return                    # not ours; shouldn't happen under single-producer per pool
         self._active_candidate_id = None
 
-        session_id = str(uuid4())
-        writer = DaydreamWriter(self._repo, self._self_id, session_id)
-
         seed = self._select_seed()
         if seed is None:
+            session_id = str(uuid4())
             self._write_session_marker(session_id, writes=0, seed=None)
             return
 
         retrieved = self._retrieve_related(seed)
-        proposals = self._imagine(seed, retrieved, self._pool_name)
-        writes = 0
-        for tier_name, content, intent in proposals[:DAYDREAM_WRITES_PER_PASS]:
-            if tier_name == "hypothesis":
-                writer.write_hypothesis(content=content, intent=intent)
-            elif tier_name == "observation":
-                writer.write_observation(content=content)
-            else:
-                raise ValueError(f"unknown tier from imagine: {tier_name}")
-            writes += 1
+        session_id = str(uuid4())
+        future = self._reactor.spawn(
+            self._imagine, seed, retrieved, self._pool_name
+        )
+        self._pending.append((future, seed, session_id))
+        # Collect immediately in case the reactor resolved synchronously
+        # (FakeReactor does).
+        self._collect_completed()
 
-        self._write_session_marker(session_id, writes=writes, seed=seed)
+    def _collect_completed(self) -> None:
+        remaining: list[tuple[Future[Any], EpisodicMemory, str]] = []
+        for future, seed, session_id in self._pending:
+            if not future.done():
+                remaining.append((future, seed, session_id))
+                continue
+            try:
+                proposals = future.result()
+            except Exception:
+                logger.exception(
+                    "daydream imagine failed for session %s", session_id
+                )
+                self._write_session_marker(session_id, writes=0, seed=seed)
+                continue
+            writer = DaydreamWriter(self._repo, self._self_id, session_id)
+            writes = 0
+            for tier_name, content, intent in proposals[:DAYDREAM_WRITES_PER_PASS]:
+                if tier_name == "hypothesis":
+                    writer.write_hypothesis(content=content, intent=intent)
+                elif tier_name == "observation":
+                    writer.write_observation(content=content)
+                else:
+                    logger.warning("unknown tier from imagine: %s", tier_name)
+                    continue
+                writes += 1
+            self._write_session_marker(session_id, writes=writes, seed=seed)
+        self._pending = remaining
 
     # ---- Pass helpers
 

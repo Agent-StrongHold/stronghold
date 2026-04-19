@@ -9,11 +9,16 @@ one side, submits a P14 candidate. When dispatched, mints a LESSON with
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Callable
+from concurrent.futures import Future
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any
 from uuid import uuid4
+
+
+logger = logging.getLogger("turing.detectors.contradiction")
 
 from ..motivation import BacklogItem, Motivation, PipelineState
 from ..reactor import FakeReactor
@@ -113,11 +118,15 @@ class ContradictionDetector:
     ) -> None:
         self._repo = repo
         self._motivation = motivation
+        self._reactor = reactor
         self._self_id = self_id
         self._draft_lesson = draft_lesson
         self._family_index: dict[str, list[str]] = {}       # intent → [memory_id, ...]
         self._submitted_keys: set[str] = set()
         self._last_scan_at: datetime | None = None
+        self._pending: list[
+            tuple[Future[Any], EpisodicMemory, EpisodicMemory, EpisodicMemory]
+        ] = []
 
         motivation.register_dispatch("raso_contradiction", self._on_dispatch)
         reactor.register(self.on_tick)
@@ -125,6 +134,7 @@ class ContradictionDetector:
     # ---- Reactor hook
 
     def on_tick(self, tick: int) -> None:
+        self._collect_completed()
         new_memories = self._load_new_durable()
         for m in new_memories:
             self._add_to_index(m)
@@ -240,22 +250,53 @@ class ContradictionDetector:
         if a.superseded_by is not None or b.superseded_by is not None:
             return
 
-        draft = self._draft_lesson(a, b, c)
-        lesson = EpisodicMemory(
-            memory_id=str(uuid4()),
-            self_id=self._self_id,
-            tier=MemoryTier.LESSON,
-            source=SourceKind.I_DID,
-            content=draft.content,
-            weight=draft.initial_weight,
-            intent_at_time=a.intent_at_time,
-            supersedes=a.memory_id,
-            origin_episode_id=draft.origin_episode_id,
-            context={
-                "supersedes_via_lineage": [a.memory_id, b.memory_id],
-                "resolution_observation": c.memory_id,
-            },
-        )
-        self._repo.insert(lesson)
-        self._repo.set_superseded_by(a.memory_id, lesson.memory_id)
-        self._repo.set_superseded_by(b.memory_id, lesson.memory_id)
+        # Slow LLM-backed drafting runs off-tick. Collect on later tick
+        # (or same tick under FakeReactor's synchronous spawn).
+        future = self._reactor.spawn(self._draft_lesson, a, b, c)
+        self._pending.append((future, a, b, c))
+        self._collect_completed()
+
+    def _collect_completed(self) -> None:
+        remaining: list[
+            tuple[Future[Any], EpisodicMemory, EpisodicMemory, EpisodicMemory]
+        ] = []
+        for future, a, b, c in self._pending:
+            if not future.done():
+                remaining.append((future, a, b, c))
+                continue
+            try:
+                draft = future.result()
+            except Exception:
+                logger.exception(
+                    "contradiction draft failed for triple %s/%s/%s",
+                    a.memory_id,
+                    b.memory_id,
+                    c.memory_id,
+                )
+                continue
+            # Re-check staleness: another path may have superseded either parent.
+            a_fresh = self._repo.get(a.memory_id)
+            b_fresh = self._repo.get(b.memory_id)
+            if a_fresh is None or b_fresh is None:
+                continue
+            if a_fresh.superseded_by is not None or b_fresh.superseded_by is not None:
+                continue
+            lesson = EpisodicMemory(
+                memory_id=str(uuid4()),
+                self_id=self._self_id,
+                tier=MemoryTier.LESSON,
+                source=SourceKind.I_DID,
+                content=draft.content,
+                weight=draft.initial_weight,
+                intent_at_time=a.intent_at_time,
+                supersedes=a.memory_id,
+                origin_episode_id=draft.origin_episode_id,
+                context={
+                    "supersedes_via_lineage": [a.memory_id, b.memory_id],
+                    "resolution_observation": c.memory_id,
+                },
+            )
+            self._repo.insert(lesson)
+            self._repo.set_superseded_by(a.memory_id, lesson.memory_id)
+            self._repo.set_superseded_by(b.memory_id, lesson.memory_id)
+        self._pending = remaining
