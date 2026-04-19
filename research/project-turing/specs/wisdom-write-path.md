@@ -1,41 +1,36 @@
-# Spec 5 — WISDOM write path (deferred)
+# Spec 5 — WISDOM write path
 
-*No write path into the WISDOM tier is defined. This spec exists to declare the deferral explicitly and to record the constraints any future WISDOM spec must satisfy.*
+*WISDOM writes now land via the dreaming consolidation process. This spec retains the constraints the write path must satisfy; the how is in [dreaming.md](./dreaming.md).*
 
-**Status:** DEFERRED.
-**Blocker:** requires the **dreaming** spec (scheduled consolidation), which is out of scope for the current research push.
+**Status:** ACTIVE (was DEFERRED; superseded by the arrival of [dreaming.md](./dreaming.md)).
 
-**Depends on:** [schema.md](./schema.md), [tiers.md](./tiers.md), [durability-invariants.md](./durability-invariants.md).
+**Depends on:** [schema.md](./schema.md), [tiers.md](./tiers.md), [durability-invariants.md](./durability-invariants.md), [dreaming.md](./dreaming.md).
 **Depended on by:** —
 
 ---
 
-## Why deferred
+## Why a dedicated spec
 
 WISDOM is the tier whose durability is most expensive to wrong and most expensive to correct. Weight floor 0.9, immutable, survives across versions. Writing WISDOM inline during a request — i.e., letting the LLM's in-the-moment pattern claim become structurally unforgettable — is incompatible with the reliability WISDOM demands.
 
-The right write path is **consolidation**: a scheduled, phase-gated process that walks durable memories, identifies invariant patterns, and proposes WISDOM candidates through a review gate. That process is "dreaming." Dreaming is a substantial spec on its own and is deferred.
-
-Until the dreaming spec lands, **no code path may write a WISDOM memory**. The tier is reserved. The enum entry exists; the weight bounds exist; the invariants apply if an entry is ever written. But the `durable_memory` repository rejects inserts with `tier == WISDOM` as a precondition failure.
+The write path is **consolidation via dreaming**: a scheduled, phase-gated process that walks durable memories, identifies invariant patterns, and proposes WISDOM candidates through a review gate. See [dreaming.md](./dreaming.md) for the full process. This spec owns the invariants the write path must enforce regardless of who's invoking it.
 
 ## Acceptance criteria
 
-- **AC-5.1.** `durable_memory` insert with `tier == WISDOM` raises `NotImplementedError` (or a repository-specific "wisdom writes deferred" error). Negative test exists.
-- **AC-5.2.** Retrieval that filters for `tier == WISDOM` returns an empty set without error. Test asserts the query path does not blow up on an empty tier.
-- **AC-5.3.** All other WISDOM-related invariants from [durability-invariants.md](./durability-invariants.md) are enforced *if* a WISDOM memory is ever present (via direct test fixture that bypasses the write guard). This ensures readiness for the deferred spec without silently drifting.
+- **AC-5.1.** `durable_memory` insert with `tier == wisdom` is permitted *only* when every WISDOM-specific invariant below is satisfied. Violating any one raises a repository-level error. Negative tests per invariant.
+- **AC-5.2.** Retrieval that filters for `tier == wisdom` returns an empty set cleanly when no entries exist, and returns matches when they do. Test covers both.
+- **AC-5.3.** All durable-memory invariants from [durability-invariants.md](./durability-invariants.md) continue to apply — floors, non-deletion, append-only, migration fidelity.
 
-## Constraints the future dreaming spec must satisfy
+## Invariants (enforced at repository / schema layer)
 
-Recorded here so the deferred work does not start from zero.
-
-1. **Consolidation, not inline.** WISDOM can only be minted by a batch process, never during request handling.
-2. **I_DID provenance preserved.** A WISDOM memory's `source = I_DID` is justified because its content is distilled from I_DID inputs (REGRETs, ACCOMPLISHMENTs, LESSONs). The `context` field on a WISDOM memory must list every contributing memory_id as traceable lineage.
-3. **Review gate required.** Automatic in research mode; operator-reviewed in any future `main` port.
-4. **Traceable origin.** `origin_episode_id` points to the consolidation session that produced the entry. No WISDOM without a dream origin.
-5. **Bounded minting rate.** A single consolidation session cannot produce more than `DREAM_MAX_WISDOM_CANDIDATES` entries (default 3). The tier cannot be flooded.
-6. **Rejection of contradiction.** A candidate WISDOM that contradicts existing WISDOM is rejected (not silently superseding). Operator review resolves.
+1. **Consolidation-origin only.** Every WISDOM memory has a non-null `origin_episode_id` pointing at an OBSERVATION session marker whose content starts with `dream session `. Enforced by the repository (validates the reference at INSERT).
+2. **I_DID provenance.** `source = i_did` required. Content is distilled from I_DID inputs; the *act* of dreaming is an I_DID action by the Conduit.
+3. **Traceable lineage.** `context.supersedes_via_lineage` is a non-empty list of memory_ids referencing real durable memories in `{regret, accomplishment, lesson, affirmation}`. Rejected at repo if missing or any referenced memory doesn't exist.
+4. **No superseding existing WISDOM.** `supersedes` on a WISDOM entry may not point at another WISDOM entry. New WISDOM extends; it does not overwrite.
+5. **Bounded minting rate per session.** `DREAM_MAX_WISDOM_CANDIDATES` (default 3) enforced in the Dreamer; the tier cannot be flooded from a single session.
+6. **Review-gate gated.** A WISDOM entry cannot be committed without passing the Dreamer's phase 6 self-consistency check. See [dreaming.md](./dreaming.md) for the gate's behavior.
 
 ## Open questions
 
-- **Q5.1.** If WISDOM is reserved-but-unused for the entire life of the current research push, does AFFIRMATION need to grow in scope to partially cover the identity role? Leaning no — AFFIRMATION is revocable and forward, WISDOM is immutable and trans-temporal. They are not substitutes. But the capability gap is real until dreaming ships.
-- **Q5.2.** Should `durable_memory` schema include the WISDOM-specific columns (`origin_episode_id` as non-null, `context` with required lineage list) now, or deferred until dreaming? Current [persistence.md](./persistence.md) draft includes them as nullable; the future spec will tighten.
+- **Q5.1.** The Dreamer's review gate is automatic in research mode. `main` port would need operator review. Moving to operator review changes the UX but not the repo invariants listed above.
+- **Q5.2.** `origin_episode_id` referential integrity: enforced at INSERT in the research sketch, but there's no SQLite foreign-key-style guarantee (it's a loose lookup). Tightening would require a DB-level check or, more likely, a background verifier. Not blocking.

@@ -91,12 +91,14 @@ BEGIN
     SELECT RAISE(ABORT, 'ACCOMPLISHMENT requires non-empty intent_at_time');
 END;
 
--- Block WISDOM writes. Tier is reserved until the dreaming spec lands.
-CREATE TRIGGER IF NOT EXISTS durable_memory_wisdom_deferred
+-- WISDOM writes require a non-null origin_episode_id pointing at a dream
+-- session marker. Enforced at the schema boundary; the repo layer additionally
+-- validates the marker reference exists.
+CREATE TRIGGER IF NOT EXISTS durable_memory_wisdom_requires_origin
     BEFORE INSERT ON durable_memory
-    WHEN NEW.tier = 'wisdom'
+    WHEN NEW.tier = 'wisdom' AND (NEW.origin_episode_id IS NULL OR NEW.origin_episode_id = '')
 BEGIN
-    SELECT RAISE(ABORT, 'wisdom writes deferred; see specs/wisdom-write-path.md');
+    SELECT RAISE(ABORT, 'WISDOM requires origin_episode_id pointing at a dream session marker');
 END;
 
 

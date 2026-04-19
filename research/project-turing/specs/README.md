@@ -19,7 +19,7 @@ Read in order. Later specs depend on earlier ones.
 | 2 | [`tiers.md`](./tiers.md) | Add `ACCOMPLISHMENT`. Revised 8-tier set with weight bounds and inheritance priority. | 1 |
 | 3 | [`durability-invariants.md`](./durability-invariants.md) | The eight invariants enforced for REGRET, ACCOMPLISHMENT, WISDOM. | 1, 2 |
 | 4 | [`write-paths.md`](./write-paths.md) | Write triggers and actions for REGRET, ACCOMPLISHMENT, AFFIRMATION. | 1, 2, 3 |
-| 5 | [`wisdom-write-path.md`](./wisdom-write-path.md) | **Deferred.** Placeholder declaring that no write path into WISDOM exists until the dreaming spec lands. | 1, 2, 3 |
+| 5 | [`wisdom-write-path.md`](./wisdom-write-path.md) | WISDOM invariants (consolidation-origin only, I_DID provenance, traceable lineage, no superseding WISDOM). Write path defined in `dreaming.md`. | 1, 2, 3, 12 |
 | 6 | [`retrieval.md`](./retrieval.md) | Reserved quota, source-filtered views, lineage-aware retrieval. | 1, 2, 3 |
 | 8 | [`persistence.md`](./persistence.md) | `durable_memory` table, version migration, `self_id` minting. | 1, 2, 3 |
 
@@ -39,9 +39,14 @@ Read in order. Later specs depend on earlier ones.
 | D | [`detectors/README.md`](./detectors/README.md) | Detector pattern: cheap watchers that propose backlog candidates. | 9 |
 | D.1 | [`detectors/contradiction.md`](./detectors/contradiction.md) | Worked example — detects contradictory durable memories with a known resolution; proposes a LESSON-minting candidate. | 1, 3, 4, 9, D |
 
+### Dreaming (Tranche 4 — consolidation and WISDOM)
+
+| # | Spec | Scope | Depends on |
+|---|---|---|---|
+| 12 | [`dreaming.md`](./dreaming.md) | Scheduled consolidation. Seven phases: pattern extraction, WISDOM candidacy, AFFIRMATION proposal, LESSON consolidation, non-durable pruning, review gate, session marker. Sole write path into WISDOM tier. | 1, 2, 3, 4, 9, 10 |
+
 ## Deferred
 
-- **Dreaming** — scheduled nightly consolidation that walks durable memories, extracts patterns, and produces WISDOM candidates. Acknowledged in [`wisdom-write-path.md`](./wisdom-write-path.md) as the blocker for WISDOM writes. A separate spec will land when the work is prioritized.
 - **Additional detectors** — `learning_extraction`, `affirmation_candidacy`, `prospection`. Pattern is established by `detectors/contradiction.md`; individual specs will land alongside implementations.
 
 ## Non-goals (all specs)

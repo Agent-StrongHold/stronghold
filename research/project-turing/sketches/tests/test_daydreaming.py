@@ -9,7 +9,7 @@ import pytest
 from turing.daydream import DaydreamProducer, DaydreamWriter
 from turing.motivation import ACTION_CADENCE_TICKS, Motivation
 from turing.reactor import FakeReactor
-from turing.repo import Repo, WisdomDeferred
+from turing.repo import Repo, WisdomInvariantViolation
 from turing.tiers import WEIGHT_BOUNDS
 from turing.types import EpisodicMemory, MemoryTier, SourceKind
 
@@ -56,7 +56,7 @@ def test_ac_7_2_daydream_writer_cannot_reach_durable_tiers(
         )
 
 
-def test_wisdom_tier_rejected_even_with_i_did(repo: Repo, self_id: str) -> None:
+def test_wisdom_tier_requires_dreaming_origin(repo: Repo, self_id: str) -> None:
     wisdom = EpisodicMemory(
         memory_id=str(uuid4()),
         self_id=self_id,
@@ -66,8 +66,9 @@ def test_wisdom_tier_rejected_even_with_i_did(repo: Repo, self_id: str) -> None:
         weight=0.95,
         intent_at_time="self-description",
         immutable=True,
+        # deliberately no origin_episode_id
     )
-    with pytest.raises(WisdomDeferred):
+    with pytest.raises(WisdomInvariantViolation):
         repo.insert(wisdom)
 
 

@@ -102,7 +102,9 @@ def test_ac_8_7_archive_and_mint_preserves_old() -> None:
         repo1.close()
 
 
-def test_wisdom_writes_deferred(repo: Repo, self_id: str) -> None:
+def test_wisdom_requires_origin_episode_id(repo: Repo, self_id: str) -> None:
+    from turing.repo import WisdomInvariantViolation
+
     wisdom = EpisodicMemory(
         memory_id=str(uuid4()),
         self_id=self_id,
@@ -112,8 +114,38 @@ def test_wisdom_writes_deferred(repo: Repo, self_id: str) -> None:
         weight=0.95,
         intent_at_time="self-description",
         immutable=True,
+        # deliberately no origin_episode_id
     )
-    from turing.repo import WisdomDeferred
+    with pytest.raises(WisdomInvariantViolation, match="origin_episode_id"):
+        repo.insert(wisdom)
 
-    with pytest.raises(WisdomDeferred):
+
+def test_wisdom_requires_lineage(repo: Repo, self_id: str) -> None:
+    from turing.repo import WisdomInvariantViolation
+
+    # Build a marker first so origin_episode_id resolves.
+    marker = EpisodicMemory(
+        memory_id=str(uuid4()),
+        self_id=self_id,
+        tier=MemoryTier.OBSERVATION,
+        source=SourceKind.I_DID,
+        content="dream session abc completed",
+        weight=0.2,
+        origin_episode_id="dream-abc",
+    )
+    repo.insert(marker)
+
+    wisdom = EpisodicMemory(
+        memory_id=str(uuid4()),
+        self_id=self_id,
+        tier=MemoryTier.WISDOM,
+        source=SourceKind.I_DID,
+        content="I am X",
+        weight=0.95,
+        intent_at_time="self-description",
+        immutable=True,
+        origin_episode_id="dream-abc",
+        # deliberately no supersedes_via_lineage in context
+    )
+    with pytest.raises(WisdomInvariantViolation, match="supersedes_via_lineage"):
         repo.insert(wisdom)

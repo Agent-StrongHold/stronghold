@@ -15,6 +15,7 @@ from typing import Any
 
 from ..daydream import DaydreamProducer
 from ..detectors.contradiction import ContradictionDetector
+from ..dreaming import Dreamer
 from ..motivation import Motivation
 from ..repo import Repo
 from ..scheduler import Scheduler
@@ -199,6 +200,12 @@ def build_and_run(argv: list[str] | None = None) -> int:
         self_id=self_id,
     )
     CoefficientTuner(
+        motivation=motivation,
+        reactor=reactor,
+        repo=repo,
+        self_id=self_id,
+    )
+    Dreamer(
         motivation=motivation,
         reactor=reactor,
         repo=repo,

@@ -33,6 +33,11 @@ class ProvenanceViolation(RepoError):
 
 
 class WisdomDeferred(RepoError):
+    """Legacy: retained so existing imports don't break. No longer raised by
+    the default insert path now that dreaming.md is active."""
+
+
+class WisdomInvariantViolation(RepoError):
     pass
 
 
@@ -78,10 +83,7 @@ class Repo:
                 f"weight {memory.weight} outside tier bounds [{lo}, {hi}] for {memory.tier.value}"
             )
         if memory.tier == MemoryTier.WISDOM:
-            # Match the schema trigger's behavior with a typed exception.
-            raise WisdomDeferred(
-                "wisdom writes deferred; see specs/wisdom-write-path.md"
-            )
+            self._validate_wisdom_invariants(memory)
         table = "durable_memory" if memory.tier in DURABLE_TIERS else "episodic_memory"
         try:
             self._conn.execute(
@@ -112,6 +114,43 @@ class Repo:
     def _weight_in_bounds(self, memory: EpisodicMemory) -> bool:
         lo, hi = WEIGHT_BOUNDS[memory.tier]
         return lo <= memory.weight <= hi
+
+    def _validate_wisdom_invariants(self, memory: EpisodicMemory) -> None:
+        """Enforce the invariants from specs/wisdom-write-path.md."""
+        if not memory.origin_episode_id:
+            raise WisdomInvariantViolation(
+                "WISDOM requires origin_episode_id pointing at a dream session marker"
+            )
+        lineage = memory.context.get("supersedes_via_lineage") if memory.context else None
+        if not isinstance(lineage, list) or not lineage:
+            raise WisdomInvariantViolation(
+                "WISDOM requires context['supersedes_via_lineage'] as a non-empty list"
+            )
+        # Every lineage memory_id must exist.
+        for mid in lineage:
+            if self.get(str(mid)) is None:
+                raise WisdomInvariantViolation(
+                    f"WISDOM lineage references unknown memory_id: {mid}"
+                )
+        # Must not supersede another WISDOM entry.
+        if memory.supersedes is not None:
+            prior = self.get(memory.supersedes)
+            if prior is not None and prior.tier == MemoryTier.WISDOM:
+                raise WisdomInvariantViolation(
+                    "WISDOM may not supersede existing WISDOM; extend instead"
+                )
+        # origin_episode_id must point at an OBSERVATION session marker whose
+        # content identifies it as a dream session. Loose lookup (no FK).
+        marker_row = self._conn.execute(
+            "SELECT tier, source, content FROM episodic_memory "
+            "WHERE memory_id = ? OR origin_episode_id = ? "
+            "LIMIT 1",
+            (memory.origin_episode_id, memory.origin_episode_id),
+        ).fetchone()
+        if marker_row is None:
+            raise WisdomInvariantViolation(
+                f"WISDOM origin_episode_id {memory.origin_episode_id} does not resolve to any marker"
+            )
 
     def _row_for_insert(
         self, m: EpisodicMemory, include_deleted: bool
