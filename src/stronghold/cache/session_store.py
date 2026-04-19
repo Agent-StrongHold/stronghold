@@ -51,11 +51,14 @@ class RedisSessionStore:
         """Get recent messages for a session, filtered by per-message TTL.
 
         Session IDs must be org-scoped (format: org/team/user:name).
-        Bare session IDs are rejected as a defense-in-depth measure.
+        Bare session IDs are rejected with ValueError.
         """
         if "/" not in session_id:
-            logger.warning("Rejected bare session_id (not org-scoped): %s", session_id[:20])
-            return []
+            err = (
+                f"session_id must be org-scoped (format: org/user:name), "
+                f"got bare id: {session_id[:20]!r}"
+            )
+            raise ValueError(err)
         limit = max_messages or self._max
         ttl = ttl_seconds or self._ttl
         cutoff = time.time() - ttl
@@ -68,10 +71,21 @@ class RedisSessionStore:
         # Refresh key-level TTL on access
         await self._redis.expire(rkey, self._ttl)
 
-        # Filter by per-message timestamp, return only role+content
+        # Filter by per-message timestamp, return only role+content.
+        # Skip (log) any poisoned/non-JSON entries rather than crashing the
+        # whole session retrieval.
         result: list[dict[str, str]] = []
         for item in raw:
-            msg = json.loads(item)
+            try:
+                msg = json.loads(item)
+            except (json.JSONDecodeError, TypeError, ValueError):
+                logger.warning(
+                    "Skipping poisoned session entry in %s",
+                    session_id,
+                )
+                continue
+            if not isinstance(msg, dict):
+                continue
             ts = msg.pop("_ts", 0)
             if ts >= cutoff:
                 result.append({"role": msg.get("role", ""), "content": msg.get("content", "")})
@@ -86,8 +100,11 @@ class RedisSessionStore:
     ) -> None:
         """Append messages to a session with timestamps."""
         if "/" not in session_id:
-            logger.warning("Rejected bare session_id (not org-scoped): %s", session_id[:20])
-            return
+            err = (
+                f"session_id must be org-scoped (format: org/user:name), "
+                f"got bare id: {session_id[:20]!r}"
+            )
+            raise ValueError(err)
         if not messages:
             return
 
@@ -95,6 +112,9 @@ class RedisSessionStore:
         rkey = self._key(session_id)
         pipe = self._redis.pipeline()
         for msg in messages:
+            # SEC-009: skip non-dict entries to avoid AttributeError on .get()
+            if not isinstance(msg, dict):
+                continue
             role = msg.get("role", "")
             content = msg.get("content", "")
             if role not in ("user", "assistant"):
@@ -113,5 +133,9 @@ class RedisSessionStore:
     async def delete_session(self, session_id: str) -> None:
         """Delete a session."""
         if "/" not in session_id:
-            return
+            err = (
+                f"session_id must be org-scoped (format: org/user:name), "
+                f"got bare id: {session_id[:20]!r}"
+            )
+            raise ValueError(err)
         await self._redis.delete(self._key(session_id))
