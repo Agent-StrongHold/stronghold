@@ -44,6 +44,11 @@ class RuntimeConfig:
     chat_port: int | None = None
     chat_bind: str = "127.0.0.1"
 
+    # Operator-controlled base prompt. Read once at startup; never mutated
+    # by the self. Working memory (self-controlled) is composed alongside
+    # this in every chat prompt.
+    base_prompt_path: str | None = None
+
     # Self identity
     self_label: str = "default"
 
@@ -121,6 +126,8 @@ def load_config_from_env(
         cfg_kwargs["chat_port"] = _parse_int(env["TURING_CHAT_PORT"], 0) or None
     if "TURING_CHAT_BIND" in env:
         cfg_kwargs["chat_bind"] = env["TURING_CHAT_BIND"]
+    if "TURING_BASE_PROMPT_PATH" in env:
+        cfg_kwargs["base_prompt_path"] = env["TURING_BASE_PROMPT_PATH"]
     if "TURING_SELF_LABEL" in env:
         cfg_kwargs["self_label"] = env["TURING_SELF_LABEL"]
 

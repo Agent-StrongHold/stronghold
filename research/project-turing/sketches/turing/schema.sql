@@ -108,3 +108,21 @@ CREATE TABLE IF NOT EXISTS self_identity (
     archived_at    TEXT,
     archive_reason TEXT
 );
+
+
+-- Working memory: a small, self-editable scratch space included in every
+-- chat prompt. NOT an autonoetic memory tier — it's ephemeral active
+-- attention. The self writes it via the working-memory-maintenance
+-- reflection loop; the operator's base prompt is separately controlled
+-- via configuration and never mutated by the self.
+CREATE TABLE IF NOT EXISTS working_memory (
+    entry_id    TEXT PRIMARY KEY,
+    self_id     TEXT NOT NULL,
+    content     TEXT NOT NULL,
+    priority    REAL NOT NULL DEFAULT 0.5 CHECK (priority BETWEEN 0.0 AND 1.0),
+    created_at  TEXT NOT NULL,
+    updated_at  TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_working_memory_self
+    ON working_memory (self_id, priority DESC, created_at DESC);

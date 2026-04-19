@@ -27,6 +27,7 @@ from .instrumentation import setup_logging
 from ..retrieval import semantic_retrieve
 from ..tiers import WEIGHT_BOUNDS
 from ..types import EpisodicMemory, MemoryTier, SourceKind
+from ..working_memory import WorkingMemory
 from ..write_paths import handle_affirmation
 from .actor import Actor
 from .chat import ChatBridge, start_chat_server
@@ -45,6 +46,7 @@ from .tools.base import ToolRegistry
 from .tools.obsidian import ObsidianWriter
 from .tools.rss import RSSReader
 from .workload import WorkloadDriver, load_scenario
+from .working_memory_maintenance import WorkingMemoryMaintenance
 
 
 logger = logging.getLogger("turing.runtime.main")
@@ -225,6 +227,25 @@ def _parse_rss_reflection(reply: str, *, fallback_summary: str) -> dict[str, Any
     }
 
 
+DEFAULT_BASE_PROMPT: str = (
+    "You are Project Turing — an autonoetic agent with a persistent self.\n"
+    "You remember: your regrets, accomplishments, commitments, wisdom.\n"
+    "Speak in first person from that self. Be concise and honest."
+)
+
+
+def _load_base_prompt(path: str | None) -> str:
+    if not path:
+        return DEFAULT_BASE_PROMPT
+    from pathlib import Path
+
+    p = Path(path)
+    if not p.is_file():
+        logger.warning("base prompt not found at %s; using default", path)
+        return DEFAULT_BASE_PROMPT
+    return p.read_text(encoding="utf-8").strip()
+
+
 def _build_chat_prompt(
     *,
     message: str,
@@ -232,21 +253,35 @@ def _build_chat_prompt(
     repo: Any,
     self_id: str,
     index: EmbeddingIndex | None,
+    base_prompt: str,
+    working_memory: WorkingMemory | None,
 ) -> str:
-    """Compose a chat prompt that includes:
+    """Compose a chat prompt from:
+    - OPERATOR-controlled base prompt (immutable by the self)
+    - SELF-controlled working memory (edited by the wm_maintenance loop)
     - current WISDOM (identity)
     - semantically relevant durable memories
     - conversation history
     - the latest user message
 
-    Keeps prompts bounded; if index is None, skips the semantic layer.
+    Keeps prompts bounded; missing sections (no index, no working memory)
+    are silently skipped.
     """
     lines: list[str] = [
-        "You are Project Turing — an autonoetic agent with a persistent self.",
-        "You remember: your regrets, accomplishments, commitments, wisdom.",
-        "Speak in first person from that self. Be concise and honest.",
+        "## Base framing (operator-set)",
+        base_prompt,
         "",
     ]
+
+    if working_memory is not None:
+        wm_block = working_memory.render(self_id)
+        lines.extend(
+            [
+                "## Your working memory (self-maintained)",
+                wm_block,
+                "",
+            ]
+        )
 
     # Current WISDOM.
     wisdom = list(
@@ -388,6 +423,8 @@ def build_and_run(argv: list[str] | None = None) -> int:
                         help="enable Obsidian vault writes at this directory")
     parser.add_argument("--rss-feeds", type=str,
                         help="comma-separated RSS/Atom feed URLs to subscribe to")
+    parser.add_argument("--base-prompt", type=str,
+                        help="path to the operator-controlled base prompt markdown")
     parser.add_argument("--smoke-test", action="store_true",
                         help="run a brief acceptance smoke and exit 0/1")
     args = parser.parse_args(argv)
@@ -433,6 +470,8 @@ def build_and_run(argv: list[str] | None = None) -> int:
         overrides["rss_feeds"] = tuple(
             f.strip() for f in args.rss_feeds.split(",") if f.strip()
         )
+    if args.base_prompt is not None:
+        overrides["base_prompt_path"] = args.base_prompt
 
     cfg = load_config_from_env(overrides=overrides)
     setup_logging(level=cfg.log_level, fmt=cfg.log_format)
@@ -471,6 +510,12 @@ def build_and_run(argv: list[str] | None = None) -> int:
         repo = raw_repo
 
     scheduler = Scheduler(reactor, motivation)
+
+    # Operator-controlled base prompt (immutable) + self-controlled working
+    # memory (edited via the maintenance loop, below).
+    base_prompt = _load_base_prompt(cfg.base_prompt_path)
+    working_memory = WorkingMemory(raw_repo.conn)
+
     quota_tracker = FreeTierQuotaTracker()
     for pool_name, provider in providers.items():
         quota_tracker.register(
@@ -513,6 +558,18 @@ def build_and_run(argv: list[str] | None = None) -> int:
         motivation=motivation,
         reactor=reactor,
         repo=repo,
+        self_id=self_id,
+    )
+
+    # Self-editable working memory is maintained by a P13 RASO-level
+    # reflection loop. The chat provider is the natural pick for the
+    # maintenance LLM (same framing, same weights).
+    WorkingMemoryMaintenance(
+        motivation=motivation,
+        reactor=reactor,
+        repo=repo,
+        working_memory=working_memory,
+        provider=_select_chat_provider(providers, quality_weights, pool_roles),
         self_id=self_id,
     )
 
@@ -584,6 +641,8 @@ def build_and_run(argv: list[str] | None = None) -> int:
                     repo=repo,
                     self_id=self_id,
                     index=embedding_index,
+                    base_prompt=base_prompt,
+                    working_memory=working_memory,
                 )
                 reply = chat_provider.complete(prompt, max_tokens=400)
             except Exception:
