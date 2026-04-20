@@ -59,10 +59,27 @@ Read in order. Later specs depend on earlier ones.
 | 20 | [`runtime-reactor.md`](./runtime-reactor.md) | Blocking-tick + ThreadPoolExecutor side channel. Deliberate divergence from main's asyncio. FakeReactor for tests. | — |
 | 21 | [`observability.md`](./observability.md) | v1 Prometheus metric contract. Inspect CLI read-only subcommands. Smoke mode acceptance criteria. | all |
 
+### Self-model (Tranche 6 — durable content of the autonoetic self)
+
+The self-model — what the Turing Conduit knows about itself between requests — above and beyond episodic memory. Companion overview at [`../autonoetic-self.md`](../autonoetic-self.md).
+
+| # | Spec | Scope | Depends on |
+|---|---|---|---|
+| 22 | [`self-schema.md`](./self-schema.md) | Tables and value types for all self-model nodes: personality facets, passions, hobbies, interests, preferences, skills, todos, mood, activation contributors. | 1, 2 |
+| 23 | [`personality.md`](./personality.md) | HEXACO-24 profile. Random bootstrap draw, 200-item HEXACO-PI-R seed, weekly 20-item re-test weighted by time-since-last-asked, narrative revision via the activation graph. | 22 |
+| 24 | [`self-nodes.md`](./self-nodes.md) | Passions, hobbies, interests, preferences, skills. Bootstrap-empty, accrete via self-authored `note_*` tools. Skill decay applied on read: `level × exp(-rate × days)`. | 22 |
+| 25 | [`activation-graph.md`](./activation-graph.md) | Contributor edges (`target, source, weight, origin, rationale`). `active_now(node) = sigmoid(Σ weight × source_state / SCALE)`. Origins: self / rule / retrieval (TTL-bounded). Conflict via counter-contributors. | 22, 23, 24 |
+| 26 | [`self-todos.md`](./self-todos.md) | Self-authored todos with required `motivated_by_node_id`. Append-only revision history. Completion mints AFFIRMATION + reinforces motivator via a contributor edge. | 22, 24 |
+| 27 | [`mood.md`](./mood.md) | `(valence, arousal, focus)` singleton. Hourly decay toward neutral; event nudges (tool success/fail, AFFIRMATION/REGRET mints, todo completion, Warden alerts). Phase-1: affects tone only. | 22, 2 |
+| 28 | [`self-surface.md`](./self-surface.md) | Self-tool registry, `recall_self()` deep read, 4-line minimal prompt block (identity + mood + active todos + dominant passion). First-person framing throughout. | 22, 23, 24, 25, 26, 27 |
+| 29 | [`self-bootstrap.md`](./self-bootstrap.md) | `stronghold bootstrap-self` CLI. Random HEXACO draw → 200 Likert LLM answers with justifications → 24 facets + 1 mood + empty everything else. Idempotent per `self_id`; resumable. | 22, 23, 24, 27, 8 |
+| 30 | [`self-as-conduit.md`](./self-as-conduit.md) | First-person routing pipeline: Warden → minimal block + retrieval contributors → perception (LLM + possible `recall_self`) → decision (`reply_directly` / `delegate` / `ask_clarifying` / `decline`) → dispatch → observation (self-model updates, mood nudges). Replaces the stateless Conduit for the Turing branch. | 22, 23, 24, 25, 26, 27, 28, 29, 9, 16, 17 |
+
 ## Deferred
 
 - **Additional detectors** — `learning_extraction`, `affirmation_candidacy`, `prospection`. Pattern is established by `detectors/contradiction.md`; individual specs will land alongside implementations.
-- **Personality / interests / hobbies / passions / likes-dislikes / favorites / personal skill development** — separately discussed; specs to follow.
+- **Self naming** — the self starts unnamed; operator-settable or self-chosen via reflection. Tool and policy not yet specified.
+- **Mood affects decisions** — Phase-2 coupling of mood to routing / model choice / Warden thresholds. Specified as deferred in [`mood.md`](./mood.md) Q27.4.
 
 ## Non-goals (all specs)
 
