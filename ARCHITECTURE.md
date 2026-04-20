@@ -180,6 +180,8 @@ This is architecturally different from Conductor's approach (merge all tools int
 
 **Dynamic intent creation:** When an agent is imported with capabilities that don't fit existing intents, the system creates a new intent category from the agent's declared keywords. The imported agent becomes the default handler.
 
+**Research track — autonoetic self as Conduit:** In Project Turing (this branch), the Conduit is replaced by a single global self that carries personality, mood, passions, skills, and todos, and routes from first-person experience rather than stateless triage. Not in `main`; structurally incompatible with per-tenant isolation. Design: [`research/project-turing/autonoetic-self.md`](research/project-turing/autonoetic-self.md).
+
 ### 2.7 Execution Modes
 
 | Mode | Behavior | Trigger |
