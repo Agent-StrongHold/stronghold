@@ -89,8 +89,20 @@ source = ["stronghold"]
 omit = ["src/stronghold/persistence/pg_*.py"]
 
 [tool.coverage.report]
-fail_under = 95
-exclude_lines = ["pragma: no cover", "if TYPE_CHECKING:"]
+# Per-tier coverage enforced in CI (integration plays the role the retired
+# `develop` tier used to). Local pytest uses the lowest bar so devs aren't
+# blocked on feature branches; CI bumps it per target base.
+#   feature/*   → 85% diff coverage
+#   integration → 90% total coverage
+#   main        → 95% diff coverage (release workflow)
+fail_under = 85
+exclude_lines = [
+    "pragma: no cover",
+    "if TYPE_CHECKING:",
+    "^\\s*\\.\\.\\.\\s*$",
+    "@(abc\\.)?abstractmethod",
+    "raise NotImplementedError",
+]
 
 [tool.bandit]
 targets = ["src/stronghold"]
