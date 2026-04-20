@@ -45,9 +45,24 @@ Read in order. Later specs depend on earlier ones.
 |---|---|---|---|
 | 12 | [`dreaming.md`](./dreaming.md) | Scheduled consolidation. Seven phases: pattern extraction, WISDOM candidacy, AFFIRMATION proposal, LESSON consolidation, non-durable pruning, review gate, session marker. Sole write path into WISDOM tier. | 1, 2, 3, 4, 9, 10 |
 
+### Runtime + integration (Tranche 5 — built directly; specced retroactively)
+
+| # | Spec | Scope | Depends on |
+|---|---|---|---|
+| 13 | [`journal.md`](./journal.md) | Multi-resolution narrative: today / yesterday / week / month / recent-history. Progressive LLM summarization at each level. Identity refresh on WISDOM change. | 1, 8 |
+| 14 | [`working-memory.md`](./working-memory.md) | Operator base prompt (immutable to self) + self-managed working memory (bounded scratch space). WM maintenance loop is a P13 RASO producer. | 1, 8, 9 |
+| 15 | [`rss-thinking.md`](./rss-thinking.md) | Four progressive levels per RSS item: weak summary always, WM entry on notable, OPINION on interesting, AFFIRMATION + scheduled action on commit. | 1, 2, 4, 9, 14, 18 |
+| 16 | [`semantic-retrieval.md`](./semantic-retrieval.md) | Embedding-based search across durable + stance-bearing memory. Score = similarity × weight. I_DID-only by default. | 1, 6, 8, 19 |
+| 17 | [`chat-surface.md`](./chat-surface.md) | OpenAI-compatible HTTP. Streaming for plain replies, non-streaming when tools fire. Per-user session tagging via upstream auth header. Cluster does auth. | 9, 14, 16, 18, 19 |
+| 18 | [`tool-layer.md`](./tool-layer.md) | ToolRegistry allowlist, OpenAI function-call schemas, failure → stance OPINION. Obsidian + RSSReader real; Wiki/WP/Search/Newsletter scaffolded. | 1, 4, 17 |
+| 19 | [`litellm-provider.md`](./litellm-provider.md) | Single LiteLLM proxy + virtual key. Pools = (model, free-tier window, role). complete + embed + quota_window in one Provider Protocol. | 8 |
+| 20 | [`runtime-reactor.md`](./runtime-reactor.md) | Blocking-tick + ThreadPoolExecutor side channel. Deliberate divergence from main's asyncio. FakeReactor for tests. | — |
+| 21 | [`observability.md`](./observability.md) | v1 Prometheus metric contract. Inspect CLI read-only subcommands. Smoke mode acceptance criteria. | all |
+
 ## Deferred
 
 - **Additional detectors** — `learning_extraction`, `affirmation_candidacy`, `prospection`. Pattern is established by `detectors/contradiction.md`; individual specs will land alongside implementations.
+- **Personality / interests / hobbies / passions / likes-dislikes / favorites / personal skill development** — separately discussed; specs to follow.
 
 ## Non-goals (all specs)
 
