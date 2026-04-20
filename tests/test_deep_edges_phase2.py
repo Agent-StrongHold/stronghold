@@ -473,6 +473,29 @@ class TestConduitStateMaps:
         assert hasattr(Conduit, "_MAX_STICKY_SESSIONS")
         assert Conduit._MAX_STICKY_SESSIONS > 0
 
+    def test_sec013_consent_maps_have_eviction_cap_constant(self) -> None:
+        """SEC-013: consent maps must have a documented cap.
+
+        Previously _session_consents and _consent_pending had no eviction.
+        Fix: _MAX_CONSENT_ENTRIES + per-write eviction on the hot path.
+        """
+        from stronghold.conduit import Conduit
+
+        assert hasattr(Conduit, "_MAX_CONSENT_ENTRIES")
+        assert Conduit._MAX_CONSENT_ENTRIES > 0
+
+    def test_sec013_eviction_code_present(self) -> None:
+        """Verify the eviction code block exists where it should."""
+        import inspect
+
+        from stronghold.conduit import Conduit
+
+        source = inspect.getsource(Conduit)
+        # Both consent maps must have eviction loops
+        assert source.count("_MAX_CONSENT_ENTRIES") >= 2, (
+            "eviction logic missing from either _session_consents or _consent_pending"
+        )
+
 
 # ──────────────────────────────────────────────────────────────────────
 # admin coin conversion
@@ -496,6 +519,21 @@ class TestCoinConversion:
         container.config.models = {}
         app.state.container = container
         return app
+
+    def test_convert_non_numeric_copper_amount(self, admin_app) -> None:
+        """Non-numeric copper_amount must not crash server with uncaught ValueError."""
+        from fastapi.testclient import TestClient
+
+        client = TestClient(admin_app)
+        resp = client.post(
+            "/v1/stronghold/admin/coins/convert",
+            headers={"Authorization": "Bearer sk-test", "X-Stronghold-Request": "1"},
+            json={"copper_amount": "not-a-number"},
+        )
+        # Should return 400, not 500
+        assert resp.status_code in (400, 422), (
+            f"non-numeric input returned {resp.status_code}, expected 400/422"
+        )
 
     def test_convert_negative_copper_amount(self, admin_app) -> None:
         from fastapi.testclient import TestClient
