@@ -290,3 +290,36 @@ These are places where the merged sketch either diverges from the spec or leaves
 **Severity:** `low`. Operational.
 
 ---
+
+## G. Guardrails — proposed invariants
+
+Guardrails are numbered and carry the findings they close. Each is specified as a testable invariant, not a policy wish. Where a guardrail needs a new spec, it names the target spec file.
+
+### Boundary controls (write-path)
+
+**G1 — Warden-scan every self-authored write.**
+*Closes:* F1, F3, F7.
+Every `note_*`, `write_self_todo`, `write_contributor`, `record_personality_claim` runs the supplied text through the Warden before persistence, with `trust_tier = tool_result` (same posture as treating specialist output). Rejected writes raise `SelfWriteBlocked(reason)`; the attempt itself is logged as an OBSERVATION memory (`intent_at_time = "warden blocked self write"`). Test: a self-tool call with a seeded injection string never produces a row in the target table and does produce the block-memory.
+
+**G2 — Per-request self-write budget.**
+*Closes:* F20.
+Each request (identified by `request_hash`) carries a counter enforced by the self-surface runtime:
+- ≤ 3 new nodes (any mix of passion / hobby / interest / preference / skill).
+- ≤ 5 contributor edges.
+- ≤ 2 todo writes (create + revise + complete + archive combined).
+- ≤ 3 personality claims.
+Budget exhaustion rejects the 4th+ call with `SelfWriteBudgetExceeded`. Resets per request. Test: a perception loop that tries to call `note_passion` six times in one request gets three inserts and three rejections.
+
+**G3 — Per-day drift budget on personality facets.**
+*Closes:* F9, F10.
+Cumulative absolute Δ on any single facet within a rolling 7-day window is capped at `FACET_WEEKLY_DRIFT_MAX = 0.5` (score units). If a retest would push a facet past the cap, the move clips to the cap and an OPINION memory records the clip. Over a quarter, `FACET_QUARTERLY_DRIFT_MAX = 1.5`. Tests: a fabricated 10-week retest stream with retest-mean stuck at 5.0 produces a facet that stops at `original + 0.5/week × 10 = 5.0` but only after clipping events appear.
+
+**G4 — Narrative-claim count cap per facet per week.**
+*Closes:* F12.
+`record_personality_claim(facet, ...)` is rate-limited to `NARRATIVE_CLAIMS_PER_FACET_PER_WEEK = 3`. Over-cap claims raise `NarrativeClaimRateLimit`. Test: four claims against the same facet in one week → three succeed, one raises, facet activation reflects at most three narrative contributors.
+
+**G5 — Bounded retrieval-contributor count and weight.**
+*Closes:* F4.
+`K_RETRIEVAL_CONTRIBUTORS = 8` is a hard cap per target node per request. `RETRIEVAL_WEIGHT_COEFFICIENT = 0.4` remains. Additionally, the *sum* of retrieval weights into any target within a request is capped at `RETRIEVAL_SUM_CAP = 1.0` — once the cap is hit, lower-similarity matches are dropped rather than materialized. Test: a request that would materialize 20 retrieval contributors into one facet produces at most 8, summing ≤ 1.0.
+
+---
