@@ -12,7 +12,10 @@ RUN pip install --no-cache-dir --prefix=/install ".[dev]"
 
 FROM python:3.12-slim
 
-# Mason needs git to create branches, worktrees, commit, push
+# Mason needs git to create branches, worktrees, commit, push.
+# Pinning the Debian-slim git package version would break every time the
+# base image refreshes, so accept the Debian stable floor instead.
+# hadolint ignore=DL3008
 RUN apt-get update && apt-get install -y --no-install-recommends git && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
