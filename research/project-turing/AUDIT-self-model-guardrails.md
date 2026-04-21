@@ -323,3 +323,32 @@ Cumulative absolute Δ on any single facet within a rolling 7-day window is capp
 `K_RETRIEVAL_CONTRIBUTORS = 8` is a hard cap per target node per request. `RETRIEVAL_WEIGHT_COEFFICIENT = 0.4` remains. Additionally, the *sum* of retrieval weights into any target within a request is capped at `RETRIEVAL_SUM_CAP = 1.0` — once the cap is hit, lower-similarity matches are dropped rather than materialized. Test: a request that would materialize 20 retrieval contributors into one facet produces at most 8, summing ≤ 1.0.
 
 ---
+
+### Drift and growth bounds
+
+**G6 — Symmetric mood accounting with rolling-sum guard.**
+*Closes:* F8.
+Introduce `MOOD_ROLLING_WINDOW = 7 days` and `MOOD_ROLLING_SUM_CAP = 2.0` on absolute cumulative nudge per dimension within the window. Asymmetric nudges remain (regret hurts more than affirmation helps — the design is correct on the single-event level), but the *total* directional drift across 7 days clamps. Excess nudges are still recorded as OBSERVATION memories but do not mutate `self_mood`. Test: a stream of 100 REGRET events in one hour produces `valence` that bottoms at `−2.0` cumulative (clipped), not `−20.0`.
+
+**G7 — Retrieval-contributor GC implementation.**
+*Closes:* F13.
+Implement the GC specified in AC-25.12: a Reactor-scheduled sweep every `RETRIEVAL_GC_INTERVAL_TICKS` deletes rows where `origin = 'retrieval' AND expires_at < now()`. Also GC on read: `active_contributors_for` opportunistically deletes rows it observes as expired when the count exceeds `GC_READ_THRESHOLD = 100`. Test: simulate a day of retrieval churn and assert that the table size stays bounded by `K * active_nodes * slack`.
+
+**G8 — Per-kind node caps with eviction-by-activation.**
+*Closes:* F15.
+Hard caps per kind per self: passions ≤ 100, hobbies ≤ 100, interests ≤ 200, preferences ≤ 500, skills ≤ 200. When the cap is reached and the self attempts a new `note_*`, the lowest-`active_now` existing node in that kind is archived (`strength=0` or `status=archived`) with `rationale = "capped"`. Eviction is itself an OBSERVATION memory so the self can notice and, if needed, rewire. Test: the 101st passion write archives the lowest-activation existing passion and inserts the new one.
+
+**G9 — Near-duplicate detection with operator-review flag.**
+*Closes:* F16.
+On every `note_*`, compute cosine similarity of the new text's embedding against existing same-kind texts. If any pair ≥ `DUPLICATE_SIMILARITY_THRESHOLD = 0.88`, insert the row but mark `pending_merge_review = True` and insert an OPINION memory for the operator. The minimal block and activation graph treat pending-review rows as muted (strength × 0.5) until the operator resolves. Test: `"I love art"` and `"I care about art"` produce a pair flagged for review, and the later-added one is muted.
+
+**G10 — Skill-level honesty invariant.**
+*Closes:* F17.
+`practice_skill` can raise `stored_level` only if preceded within the same request by an OBSERVATION or ACCOMPLISHMENT memory citing the practice event. A `practice_skill(new_level=...)` call with no supporting memory in the current request's context raises `PracticeUnsupported`. Separately, a scheduled drift-check job compares monthly-over-monthly skill inventory deltas; if a self has raised >10 skills without any corresponding downgrade in 90 days, tuning flags "skill-inflation" for operator review.
+*Test:* `practice_skill` without an accompanying memory raises; with one succeeds.
+
+**G11 — Revision compaction for todos and answers.**
+*Closes:* F14.
+Scheduled weekly compaction: for each todo with > `REVISION_KEEP_FIRST_LAST_EVERY_N = (1, 1, 10)`, retain the first revision, the last revision, and every 10th in between; delete the rest via a soft `compacted_at` marker (rows stay, columns blanked). For `self_personality_answers`, retain rows tied to the most recent `N_REVISION_KEEPS = 12` revisions plus all bootstrap answers (`revision_id IS NULL`). Older retest answers compact to one aggregate row per revision. Test: a todo with 100 revisions retains 1 + 10 + 1 = 12 after compaction; the text_before/text_after of dropped revisions is queryable as blanked markers.
+
+---
