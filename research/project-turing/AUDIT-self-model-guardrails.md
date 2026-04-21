@@ -212,3 +212,37 @@ A user who can seed a week's worth of these can shape the fresh HEXACO answer th
 **Severity:** `high`.
 
 ---
+
+## E. Cross-self and identity
+
+### F24 — Repo methods do not validate `self_id` ownership
+
+**Where:** `self_repo.py` — `update_skill`, `update_passion`, `update_hobby`, `update_mood`, `insert_contributor`, etc.
+**What goes wrong:** The low-level repo methods accept rows and write them regardless of whether the acting self owns the target. The tool-surface layer (`self_nodes.py`, `self_todos.py`) does some `PermissionError("cross-self X forbidden")` checks, but the underlying repo does not. Any future caller bypassing the tool-surface can write across selves. In a single-global-self deployment this is moot; in any extension to multiple selves it is a load-bearing gap.
+**Severity:** `medium` (in research posture); `high` (if the design ever reaches >1 self).
+
+### F25 — `self_id` is not foreign-keyed to `self_identity`
+
+**Where:** `schema.sql` — every self-model table has `self_id TEXT NOT NULL` but no `REFERENCES self_identity(self_id)`.
+**What goes wrong:** A typo in any insert path creates a phantom self with no identity row. `recall_self` for that phantom returns an empty view, and `count_facets` returns zero — silently. Tests that bootstrap a fresh self don't hit this because they go through `bootstrap_self_id`, but any manual insert or migration could.
+**Severity:** `low`.
+
+### F26 — Bootstrap seeds are not registered; reused seeds produce identical selves silently
+
+**Where:** `specs/self-bootstrap.md` §29.1; `self_bootstrap.py` `run_bootstrap`.
+**What goes wrong:** `--seed 42` twice on distinct `self_id` values produces two selves with identical HEXACO profiles, identical 200-item Likert answers, and (for a deterministic LLM) identical bootstrap memories. The operator has no indication. If the intent of unique selves relies on unique seeds, that assumption is unprotected.
+**Severity:** `low`.
+
+### F27 — Name is not part of identity
+
+**Where:** `specs/self-bootstrap.md` AC-29.20 (reserved); `autonoetic-self.md` §3.1 (notes "no name").
+**What goes wrong:** The self's identity is its `self_id` string. Any operator tool that surfaces "this is your self" to a user displays an opaque token. Any future "self picks a name via reflection" mechanism (Q23.3 area) has no schema slot to write into without a migration.
+**Severity:** `low`.
+
+### F28 — Cross-tenant memory is deliberate but undocumented in the sketch
+
+**Where:** `specs/self-as-conduit.md` AC-30.22, AC-30.23.
+**What goes wrong:** The spec states the self sees all tenants. The implementation currently has no tenant concept at all — the sketch assumes single-global-self. For any reader who skips the spec and reads the sketch, the cross-tenant posture is invisible. A premature port of this code to a multi-tenant context would silently violate tenant isolation.
+**Severity:** `medium`. Research-branch only; but carries the "don't port this" load-bearing warning.
+
+---
