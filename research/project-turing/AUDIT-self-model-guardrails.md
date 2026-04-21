@@ -352,3 +352,35 @@ On every `note_*`, compute cosine similarity of the new text's embedding against
 Scheduled weekly compaction: for each todo with > `REVISION_KEEP_FIRST_LAST_EVERY_N = (1, 1, 10)`, retain the first revision, the last revision, and every 10th in between; delete the rest via a soft `compacted_at` marker (rows stay, columns blanked). For `self_personality_answers`, retain rows tied to the most recent `N_REVISION_KEEPS = 12` revisions plus all bootstrap answers (`revision_id IS NULL`). Older retest answers compact to one aggregate row per revision. Test: a todo with 100 revisions retains 1 + 10 + 1 = 12 after compaction; the text_before/text_after of dropped revisions is queryable as blanked markers.
 
 ---
+
+### Authority, identity, and operator oversight
+
+**G12 — Operator review gate on self-ontology writes.**
+*Closes:* F18, F22.
+Every `write_contributor(origin=self, ...)` targeting a `personality_facet` or `passion` writes to a staging table `self_contributor_pending` rather than `self_activation_contributors` directly. A weekly digest is produced for operator review; on ACK, rows migrate to the live table. Without review, they are invisible to `active_now`. Todos and hobby/interest/skill/preference contributors route to the live table directly (not gated) to preserve the self's daily autonomy on mundane structure. Declines (F22) also route to the same weekly digest so the operator can see patterns. Test: a self-written contributor into `facet:openness.inquisitiveness` does not affect `active_now` until operator ACK; the digest contains the pending row.
+
+**G13 — Self-id ownership enforcement at the repo layer.**
+*Closes:* F24.
+Every `update_*`, `insert_contributor`, `insert_*` call takes an explicit `acting_self_id` parameter. The repo method asserts `acting_self_id == row.self_id`; mismatch raises `CrossSelfAccess`. The tool-surface layer's `PermissionError` becomes a redundant second line of defense. Test: calling `srepo.update_skill(skill, acting_self_id="different-self")` raises.
+
+**G14 — FK from every self-table to `self_identity`.**
+*Closes:* F25.
+Add `FOREIGN KEY (self_id) REFERENCES self_identity(self_id)` on every self-model table via migration. Phantom-self writes fail at the DB layer. Test: insert a facet with a `self_id` that has no identity row → IntegrityError.
+
+**G15 — Bootstrap seed registry and collision detection.**
+*Closes:* F26.
+Add `self_bootstrap_seeds(seed INTEGER PRIMARY KEY, used_by_self_id TEXT NOT NULL, used_at TEXT NOT NULL)`. `run_bootstrap` refuses to reuse an existing seed unless `--allow-seed-reuse` is explicitly passed. The flag produces a LESSON memory `"I was bootstrapped with a seed previously used by another self."` so the self carries the fact. Test: two `run_bootstrap` calls with the same seed → second raises unless the flag is set.
+
+**G16 — Signed bootstrap audit record.**
+*Closes:* F26 (supporting forensic integrity).
+The finalize LESSON memory written by bootstrap (AC-29.17) is signed with the deployment's operator key; signature lives in `context.signature`. Verification on read is mandatory before the self is allowed to serve requests. A rotated key requires operator re-signature. Test: tamper the memory text → verification fails on next perception step; self is placed into `read-only` mode with an OPINION memory explaining why.
+
+**G17 — Forensic tagging on every self-write.**
+*Closes:* F1 (partial), F18 (partial).
+Every self-model write persists `context.request_hash` and `context.perception_tool_call_id` so the full provenance of any row is reconstructible. When a row's provenance cannot be established (writes outside the request pipeline — migrations, manual fixes), `context.provenance = "out_of_band"` is required. Test: `note_passion` during a request produces a row whose `context` JSON includes both IDs; a direct repo insert without them raises.
+
+**G18 — Self-tool runtime firewall.**
+*Closes:* F21.
+The `SELF_TOOL_REGISTRY` is exposed only via a `SelfRuntime` object instantiated at program start, not via direct module import. Any `import` of `turing.self_surface.SELF_TOOL_REGISTRY` from code outside `turing.self_*` raises a `ForbiddenImport` via an `importlib` meta path finder. Specialist agents have a separate `SpecialistRuntime` without self-tools wired. Test: a specialist-layer test that tries to `from turing.self_surface import SELF_TOOL_REGISTRY` fails at import.
+
+---
