@@ -135,3 +135,39 @@ A user who can seed a week's worth of these can shape the fresh HEXACO answer th
 **Severity:** `high`.
 
 ---
+
+## C. Unbounded growth
+
+### F13 — Retrieval-contributor GC is specified but not implemented
+
+**Where:** `specs/activation-graph.md` AC-25.12; `self_activation.py` `active_now` (reads "non-expired" but never deletes).
+**What goes wrong:** Expired retrieval rows are excluded from computation but remain in `self_activation_contributors` forever. At K=8 per request and even 100 requests/day, that's 292K rows/year, all dead.
+**Why it matters:** `active_contributors_for` scans by `target_node_id` and filters on `expires_at > now`. Table grows, query slows, disk fills. Not exploitable — just operationally unsustainable.
+**Severity:** `medium`.
+
+### F14 — `self_todo_revisions` and `self_personality_answers` are unbounded append
+
+**Where:** `specs/self-todos.md` Q26.4; `specs/personality.md` (no retention policy).
+**What goes wrong:** Both are append-only by design. Todo rewrites and weekly retest answers pile up. At 20 answers/week, a single self produces ~1040 `self_personality_answers` rows per year. Over a decade, 10K rows per self — tractable but large, and there is no aging / compaction.
+**Severity:** `low`.
+
+### F15 — Nodes (passions, hobbies, interests, skills, preferences) have no per-kind cap
+
+**Where:** `specs/self-nodes.md` (no limits specified); `specs/self-todos.md` AC-26.5 mentions a threshold alert on todo count but it is flag-only.
+**What goes wrong:** The self can accumulate unlimited passions, hobbies, etc. Each appears in `recall_self()`, each contributes to activation computations, each is a candidate for the minimal-block passion line. At 1000 passions, `rerank_passions` is a 1000-element atomic rewrite; `recall_self` pays for it every call.
+**Severity:** `medium`.
+
+### F16 — Near-duplicate detection is exact-match only
+
+**Where:** `specs/self-nodes.md` AC-24.19 (explicitly accepts near-duplicates, flags for post-hoc merge).
+**What goes wrong:** `"I love art"`, `"I care about art"`, and `"Art is important to me"` are three separate passions under the case/whitespace-normalized exact match. A self that reflects on the same topic across ten sessions accretes ten near-identical passions, each with their own rank, strength, and activation contributors.
+**Why it matters:** Active-now ordering becomes noisy; minimal-block passion selection becomes unstable; rerank becomes combinatorially annoying for the operator.
+**Severity:** `medium`.
+
+### F17 — Skills can only ratchet upward through `practice_skill`
+
+**Where:** `specs/self-nodes.md` AC-24.15; `self_nodes.py` `practice_skill`.
+**What goes wrong:** `practice_skill(new_level=...)` raises `ValueError` if `new_level < stored_level`. The only path to a lower level is `downgrade_skill(reason=...)`. Nothing in the observation loop is required to call `downgrade_skill` when a skill clearly didn't work. Over time, skill inventory monotonically inflates — every recorded practice can only go up.
+**Severity:** `medium`.
+
+---
