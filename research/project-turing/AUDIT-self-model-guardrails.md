@@ -95,3 +95,43 @@ Not every finding has a 1:1 guardrail — some share; some are flagged for discu
 **Severity:** `low`. Documented; not exploitable alone.
 
 ---
+
+## B. Drift dynamics
+
+### F8 — Asymmetric mood nudges skew negative over time
+
+**Where:** `specs/mood.md` AC-27.10.
+**What goes wrong:** Event nudges are asymmetric by design: REGRET_minted is `valence -0.20`, AFFIRMATION_minted is `valence +0.10`. Tool failure is `-0.15`; tool success against expectation is only `+0.10`. A session with equal failure/success counts moves valence net negative. Over days, a noisy operating environment drives the running mood toward the floor.
+**Why it matters:** Because mood is in every prompt (F5), systematic negative skew produces a progressively "tense, on edge" self that never recovers through normal operation. Decay-toward-neutral (`NEUTRAL_VALENCE = 0`) helps but only during idle.
+**Severity:** `high`.
+
+### F9 — Weekly retest accepts stuck-answer patterns
+
+**Where:** `specs/personality.md` AC-23.14, AC-23.25.
+**What goes wrong:** An LLM that returns `5` (or `3`) for every retest item is accepted without rejection. The spec flags this for post-hoc tuning-detector review but does not block. Over many weeks of retests, an LLM that has been prompt-injected to answer uniformly will drive facet scores to extremes, and the re-test's own 25% weighting *guarantees* movement toward the injected extreme.
+**Severity:** `high`.
+
+### F10 — No bound on cumulative retest drift
+
+**Where:** `specs/personality.md` AC-23.16 (25% move per touched facet, every week).
+**What goes wrong:** With the 25% coefficient, a facet at 3.0 reaches 4.75 after 6 consecutive weeks of retest-mean=5. There is no hard cap on total movement across a window — only on per-week move. Sustained adversarial input (via prompts that shape retest context, F11) produces unbounded cumulative drift.
+**Severity:** `high`.
+
+### F11 — Retest prompt is shaped by recent user context
+
+**Where:** `specs/personality.md` AC-23.13.
+**What goes wrong:** The retest prompt passes "current traits, active todos, recent mood, top-K recent memories." Everything in that list is indirectly user-influenced:
+- active todos are self-authored during perception (F2's injection path);
+- mood is nudged by events traceable to user input (F8);
+- recent memories include observations minted during routing (AC-30.8).
+
+A user who can seed a week's worth of these can shape the fresh HEXACO answer the self gives, which then updates facet scores.
+**Severity:** `high`.
+
+### F12 — Narrative-revision cap is per-claim, not cumulative
+
+**Where:** `specs/personality.md` §23.5 (`narrative_weight` ≤ 0.4).
+**What goes wrong:** `record_personality_claim` produces a contributor capped at weight 0.4 per claim. No cap on the *number* of claims. The self (or an adversary paraphrasing through the self) can write hundreds of +0.4 contributors against the same facet, summing to a dominant push through the sigmoid regardless of calculated-retest history.
+**Severity:** `high`.
+
+---
