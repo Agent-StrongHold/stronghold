@@ -171,3 +171,44 @@ A user who can seed a week's worth of these can shape the fresh HEXACO answer th
 **Severity:** `medium`.
 
 ---
+
+## D. Authority and privilege surface
+
+### F18 — The self authors its own ontology without a review gate
+
+**Where:** `specs/activation-graph.md` AC-25.17 (`write_contributor`).
+**What goes wrong:** The self can create contributor edges wiring anything to anything (minus self-loops and within-range weights). There is no operator-review checkpoint between the self's reflection and the edge becoming durable in the activation graph. The graph IS the self's ontology of "what evidences what" — by writing edges, the self programs its own future activation patterns.
+**Why it matters:** Combined with F4 (retrieval contributors under user influence), F1 (unscanned self-writes), and F11 (retest shaped by recent context), the self has a path from user input to durable changes in how it interprets future input — with no human in the loop.
+**Severity:** `critical`.
+
+### F19 — Archival is reversible only by the operator, but practically equivalent to delete for prompt surface
+
+**Where:** `specs/self-nodes.md` AC-24.11; `specs/self-todos.md` AC-26.15.
+**What goes wrong:** The self cannot delete, but it can set `strength = 0` on passions/preferences or `status = archived` on todos. Archived and zero-strength nodes do not appear in the minimal block, do not contribute to `active_now` (passions via strength=0 short-circuit; preferences likewise). From the prompt-surface-observable perspective, the self has a soft-delete capability. The operator can resurrect at the DB layer but has no tool-surface to do so.
+**Severity:** `medium`.
+
+### F20 — No rate limits on self-model writes per request or per day
+
+**Where:** `specs/self-as-conduit.md` AC-30.9, AC-30.14 (permits self-model writes during perception and observation); no cap.
+**What goes wrong:** A single perception turn can call `note_passion`, `note_hobby`, `note_interest`, `note_preference`, `note_skill`, `write_self_todo`, `write_contributor`, and `record_personality_claim` unbounded times. An adversarial perception LLM can flood every table in one turn.
+**Severity:** `high`.
+
+### F21 — Self-tools are trust-tier t0 and "not routable" by contract, not by enforcement
+
+**Where:** `specs/self-surface.md` AC-28.22, AC-28.23.
+**What goes wrong:** The spec states self-tools are unreachable from specialist agents. The sketch does not have runtime enforcement — tool registration is by dict lookup. A future specialist implementation that happens to import the self-surface registry (or an import error that crosses trust-tier boundaries) would expose self-tools to that specialist. The contract is a convention, not a firewall.
+**Severity:** `medium`.
+
+### F22 — `decline` does not mint REGRET and is not reviewed
+
+**Where:** `specs/self-as-conduit.md` AC-30.13.
+**What goes wrong:** When the self declines a request it writes an OPINION, not a REGRET, and nothing schedules a review of whether the decline was correct. The self can therefore accumulate a private pattern of declines without ever revisiting them. Over time this is a path to silent policy formation: the self is "getting selective" in ways the operator cannot see without reading OPINION rows directly.
+**Severity:** `medium`.
+
+### F23 — Self can author contributors against its own personality facets unboundedly
+
+**Where:** `specs/activation-graph.md` §25.1; `specs/personality.md` AC-23.21.
+**What goes wrong:** Narrative revision (AC-23.20) creates a `weight ≤ 0.4` contributor, but `write_contributor` directly (AC-25.17) accepts any `weight ∈ [-1.0, 1.0]` targeting a personality facet. The self can write a `weight = +1.0, origin = self` edge from any memory into any facet, bypassing the narrative-cap path entirely.
+**Severity:** `high`.
+
+---
