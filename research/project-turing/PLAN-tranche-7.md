@@ -141,3 +141,31 @@ Runs once 7.0.3 is live; scheduled jobs need to fire for the drift-window math t
 **Closes:** F17.
 **Ships:** `practice_skill(new_level > stored_level, ...)` requires a same-request OBSERVATION / ACCOMPLISHMENT memory with `context.skill_id = skill_id`. Enforced via a `skill_raise_supported_in_request()` predicate reading the request-scoped memory buffer (available once 7.3 lands; until then gated behind a test fixture). Monthly skill-inflation check runs in the tuner (spec 11); flags >10 raises with zero downgrades over 90d.
 **Tests:** `practice_skill(new_level=0.9)` without a supporting memory raises; with one succeeds.
+
+---
+
+## 7.3 — Self-as-Conduit runtime integration
+
+**Closes:** F39 (critical). Largest single slice; worth its own design-review checkpoint before landing.
+
+**Ships:**
+- `self_conduit.py` with `async handle(request, auth)` implementing spec 30's 8-step pipeline: Warden in → minimal block + retrieval contributors → perception LLM call (tool-registry-bound) → decision extraction → dispatch (existing agents below) → Warden out → observation LLM call → response.
+- Decision tools (`reply_directly`, `delegate`, `ask_clarifying`, `decline`) as schemas in the registry from 7.0.1.
+- Integration shim in `runtime/chat.py`: a config flag `CONDUIT_MODE = "self" | "stateless"` (default `"stateless"` during rollout) chooses between the existing pipeline and `self_conduit.handle`.
+- Per-request write budget (G2) and forensic tagging (G17) threaded through the perception context.
+- Per-SELF_ID perception advisory lock so concurrent requests serialize (spec 30 §30.6 note).
+
+**Invariants (subset — full list in spec 30):**
+- Exactly one decision tool call per perception; `AmbiguousRouting` on zero or multiple, one retry, then 500.
+- Routing decision memory minted **before** dispatch.
+- Observation runs even on dispatch failure or client cancellation.
+- Retrieval contributors expire before N+1.
+- When `CONDUIT_MODE = "stateless"`, existing chat.py behavior is byte-identical (regression test).
+
+**Tests:** full async integration suite — happy path for each decision tool, timeouts, cancellation mid-dispatch, bootstrap-not-complete → 503, Warden ingress block, specialist exception → observation still runs.
+
+**New finding surfaced while planning:**
+
+### F40 — Concurrency model for perception is undefined under failure
+
+The spec serializes perception per `SELF_ID` via an advisory lock (§30.6) but does not specify the lock's failure mode. If the perception LLM hangs past `PERCEPTION_TIMEOUT_SEC = 30` and the advisory lock is held by that task, does a second request block indefinitely on the lock? Or does the lock release on timeout while the first request's retry is still running? Needs one sentence in spec 30 before 7.3 lands. Severity `medium`.
