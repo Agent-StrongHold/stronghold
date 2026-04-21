@@ -384,3 +384,45 @@ Every self-model write persists `context.request_hash` and `context.perception_t
 The `SELF_TOOL_REGISTRY` is exposed only via a `SelfRuntime` object instantiated at program start, not via direct module import. Any `import` of `turing.self_surface.SELF_TOOL_REGISTRY` from code outside `turing.self_*` raises a `ForbiddenImport` via an `importlib` meta path finder. Specialist agents have a separate `SpecialistRuntime` without self-tools wired. Test: a specialist-layer test that tries to `from turing.self_surface import SELF_TOOL_REGISTRY` fails at import.
 
 ---
+
+## H. Summary and next steps
+
+### Severity heatmap
+
+| Group | Critical | High | Medium | Low |
+|---|---|---|---|---|
+| A. Injection & prompt pollution | F1, F2 | F3, F4 | F5, F6 | F7 |
+| B. Drift dynamics | — | F8, F9, F10, F11, F12 | — | — |
+| C. Unbounded growth | — | — | F13, F15, F16, F17 | F14 |
+| D. Authority surface | F18 | F20, F23 | F19, F21, F22 | — |
+| E. Cross-self / identity | — | — | F24, F28 | F25, F26, F27 |
+| F. Implementation gaps | — | F30 | F29, F31, F33 | F32, F34 |
+
+**Totals:** 3 critical, 10 high, 13 medium, 8 low.
+
+### Recommended ordering
+
+The critical findings cluster around two roots: *self-authored content entering prompts unscanned* (F1–F3) and *the self programs its own ontology without review* (F18). If only three guardrails land, land **G1** (Warden on self-writes), **G12** (operator review gate on personality/passion contributors), and **G3** (facet drift budget). Those close or mitigate all three critical items and four of the ten high-severity items.
+
+Recommended tranche order:
+
+- **Tranche 7a — boundary hardening.** G1, G2, G5, G17. Closes the injection surface. Small footprint; does not change the self's designed authority, only adds scans and budgets.
+- **Tranche 7b — drift bounds.** G3, G4, G6, G10. Makes drift auditable and bounded. Adds one scheduled job and a handful of counters.
+- **Tranche 7c — operator oversight.** G12, G13, G14, G15, G16, G17, G18. The operator-review gate (G12) is the largest design decision here; it changes the self from "writes freely" to "proposes, operator ratifies" for the load-bearing facet/passion contributors. Worth its own design discussion before implementation.
+- **Tranche 7d — growth and operational.** G7, G8, G9, G11. Implements the retrieval GC, caps, dedup flagging, revision compaction.
+
+### Out-of-scope follow-ups
+
+Not in this audit, flagged for later:
+
+- **Post-hoc memory poisoning via tool results.** The Warden scans tool results at AC-30 step 6, but tool results that pass Warden still influence the observation loop's mood and self-model writes. A Warden false-negative propagates silently into the self.
+- **The self's relationship to Sentinel.** The self outputs either direct replies or specialist dispatches. Sentinel is Stronghold's output gate (ARCHITECTURE §5). The current spec does not describe how Sentinel interacts with self outputs — specifically, whether a Sentinel block on a `reply_directly` output mints a REGRET.
+- **Multi-self reconciliation semantics.** DESIGN.md §6.4 flags this. If anything ever splits or forks the self, the identity question is unresolved. Audit does not address it.
+- **"The three laws."** Out of scope, as requested.
+
+### What this audit is not
+
+- Not a fix PR. It's findings + proposed invariants. Each guardrail needs a dedicated spec + implementation PR.
+- Not a re-derivation of the design. Where a finding disagrees with a spec, it proposes the tightening, not a replacement.
+- Not a security review in the compliance sense. No threat model enumeration, no attacker capability matrix. It's a first-pass "what could go wrong by Tuesday" review.
+
