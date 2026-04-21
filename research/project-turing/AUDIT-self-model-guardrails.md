@@ -246,3 +246,47 @@ A user who can seed a week's worth of these can shape the fresh HEXACO answer th
 **Severity:** `medium`. Research-branch only; but carries the "don't port this" load-bearing warning.
 
 ---
+
+## F. Implementation gaps against spec
+
+These are places where the merged sketch either diverges from the spec or leaves a load-bearing piece stubbed. They are not bugs in the released design; they are holes a second pass must close before any of Tranche 6 runs in integration.
+
+### F29 — `active_now` caching is specced but not implemented
+
+**Where:** `specs/activation-graph.md` AC-25.10; `self_activation.py` `active_now`.
+**What goes wrong:** Spec says `active_now` results cache for 30 seconds, invalidated on contributor writes. The sketch recomputes every call. In `recall_self()` we call `active_now` once per node across every table — at 24 facets + N passions + M hobbies etc., one `recall_self()` is O(nodes × contributors) of table scans.
+**Severity:** `low` (correctness unaffected); `medium` (if `recall_self` is called during perception at scale).
+
+### F30 — `source_kind = "memory"` source state is stubbed to 0.5
+
+**Where:** `self_activation.py` `source_state`; spec AC-25.7.
+**What goes wrong:** Spec says `memory` contributors resolve to `clamp(memory.weight, 0, 1)`. The sketch returns `0.5` unconditionally because the episodic memory repo is not wired in. Every memory-backed contributor therefore has the same effective source state, regardless of the memory's tier, weight, or reinforcement count.
+**Why it matters:** This breaks the design assumption that REGRET (weight ≥ 0.6) memories should contribute more heavily than OBSERVATION (weight < 0.3). A retest-era REGRET and a throwaway OBSERVATION currently push activation by the same amount.
+**Severity:** `high`. Directly invalidates the "regrets are structurally unforgettable" property when it crosses into the self-model layer.
+
+### F31 — Completion-reinforcement edge requires the caller to supply a memory id
+
+**Where:** `self_todos.py` `complete_self_todo`, parameter `affirmation_memory_id`; spec AC-26.12, AC-26.14.
+**What goes wrong:** The spec says completing a todo mints an AFFIRMATION memory and writes a +0.3 contributor from the motivator to that memory. The sketch takes `affirmation_memory_id` as an optional caller-supplied string and only writes the contributor if the caller provides one. The merged tests exercise both paths but production plumbing (perception → observation → `complete_self_todo`) does not actually mint the AFFIRMATION — it would need wiring from the write-paths layer.
+**Severity:** `medium`.
+
+### F32 — `ensure_items_loaded` treats the 200-item bank as per-self, not shared
+
+**Where:** `specs/self-bootstrap.md` AC-29.7 ("skip load, bank is shared across selves"); `self_bootstrap.py` `ensure_items_loaded`; `schema.sql` `self_personality_items UNIQUE (self_id, item_number)`.
+**What goes wrong:** The schema and the sketch tag each item with a `self_id` and enforce uniqueness per self. The spec intended a deployment-wide shared bank. Two selves bootstrapping in sequence each get their own 200 rows — wasted storage and a subtle divergence from the spec's "static after seed" claim.
+**Severity:** `low`.
+
+### F33 — No `has_own_id` / `self_id_exists` validation on self-tool entry
+
+**Where:** Every `self_*` module's tool functions accept `self_id` as a parameter.
+**What goes wrong:** A caller that passes a `self_id` that does not yet have 24 facets, items, and mood populated can still call `note_passion` or `write_self_todo` — these do not check `_bootstrap_complete`. `recall_self` and `render_minimal_block` do, but write-tools do not.
+**Why it matters:** A half-bootstrapped self can accrete passions and todos. Resume-style bootstraps after a crash between facet insert and answer generation would see writes to a self that has only the facets but not the answers. Tests cover resume behavior but not "tools before finalize."
+**Severity:** `medium`.
+
+### F34 — Clock regression not guarded
+
+**Where:** All tables accept `updated_at` and `created_at` as whatever the caller supplies.
+**What goes wrong:** A caller (or a test clock, or a cloned container with skew) can insert rows with past timestamps that land between existing rows. The recency-based sampler (AC-23.12) and last-asked lookup assume timestamps are monotonic. A clock regression produces non-monotonic `asked_at` which the weighted-sample math treats as legitimate.
+**Severity:** `low`. Operational.
+
+---
