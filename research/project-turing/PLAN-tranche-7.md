@@ -81,3 +81,33 @@ Five slices, each a small PR. Ordered by dependency.
 - `active_now` 30s cache keyed by `(node_id, ctx.hash)`; invalidate on contributor writes/retractions targeting that node or any of its sources (AC-25.10).
 - `acting_self_id` parameter on `SelfRepo.update_*` / `insert_contributor` / `insert_todo_revision`; mismatch raises `CrossSelfAccess`. Tool-surface layer passes `self_id` through.
 **Tests:** a pre-finalize `note_passion` raises; cache hit on repeated `active_now`; cross-self repo write raises.
+
+---
+
+## 7.1 — Boundary hardening
+
+Four guardrails on top of the live tool surface from 7.0.1/7.0.2.
+
+### 7.1.1 — G1: Warden-scan every self-authored write
+
+**Closes:** F1, F3, F7.
+**Ships:** a `_warden_gate_self_write(text, intent)` helper called by every self-tool before it touches the repo. Uses the existing Warden at the `tool_result` trust posture. Rejection raises `SelfWriteBlocked(verdict)`; the block attempt mirrors as an OBSERVATION with `intent_at_time = "warden blocked self write"`.
+**Invariant:** no row in any `self_*` table has `text`/`content`/`rationale` that would not pass Warden at insertion time. Enforced by the helper, tested by fuzz-injecting known-blocked payloads into `note_passion`, `write_self_todo`, `record_personality_claim`, `write_contributor`.
+
+### 7.1.2 — G2: Per-request self-write budget
+
+**Closes:** F20.
+**Ships:** `RequestWriteBudget` context object threaded through the perception/observation loops (once 7.3 lands; until then, exposed as a test fixture). Counters reset per request. Caps: 3 new nodes, 5 contributors, 2 todo writes, 3 personality claims.
+**Invariant:** 4th call of the same kind within a request raises `SelfWriteBudgetExceeded`. Budget state never leaks across requests.
+
+### 7.1.3 — G5: Retrieval-contributor cap and weight-sum cap
+
+**Closes:** F4.
+**Ships:** `materialize_retrieval_contributors(self_id, query, top_k=8)` helper called at the perception step. Sorts retrieval hits by similarity, caps count at 8, caps weight-sum at 1.0 per target (drops lower-similarity entries once the sum would exceed).
+**Invariant:** for every target with retrieval contributors in one request, `|origin=retrieval| ≤ 8` and `Σ |weight| ≤ 1.0`. Tested with a 20-match fixture.
+
+### 7.1.4 — G17: Forensic tagging on self-writes
+
+**Closes:** F1 partial, F18 partial.
+**Ships:** every self-tool accepts `request_hash` and `perception_tool_call_id` (defaulted for out-of-pipeline callers to `"out_of_band"`). The memory-mirroring bridge (7.0.2) writes both into `context`. Schema migration adds an index on `context ->> 'request_hash'` for audit queries.
+**Invariant:** every self-written row's provenance is reconstructible from its memory mirror.
