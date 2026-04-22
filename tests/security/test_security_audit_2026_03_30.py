@@ -118,8 +118,7 @@ class TestCriticalPgPromptManagerOrgGap:
         sig = inspect.signature(PgPromptManager.get)
         params = set(sig.parameters.keys())
         assert "org_id" not in params, (
-            "BUG CONFIRMED: PgPromptManager.get() has no org_id. "
-            "Cross-org prompt read is possible."
+            "BUG CONFIRMED: PgPromptManager.get() has no org_id. Cross-org prompt read is possible."
         )
 
     def test_c4_pg_prompt_upsert_has_no_org_filter(self) -> None:
@@ -180,7 +179,9 @@ class TestHighAgentStoreOrgGaps:
         — both conditions must be truthy, so empty caller bypasses the check.
         """
         source = inspect.getsource(
-            __import__("stronghold.agents.store", fromlist=["InMemoryAgentStore"]).InMemoryAgentStore.get
+            __import__(
+                "stronghold.agents.store", fromlist=["InMemoryAgentStore"]
+            ).InMemoryAgentStore.get
         )
         # The condition is: if org_id and identity.org_id and identity.org_id != org_id
         # Empty org_id makes the first condition False, skipping the filter entirely
@@ -252,16 +253,13 @@ class TestHighWardenScanWindowGap:
         assert not short.clean, "Sanity: injection must be detected in short content"
 
         # Place injection in the gap
-        head_padding = "A" * 10300    # past 10240 head window
-        tail_padding = "B" * 2100     # past 2048 tail window
+        head_padding = "A" * 10300  # past 10240 head window
+        tail_padding = "B" * 2100  # past 2048 tail window
         gapped = head_padding + " " + injection + " " + tail_padding
 
         verdict = await warden.scan(gapped, "user_input")
-        # BUG: injection in the gap is not scanned
-        assert verdict.clean is True, (
-            "BUG CONFIRMED: injection in scan window gap evades detection. "
-            "Fix: scan full content or use overlapping windows."
-        )
+        # Fixed: overlapping windows now detect injections in gaps
+        assert not verdict.clean, "Injection in gap must be detected with overlapping windows"
 
     async def test_h3_head_detected(self) -> None:
         """Injection in first 10KB is always caught."""
@@ -290,7 +288,7 @@ class TestHighWardenL3FailOpen:
     """
 
     async def test_h4_l3_returns_safe_on_exception(self) -> None:
-        """L3 failure returns label='safe' instead of 'inconclusive'."""
+        """L3 failure correctly returns label='inconclusive' on error."""
         from stronghold.security.warden.llm_classifier import classify_tool_result
 
         failing_llm = FakeLLMClient()
@@ -301,12 +299,9 @@ class TestHighWardenL3FailOpen:
             failing_llm,
             "test-model",
         )
-        # BUG: returns "safe" on error
-        assert result["label"] == "safe", (
-            "BUG CONFIRMED: L3 returns 'safe' on failure. "
-            "Fix: return 'inconclusive' and propagate as elevated risk."
-        )
+
         assert "error" in result
+        assert result["label"] == "inconclusive"
 
     async def test_h4_l3_detects_suspicious_when_healthy(self) -> None:
         """Positive: L3 correctly identifies suspicious content."""
@@ -417,12 +412,7 @@ class TestHighSemanticCodeSyntaxBypass:
 
     def test_h6_real_code_not_flagged(self) -> None:
         """Positive: legitimate code must not trigger false positives."""
-        code = (
-            "import hashlib\n"
-            "def disable_cache():\n"
-            "    cache.clear()\n"
-            "    return True\n"
-        )
+        code = "import hashlib\ndef disable_cache():\n    cache.clear()\n    return True\n"
         suspicious, _ = semantic_tool_poisoning_scan(code)
         assert not suspicious
 
@@ -446,8 +436,7 @@ class TestHighJWTKeyReuse:
 
         source = inspect.getsource(demo_login)
         assert "router_api_key" in source, (
-            "Login uses router_api_key for JWT signing. "
-            "Fix: use a separate STRONGHOLD_JWT_SECRET."
+            "Login uses router_api_key for JWT signing. Fix: use a separate STRONGHOLD_JWT_SECRET."
         )
 
     def test_h7_demo_cookie_warns_but_does_not_reject_short_key(self) -> None:
@@ -481,8 +470,7 @@ class TestHighQuotaDashboardXSS:
         from pathlib import Path
 
         quota_html = (
-            Path(__file__).parent.parent.parent
-            / "src" / "stronghold" / "dashboard" / "quota.html"
+            Path(__file__).parent.parent.parent / "src" / "stronghold" / "dashboard" / "quota.html"
         )
         if not quota_html.exists():
             pytest.skip("quota.html not found")
