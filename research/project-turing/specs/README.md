@@ -75,10 +75,41 @@ The self-model — what the Turing Conduit knows about itself between requests �
 | 29 | [`self-bootstrap.md`](./self-bootstrap.md) | `stronghold bootstrap-self` CLI. Random HEXACO draw → 200 Likert LLM answers with justifications → 24 facets + 1 mood + empty everything else. Idempotent per `self_id`; resumable. | 22, 23, 24, 27, 8 |
 | 30 | [`self-as-conduit.md`](./self-as-conduit.md) | First-person routing pipeline: Warden → minimal block + retrieval contributors → perception (LLM + possible `recall_self`) → decision (`reply_directly` / `delegate` / `ask_clarifying` / `decline`) → dispatch → observation (self-model updates, mood nudges). Replaces the stateless Conduit for the Turing branch. | 22, 23, 24, 25, 26, 27, 28, 29, 9, 16, 17 |
 
+### Autonoetic completion (Tranche 7 — Phase 2)
+
+| # | Spec | Scope | Depends on |
+|---|-------|--------|------------|
+| 31 | [`source-monitoring.md`](./source-monitoring.md) | First-person validation at write boundary, perspective reconstruction, stance owner enforcement. Closes DESIGN §4.1 + §4.4. | 1, 22 |
+| 32 | [`memory-source-state.md`](./memory-source-state.md) | Wire episodic/durable memory weights into activation graph source_state. Closes F30. | 25 |
+| 33 | [`activation-cache.md`](./activation-cache.md) | 30-second TTL cache on active_now(), invalidated on contributor writes. Closes F29. | 25 |
+| 34 | [`contradiction-regret.md`](./contradiction-regret.md) | Mint OPINION on every contradicted stance, REGRET when thresholds met. Closes DESIGN §4.5. | 4 |
+
+### Proactive expansion (Tranche 8 — Phase 3)
+
+| # | Spec | Scope | Depends on |
+|---|-------|--------|------------|
+| 35 | [`newsletter-reader.md`](./newsletter-reader.md) | Read-only scanner for HuggingFace-deposited newsletter summaries in Obsidian vault. No email access. | 18 |
+| 36 | [`obsidian-post.md`](./obsidian-post.md) | Markdown → WordPress poster for public persona statements at agentstronghold.com. | 18 |
+| 37 | [`stronghold-litellm.md`](./stronghold-litellm.md) | Dynamic model discovery from Stronghold LiteLLM proxy, merge with static pools.yaml. | 19 |
+| 38 | [`tool-wiring.md`](./tool-wiring.md) | Wire all scaffolded tools into runtime: newsletter scanner, WordPress, search, stronghold discovery. | 18, 35, 36, 37 |
+
+### Guardrails (Tranche 9 — Phase 1)
+
+| # | Spec | Scope | Depends on |
+|---|-------|--------|------------|
+| 39 | [`guardrails.md`](./guardrails.md) | 18 invariants (G1–G18): boundary hardening, drift bounds, operator oversight, growth caps. Closes all 34 audit findings F1–F34. | 25, 27, 28, 22, 23 |
+
+### Conversations & Bootstrap (Tranche 10 — Phase 4)
+
+| # | Spec | Scope | Depends on |
+|---|-------|--------|------------|
+| 54 | [`conversation-threads.md`](./conversation-threads.md) | Conversation tracking, per-user identity, daily thread quotas (1 agent-created thread per user per day, midnight US Central). `conversations`, `conversation_messages`, `conversation_quotas` tables. | 17, 9 |
+| 55 | [`proactive-outbound.md`](./proactive-outbound.md) | Agent-initiated conversations and messages via OpenWebUI API. Outbound dispatch at P20-P30. OpenWebUI client, retry logic, quota-aware delivery. | 54, 17, 9 |
+| 56 | [`interactive-bootstrap.md`](./interactive-bootstrap.md) | Multi-phase bootstrap conversation (20 user questions, 20 agent guidance, 5 self-description, name selection). Per-facet multipliers on-read (24 dials). Three laws of robotics in system prompt. HEXACO population norms + 6 archetypes. | 54, 55, 23, 29 |
+
 ## Deferred
 
 - **Additional detectors** — `learning_extraction`, `affirmation_candidacy`, `prospection`. Pattern is established by `detectors/contradiction.md`; individual specs will land alongside implementations.
-- **Self naming** — the self starts unnamed; operator-settable or self-chosen via reflection. Tool and policy not yet specified.
 - **Mood affects decisions** — Phase-2 coupling of mood to routing / model choice / Warden thresholds. Specified as deferred in [`mood.md`](./mood.md) Q27.4.
 
 ## Non-goals (all specs)
