@@ -431,13 +431,14 @@ class TestHighJWTKeyReuse:
     """
 
     def test_h7_login_uses_router_api_key_for_jwt(self) -> None:
-        """The demo login route signs JWTs with config.router_api_key."""
+        """The demo login route must use a dedicated jwt_secret, not router_api_key."""
         from stronghold.api.routes.auth import demo_login
 
         source = inspect.getsource(demo_login)
-        assert "router_api_key" in source, (
-            "Login uses router_api_key for JWT signing. Fix: use a separate STRONGHOLD_JWT_SECRET."
+        assert "jwt_secret" in source, (
+            "Login must use jwt_secret for JWT signing, not router_api_key."
         )
+        assert "router_api_key" not in source, "Login must NOT use router_api_key for JWT signing."
 
     def test_h7_demo_cookie_warns_but_does_not_reject_short_key(self) -> None:
         """DemoCookieAuthProvider only warns on short keys, does not reject.

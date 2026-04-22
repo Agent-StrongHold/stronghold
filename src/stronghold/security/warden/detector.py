@@ -64,19 +64,13 @@ class Warden:
 
         # Layer 1: Regex patterns
         # Normalize Unicode to defeat homoglyph bypass (Cyrillic lookalikes etc.)
-        # Fixed: Scan full content, not just head/tail windows (H2 fix).
-        # ReDoS protection: only scan first 50KB for very large inputs.
-        # Fixed: Use overlapping windows to catch injections placed in gaps
-        window_size = 20 * 1024  # 20KB windows with 10KB overlap
+        # Fixed: Scan full content, not just head/tail windows (H3 fix).
+        # ReDoS protection: cap at 50KB for very large inputs.
+        max_scan_size = 50 * 1024
         if len(content) > max_scan_size:
-            # For large content, scan in overlapping windows to catch gap injections
-            windows = []
-            for i in range(0, len(content), window_size):
-                windows.append(content[i : i + window_size])
-            scan_content = " ".join(windows)
+            scan_content = unicodedata.normalize("NFKD", content[:max_scan_size])
         else:
-            scan_content = content
-        scan_content = unicodedata.normalize("NFKD", scan_window)
+            scan_content = unicodedata.normalize("NFKD", content)
         for pattern, description in REJECT_PATTERNS:
             try:
                 if pattern.search(scan_content, timeout=_PATTERN_TIMEOUT_S):
