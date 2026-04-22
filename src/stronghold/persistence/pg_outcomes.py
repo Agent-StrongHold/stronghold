@@ -111,7 +111,7 @@ class PgOutcomeStore:
         if not org_id:
             return []
 
-        select_cols = f"""SELECT {group_by} AS grp,  # noqa: S608  # nosec B608
+        select_cols = f"""SELECT {group_by} AS grp,
                        COALESCE(SUM(input_tokens), 0) AS input_tokens,
                        COALESCE(SUM(output_tokens), 0) AS output_tokens,
                        COALESCE(SUM(input_tokens + output_tokens), 0) AS total_tokens,
@@ -119,7 +119,7 @@ class PgOutcomeStore:
                        COUNT(*) AS request_count,
                        SUM(CASE WHEN success THEN 1 ELSE 0 END) AS success_count,
                        ROUND(AVG(response_time_ms)::numeric, 1) AS avg_response_ms
-                   FROM outcomes"""
+                   FROM outcomes"""  # noqa: S608  # nosec B608
 
         async with self._pool.acquire() as conn:
             if days > 0:
@@ -170,7 +170,7 @@ class PgOutcomeStore:
         cutoff = datetime.now(UTC) - timedelta(days=days)
 
         if has_group:
-            query = f"""  # noqa: S608  # nosec B608
+            query = f"""
                 SELECT DATE(created_at AT TIME ZONE 'UTC') AS day,
                        {group_by} AS grp,
                        COALESCE(SUM(input_tokens), 0) AS input_tokens,
@@ -181,7 +181,7 @@ class PgOutcomeStore:
                  FROM outcomes
                  WHERE org_id = $1 AND created_at >= $2
                  GROUP BY day, {group_by}
-                 ORDER BY day"""
+                 ORDER BY day"""  # noqa: S608  # nosec B608
         else:
             query = """
                 SELECT DATE(created_at AT TIME ZONE 'UTC') AS day,
