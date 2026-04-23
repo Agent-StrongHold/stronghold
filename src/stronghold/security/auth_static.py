@@ -14,7 +14,7 @@ from stronghold.types.auth import SYSTEM_AUTH, AuthContext, IdentityKind
 class StaticKeyAuthProvider:
     """Authenticates via static API key. Extracts OpenWebUI user headers."""
 
-    def __init__(self, api_key: str, read_only: bool = True) -> None:
+    def __init__(self, api_key: str, read_only: bool = False) -> None:
         self._api_key = api_key
         self._read_only = read_only
 
@@ -42,24 +42,26 @@ class StaticKeyAuthProvider:
             msg = "Invalid API key"
             raise ValueError(msg)
 
+        # If read_only mode, return read-only user context (not SYSTEM_AUTH)
+        if self._read_only:
+            roles = frozenset({"user"})
+        else:
+            roles = frozenset({"admin", "user"})
+
         # Extract OpenWebUI user context if headers present
         if headers:
             owui_ctx = _extract_openwebui_context(headers)
             if owui_ctx:
                 return owui_ctx
 
-        # Return read-only system context if this is a read-only API key
-        if self._read_only:
-            return AuthContext(
-                user_id="system",
-                username="system",
-                org_id="__system__",
-                roles=frozenset({"user"}),
-                kind=IdentityKind.SYSTEM,
-                auth_method="api_key",
-            )
-
-        return SYSTEM_AUTH
+        return AuthContext(
+            user_id=self._api_key,
+            username=self._api_key,
+            roles=roles,
+            org_id="static",
+            kind=IdentityKind.STATIC,
+            auth_method="static_key",
+        )
 
 
 def _extract_openwebui_context(headers: dict[str, str]) -> AuthContext | None:
