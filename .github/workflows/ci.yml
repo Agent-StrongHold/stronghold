@@ -263,7 +263,7 @@ jobs:
           READY=false
           for i in $(seq 1 30); do
             if pg_isready -h localhost -p 5433 -U stronghold 2>/dev/null; then
-              echo "Postgres ready after ${i}s"
+              echo "Postgres accepting connections after ${i}s"
               READY=true
               break
             fi
@@ -274,8 +274,18 @@ jobs:
             docker logs ci-postgres 2>&1 | tail -20
             exit 1
           fi
+          sleep 2
+          for i in $(seq 1 10); do
+            if psql "postgresql://stronghold:stronghold@localhost:5433/stronghold" -c "SELECT 1" >/dev/null 2>&1; then
+              echo "Postgres ready for queries after ${i}s"
+              break
+            fi
+            echo "Waiting for Postgres to accept queries... attempt ${i}"
+            sleep 1
+          done
 
       - name: Start CI postgres
+        if: github.event_name == 'pull_request' && !startsWith(github.base_ref, 'feature/')
         run: |
           docker rm -f ci-postgres 2>/dev/null || true
           docker run -d --name ci-postgres \
@@ -289,7 +299,7 @@ jobs:
           READY=false
           for i in $(seq 1 30); do
             if pg_isready -h localhost -p 5433 -U stronghold 2>/dev/null; then
-              echo "Postgres ready after ${i}s"
+              echo "Postgres accepting connections after ${i}s"
               READY=true
               break
             fi
@@ -300,6 +310,15 @@ jobs:
             docker logs ci-postgres 2>&1 | tail -20
             exit 1
           fi
+          sleep 2
+          for i in $(seq 1 10); do
+            if psql "postgresql://stronghold:stronghold@localhost:5433/stronghold" -c "SELECT 1" >/dev/null 2>&1; then
+              echo "Postgres ready for queries after ${i}s"
+              break
+            fi
+            echo "Waiting for Postgres to accept queries... attempt ${i}"
+            sleep 1
+          done
 
       - name: Run all migrations
         env:
