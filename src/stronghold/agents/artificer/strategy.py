@@ -232,9 +232,10 @@ class ArtificerStrategy:
                 # Result truncation: cap tool results to prevent context window exhaustion
                 result_str = tool_result if isinstance(tool_result, str) else str(tool_result)
                 if len(result_str) > _MAX_RESULT_BYTES:
+                    omitted = len(str(tool_result)) - _MAX_RESULT_BYTES
                     result_str = (
                         result_str[:_MAX_RESULT_BYTES]
-                        + f"\n[... truncated, {len(str(tool_result)) - _MAX_RESULT_BYTES} bytes omitted]"
+                        + f"\n[... truncated, {omitted} bytes omitted]"
                     )
 
                 # Sentinel post_call: Warden scan + PII filter
