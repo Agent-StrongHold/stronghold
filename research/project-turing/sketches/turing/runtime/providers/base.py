@@ -45,11 +45,11 @@ class Provider(Protocol):
     name: str
 
     def complete(self, prompt: str, *, max_tokens: int = 512) -> str:
-        ...
+        raise NotImplementedError
 
     def quota_window(self) -> FreeTierWindow | None:
         """Current free-tier window; None if this provider has no free tier."""
-        ...
+        raise NotImplementedError
 
 
 class EmbeddingProvider(Protocol):
@@ -59,7 +59,7 @@ class EmbeddingProvider(Protocol):
 
     def embed(self, text: str) -> list[float]:
         """Return a vector embedding for `text`."""
-        ...
+        raise NotImplementedError
 
     def quota_window(self) -> FreeTierWindow | None:
-        ...
+        raise NotImplementedError
