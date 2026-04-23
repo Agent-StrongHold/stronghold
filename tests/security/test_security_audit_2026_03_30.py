@@ -541,7 +541,6 @@ class TestHighArtificerMissingSecurity:
         tool_result = tool_result if tool_result is not None else "small result"
 
         llm = FakeLLMClient()
-        # Round 1: plan step (no tools). Round 2: one tool call. Round 3: done.
         llm.set_responses(
             {
                 "id": "1",
@@ -582,6 +581,8 @@ class TestHighArtificerMissingSecurity:
             executor_log.append((name, args))
             return tool_result
 
+        auth = {"org_id": "test-org", "user": "tester", "roles": ["admin"]}
+
         strategy = ArtificerStrategy(max_phases=1)
         await strategy.reason(
             [{"role": "user", "content": "do thing"}],
@@ -591,6 +592,7 @@ class TestHighArtificerMissingSecurity:
             tool_executor=tool_executor,
             sentinel=sentinel,
             warden=warden,
+            auth=auth,
         )
         return executor_log
 
@@ -660,15 +662,6 @@ class TestHighArtificerMissingSecurity:
         huge_args = {"payload": "A" * (50 * 1024)}
         log = await self._run_artificer_once(tool_args=huge_args)
         assert not log, "tool_executor must NOT be called for oversized args (>32KB)"
-        name, received = log[0]
-        assert name == "run_shell"
-        # ``received.get(...)`` on a non-Mapping raises AttributeError —
-        # so an explicit ``isinstance`` check is redundant with the
-        # subscript-ish access below.
-        assert len(received.get("payload", "")) == 50 * 1024, (
-            "BUG FIXED: oversize tool args were rejected or truncated — "
-            "flip this regression to a positive arg-size-limit test."
-        )
 
     async def test_h5_no_result_truncation(self) -> None:
         """Behavioral: 16KB tool-result truncation in Artificer.
