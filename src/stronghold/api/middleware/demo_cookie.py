@@ -55,7 +55,7 @@ class DemoCookieMiddleware:
             return
 
         cookie_name = container.config.auth.session_cookie_name
-        signing_key = container.config.jwt_secret
+        signing_key = container.config.router_api_key
 
         sc: SimpleCookie = SimpleCookie()
         try:

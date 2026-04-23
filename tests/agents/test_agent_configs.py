@@ -27,26 +27,26 @@ class TestQuartermasterConfig:
         manifest_path = _AGENTS_DIR / "quartermaster" / "agent.yaml"
         with manifest_path.open() as f:
             manifest = yaml.safe_load(f)
-        assert manifest["priority_tier"] == "P0"
+        assert manifest["priority_tier"] == "P4"
 
     def test_has_soul(self) -> None:
         soul_path = _AGENTS_DIR / "quartermaster" / "SOUL.md"
         assert soul_path.exists()
         content = soul_path.read_text()
         assert "Quartermaster" in content
+        assert "emit_spec" in content
 
-    def test_strategy_is_react(self) -> None:
+    def test_strategy_is_direct(self) -> None:
         manifest_path = _AGENTS_DIR / "quartermaster" / "agent.yaml"
         with manifest_path.open() as f:
             manifest = yaml.safe_load(f)
-        assert manifest["strategy"]["type"] == "react"
+        assert manifest["reasoning"]["strategy"] == "direct"
 
-    def test_has_budget_allocation(self) -> None:
+    def test_trust_tier_t1(self) -> None:
         manifest_path = _AGENTS_DIR / "quartermaster" / "agent.yaml"
         with manifest_path.open() as f:
             manifest = yaml.safe_load(f)
-        assert "budget_allocation" in manifest
-        assert manifest["budget_allocation"]["daily_token_limit"] == 100000
+        assert manifest["trust_tier"] == "t1"
 
 
 class TestArchieConfig:

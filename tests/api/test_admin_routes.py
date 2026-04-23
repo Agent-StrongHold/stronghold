@@ -31,7 +31,7 @@ from stronghold.tools.executor import ToolDispatcher
 from stronghold.tools.registry import InMemoryToolRegistry
 from stronghold.tracing.noop import NoopTracingBackend
 from stronghold.types.agent import AgentIdentity
-from stronghold.types.auth import AuthContext, IdentityKind, PermissionTable
+from stronghold.types.auth import AuthContext, PermissionTable
 from stronghold.types.config import StrongholdConfig, TaskTypeConfig
 from stronghold.types.memory import Learning
 from tests.fakes import FakeAuthProvider, FakeLLMClient
@@ -111,15 +111,7 @@ def admin_app() -> FastAPI:
 
         return Container(
             config=config,
-            auth_provider=FakeAuthProvider(
-                auth_context=AuthContext(
-                    user_id="system",
-                    username="admin",
-                    roles=frozenset({"admin", "user"}),
-                    org_id="__system__",
-                    kind=IdentityKind.SYSTEM,
-                )
-            ),
+            auth_provider=StaticKeyAuthProvider(api_key="sk-test", read_only=False),
             permission_table=PermissionTable.from_config({"admin": ["*"]}),
             router=RouterEngine(InMemoryQuotaTracker()),
             classifier=ClassifierEngine(),
