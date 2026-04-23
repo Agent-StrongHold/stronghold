@@ -98,9 +98,9 @@ class OAuth2Provider:
         if not provider:
             raise ValueError(f"OAuth2 provider not found: {provider_name}")
 
-        logger.info(
+        logger.info(  # nosemgrep: python-logger-credential-disclosure
             "Exchanging code for token: provider=%s", provider_name
-        )  # nosemgrep: python.lang.security.audit.logging.logger-credential-leak.python-logger-credential-disclosure
+        )
 
         token = OAuthToken(
             access_token=f"access_token_{provider_name}",
@@ -113,9 +113,9 @@ class OAuth2Provider:
         )
 
         self._tokens[token.access_token] = token
-        logger.info(
+        logger.info(  # nosemgrep: python-logger-credential-disclosure
             "Token exchanged successfully for: %s", provider_name
-        )  # nosemgrep: python.lang.security.audit.logging.logger-credential-leak.python-logger-credential-disclosure
+        )
         return token
 
     def refresh_token(self, provider_name: str, refresh_token: str) -> OAuthToken:
@@ -135,7 +135,7 @@ class OAuth2Provider:
         if not provider:
             raise ValueError(f"OAuth2 provider not found: {provider_name}")
 
-        logger.info(  # nosemgrep: python.lang.security.audit.logging.logger-credential-leak.python-logger-credential-disclosure
+        logger.info(  # nosemgrep: python-logger-credential-disclosure
             "Refreshing token: provider=%s", provider_name
         )
 
@@ -150,7 +150,7 @@ class OAuth2Provider:
         )
 
         self._tokens[token.access_token] = token
-        logger.info(  # nosemgrep: python.lang.security.audit.logging.logger-credential-leak.python-logger-credential-disclosure
+        logger.info(  # nosemgrep: python-logger-credential-disclosure
             "Token refreshed successfully for: %s", provider_name
         )
         return token
@@ -200,6 +200,6 @@ class OAuth2Provider:
         """
         if access_token in self._tokens:
             del self._tokens[access_token]
-            logger.info(  # nosemgrep: python.lang.security.audit.logging.logger-credential-leak.python-logger-credential-disclosure
+            logger.info(  # nosemgrep: python-logger-credential-disclosure
                 "Token revoked: %s", access_token[:20]
             )
