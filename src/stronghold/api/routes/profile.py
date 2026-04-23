@@ -97,7 +97,7 @@ async def get_profile(request: Request) -> JSONResponse:
             if entry["group"] == auth.user_id:
                 total_tokens = entry["total_tokens"]
                 break
-    except Exception:  # noqa: BLE001
+    except Exception:  # noqa: BLE001  # nosec B110 - usage lookup is best-effort; 0 points is the fallback
         pass
 
     points = total_tokens // TOKENS_PER_POINT
@@ -172,7 +172,8 @@ async def update_profile(request: Request) -> JSONResponse:
         raise HTTPException(status_code=400, detail="No valid fields to update")
 
     params.insert(0, auth.user_id)  # $1 = email
-    sql = f"UPDATE users SET {', '.join(updates)}, updated_at = NOW() WHERE email = $1"
+    # nosec B608 - column names in `updates` are whitelisted above
+    sql = f"UPDATE users SET {', '.join(updates)}, updated_at = NOW() WHERE email = $1"  # nosec B608
 
     async with pool.acquire() as conn:
         result = await conn.execute(sql, *params)

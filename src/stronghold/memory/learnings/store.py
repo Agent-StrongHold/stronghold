@@ -105,6 +105,23 @@ class InMemoryLearningStore:
             if learning.id in id_set:
                 learning.hit_count += 1
 
+    async def mark_outcome(
+        self, learning_ids: list[int], success: bool, *, org_id: str = ""
+    ) -> None:
+        """Increment success_after_use or failure_after_use per injected learning."""
+        if not learning_ids:
+            return
+        id_set = set(learning_ids)
+        for learning in self._learnings:
+            if learning.id not in id_set:
+                continue
+            if org_id and learning.org_id != org_id:
+                continue
+            if success:
+                learning.success_after_use += 1
+            else:
+                learning.failure_after_use += 1
+
     async def check_auto_promotions(
         self,
         threshold: int = 5,
@@ -140,6 +157,19 @@ class InMemoryLearningStore:
             if not org_id and lr.org_id:
                 continue
             results.append(lr)
+        return results
+
+    async def list_ineffective(self, min_uses: int) -> list[Learning]:
+        """Return learnings whose failure count strictly exceeds successes.
+
+        Only includes learnings with at least min_uses total outcomes.
+        Read-only helper — no demotion is performed here.
+        """
+        results: list[Learning] = []
+        for lr in self._learnings:
+            total = lr.success_after_use + lr.failure_after_use
+            if total >= min_uses and lr.failure_after_use > lr.success_after_use:
+                results.append(lr)
         return results
 
     async def list_all(self, org_id: str = "", limit: int = 200) -> list[Learning]:

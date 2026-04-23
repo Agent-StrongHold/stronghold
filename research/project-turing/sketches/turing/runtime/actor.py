@@ -15,11 +15,10 @@ from __future__ import annotations
 
 import logging
 from datetime import UTC, datetime
-from typing import Any
 
 from ..repo import Repo
 from ..types import EpisodicMemory, MemoryTier, SourceKind
-from .tools.base import ToolMode, ToolNotPermitted, ToolRegistry
+from .tools.base import ToolNotPermitted, ToolRegistry
 
 
 logger = logging.getLogger("turing.runtime.actor")

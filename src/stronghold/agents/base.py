@@ -250,30 +250,10 @@ class Agent:
                     messages = [*history, *messages]
 
         # 4. Build context (soul + learnings + episodic) — traced
-        # Query learning counts for tracing (what was available to inject)
-        injected_learning_count = 0
-        promoted_learning_count = 0
-        if self._learning_store and self.identity.memory_config.get("learnings"):
-            promoted = await self._learning_store.get_promoted(org_id=auth.org_id)
-            promoted_learning_count = len(promoted)
-            if user_text:
-                relevant = await self._learning_store.find_relevant(
-                    user_text,
-                    agent_id=self.identity.name,
-                    org_id=auth.org_id,
-                )
-                injected_learning_count = len(relevant)
-
         if trace:
             with trace.span("prompt.build") as ps:
-                ps.set_input(
-                    {
-                        "message_count": len(messages),
-                        "learnings_available": injected_learning_count,
-                        "promoted_learnings": promoted_learning_count,
-                    }
-                )
-                context_messages = await self._context_builder.build(
+                ps.set_input({"message_count": len(messages)})
+                context_messages, injected_learning_ids = await self._context_builder.build(
                     messages,
                     self.identity,
                     prompt_manager=self._prompt_manager,
@@ -285,12 +265,11 @@ class Agent:
                 ps.set_output(
                     {
                         "context_message_count": len(context_messages),
-                        "learnings_injected": injected_learning_count,
-                        "promoted_injected": promoted_learning_count,
+                        "learnings_injected": len(injected_learning_ids),
                     }
                 )
         else:
-            context_messages = await self._context_builder.build(
+            context_messages, injected_learning_ids = await self._context_builder.build(
                 messages,
                 self.identity,
                 prompt_manager=self._prompt_manager,
@@ -440,7 +419,7 @@ class Agent:
                     await self._learning_store.store(learning)
 
         # 9. Post-turn: auto-promotion check + skill mutation
-        if self._learning_promoter and injected_learning_count > 0:
+        if self._learning_promoter and injected_learning_ids:
             await self._learning_promoter.check_and_promote(org_id=auth.org_id)
 
         # 10. Session save
@@ -496,6 +475,14 @@ class Agent:
             )
             await self._outcome_store.record(outcome)
 
+        # Feedback loop: record whether each injected learning preceded success
+        if injected_learning_ids and self._learning_store:
+            await self._learning_store.mark_outcome(
+                injected_learning_ids,
+                success=not tool_had_failures,
+                org_id=auth.org_id,
+            )
+
         # 12. Finalize trace
         if trace:
             tool_success_count = 0
@@ -519,8 +506,7 @@ class Agent:
                     "tool_calls_failed": str(tool_fail_count),
                     "tools_used": ",".join(dict.fromkeys(tools_used)),
                     "session_history_injected": str(session_history_count),
-                    "learnings_injected": str(injected_learning_count),
-                    "promoted_injected": str(promoted_learning_count),
+                    "learnings_injected": str(len(injected_learning_ids)),
                 }
             )
             trace.end()

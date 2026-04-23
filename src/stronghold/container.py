@@ -421,6 +421,12 @@ async def create_container(config: StrongholdConfig) -> Container:
 
     coin_ledger = PgCoinLedger(db_pool, config) if db_pool else NoOpCoinLedger()
 
+    rca_extractor: Any = None
+    if config.learnings.rca_enabled:
+        from stronghold.memory.learnings.extractor import RCAExtractor  # noqa: PLC0415
+
+        rca_extractor = RCAExtractor(llm_client=llm, rca_model=config.learnings.rca_model)
+
     agents = await create_agents(
         agents_dir=agents_dir,
         prompt_manager=prompt_manager,
@@ -437,6 +443,7 @@ async def create_container(config: StrongholdConfig) -> Container:
         tracer=tracer_backend,
         tool_executor=_tool_exec,
         sa_engine=sa_engine,
+        rca_extractor=rca_extractor,
     )
 
     reactor = Reactor()
@@ -461,7 +468,7 @@ async def create_container(config: StrongholdConfig) -> Container:
 
     learning_promoter = LearningPromoter(
         learning_store,
-        threshold=5,
+        threshold=config.learnings.promotion_threshold,
         approval_gate=approval_gate,
     )
 
