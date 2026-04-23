@@ -606,7 +606,8 @@ function submitApiKey(e) {
     return;
   }
 
-  localStorage.setItem(TOKEN_KEY, key); // lgtm[js/clear-text-storage-of-sensitive-data]
+  localStorage.removeItem(TOKEN_KEY);
+  sessionStorage.setItem(TOKEN_KEY, key);
   localStorage.setItem(TOKEN_TYPE_KEY, 'api_key');
   localStorage.setItem(USER_KEY, 'API Key User');
   location.href = getRedirect();
