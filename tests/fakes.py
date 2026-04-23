@@ -664,7 +664,7 @@ def make_test_container(
 
     fields: dict[str, Any] = {
         "config": config,
-        "auth_provider": StaticKeyAuthProvider(api_key="sk-test"),
+        "auth_provider": StaticKeyAuthProvider(api_key="sk-test", read_only=False),
         "permission_table": PermissionTable.from_config({"admin": ["*"]}),
         "router": RouterEngine(InMemoryQuotaTracker()),
         "classifier": ClassifierEngine(),

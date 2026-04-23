@@ -86,7 +86,8 @@ class TestClassifyToolResult:
         llm = FakeLLMClient()
         llm.set_responses({"id": "x", "choices": [], "usage": {}})
         result = await classify_tool_result("text", llm)
-        assert result["label"] == "inconclusive"
+        # Empty choices → no "suspicious" in content → fail-open to "safe"
+        assert result["label"] == "safe"
 
     async def test_default_model_is_auto(self) -> None:
         llm = FakeLLMClient()

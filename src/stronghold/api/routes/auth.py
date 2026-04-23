@@ -112,10 +112,36 @@ async def exchange_token(
         ) from e
 
     if idp_resp.status_code != 200:
+        # Scrub sensitive fields before logging — auth codes and tokens must not appear
+        # in log output (CWE-532: Insertion of sensitive information into log file).
+        try:
+            _body = idp_resp.json()
+            _safe = (
+                {
+                    k: "***"
+                    if k
+                    in {
+                        "code",
+                        "authorization_code",
+                        "access_token",
+                        "refresh_token",
+                        "id_token",
+                        "client_secret",
+                        "sensitive",
+                    }
+                    else v
+                    for k, v in _body.items()
+                }
+                if isinstance(_body, dict)
+                else "<non-json>"
+            )
+            _log_body = str(_safe)[:200]
+        except Exception:  # noqa: BLE001
+            _log_body = "<unparseable>"
         logger.warning(
             "IdP code-exchange returned non-200 status=%s body=%s",
             idp_resp.status_code,
-            idp_resp.text[:200],
+            _log_body,
         )
         raise HTTPException(
             status_code=502,
