@@ -340,3 +340,44 @@ CREATE TABLE IF NOT EXISTS self_bootstrap_progress (
     started_at        TEXT NOT NULL,
     updated_at        TEXT NOT NULL
 );
+
+
+-- -------------------------------------------------------------- guardrails --
+--
+-- Tables implementing specs/guardrails.md (G3, G12, G15).
+
+
+CREATE TABLE IF NOT EXISTS self_drift_tracking (
+    self_id           TEXT NOT NULL,
+    facet_id          TEXT NOT NULL,
+    delta_accumulated REAL NOT NULL DEFAULT 0.0,
+    window_started_at TEXT NOT NULL,
+    PRIMARY KEY (self_id, facet_id, window_started_at)
+);
+
+
+CREATE TABLE IF NOT EXISTS self_contributor_pending (
+    node_id         TEXT PRIMARY KEY,
+    self_id         TEXT NOT NULL,
+    target_node_id  TEXT NOT NULL,
+    target_kind     TEXT NOT NULL,
+    source_id       TEXT NOT NULL,
+    source_kind     TEXT NOT NULL,
+    weight          REAL NOT NULL CHECK (weight BETWEEN -1.0 AND 1.0),
+    origin          TEXT NOT NULL DEFAULT 'self',
+    rationale       TEXT,
+    staged_at       TEXT NOT NULL,
+    ack_at          TEXT,
+    reviewed_by     TEXT,
+    context         TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_contributor_pending_staged
+    ON self_contributor_pending (self_id, staged_at DESC);
+
+
+CREATE TABLE IF NOT EXISTS self_bootstrap_seeds (
+    seed             INTEGER PRIMARY KEY,
+    used_by_self_id  TEXT NOT NULL,
+    used_at          TEXT NOT NULL
+);

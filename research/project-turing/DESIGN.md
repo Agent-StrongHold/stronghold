@@ -144,6 +144,32 @@ Explicitly *not* a feature list. These are the questions the research branch exi
 
 ## 7. What this document does not commit to
 
-- No implementation on this branch yet. Prototypes will live in `sketches/` when and if they happen, isolated from `src/`.
+- Prototypes live in `sketches/`, isolated from `src/`. See `specs/README.md` for the full spec inventory (39 specs as of April 2026).
 - No claim that any of this should land in `main`. Findings may inform the production codebase; the default assumption is they do not.
 - No claim of consciousness or sentience. Autonoetic, here, is a structural property of the memory system, not a philosophical one about the agent.
+
+## 8. Implementation status (April 2026)
+
+### Completed tranches
+
+| Tranche | What | Specs | Tests |
+|---------|------|-------|-------|
+| 1–6 | Memory, motivation, dreaming, runtime, self-model | 1–30 | 370 |
+| 7 | Source monitoring, memory wiring, activation cache, contradiction OPINION | 31–34 | +42 |
+| 8 | Newsletter reader, Stronghold LiteLLM discovery, tool specs | 35–38 | +15 |
+| 9 | Guardrails G1, G2, G5, G6, G10, G13, G14, G17 (boundary + drift + oversight) | 39 | +22 |
+
+**Total: 449 tests, all green.**
+
+### Architecture additions
+
+- **Obsidian vault** = agent's working memory (journal + newsletter summaries + human notes)
+- **WordPress at agentstronghold.com** = public output channel (ObsidianPost tool)
+- **7-tier episodic memory** = core persistent self
+- **Newsletter pipeline**: ZohoMail → HuggingFace (summarize sentences → Warden scan → summarize paragraphs) → Obsidian vault → agent reads summaries. Agent has **no email access**.
+- **Stronghold LiteLLM integration**: dynamic model discovery from production proxy at `:4000`, merged with static `pools.yaml`
+- **First-person stance verbs**: "I read", "I practiced", "I learned", "I noticed", "I believe", etc. enforced at write boundary
+
+### Remaining guardrails (spec written, not yet implemented)
+
+G3 (facet drift tracking), G4 (narrative claim cap), G7 (retrieval GC), G8 (node caps), G9 (duplicate detection), G11 (revision compaction), G12 (operator review gate full wiring), G15 (bootstrap seed registry), G16 (signed audit), G18 (import firewall)

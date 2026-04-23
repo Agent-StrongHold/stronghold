@@ -34,6 +34,34 @@ def _new_id() -> str:
     return str(uuid4())
 
 
+def _mint_contradiction_opinion(
+    repo: Repo,
+    predecessor: EpisodicMemory,
+    outcome: Outcome,
+    *,
+    now: datetime | None = None,
+) -> str:
+    snippet = predecessor.content[:80]
+    opinion = EpisodicMemory(
+        memory_id=_new_id(),
+        self_id=predecessor.self_id,
+        tier=MemoryTier.OPINION,
+        source=SourceKind.I_DID,
+        content=(
+            f'My {predecessor.tier.value} "{snippet}" was contradicted '
+            f"by outcome (surprise={outcome.surprise_delta:.2f})."
+        ),
+        weight=0.4,
+        affect=outcome.affect,
+        confidence_at_creation=outcome.confidence_at_creation,
+        surprise_delta=outcome.surprise_delta,
+        intent_at_time=predecessor.intent_at_time,
+        created_at=now or datetime.now(UTC),
+    )
+    repo.insert(opinion)
+    return opinion.memory_id
+
+
 def handle_regret_candidate(
     repo: Repo,
     predecessor_id: str,
@@ -52,10 +80,6 @@ def handle_regret_candidate(
     stance-bearing I_DID memory.
     """
     surprise_threshold, affect_threshold = thresholds
-    if outcome.surprise_delta < surprise_threshold:
-        return None
-    if outcome.affect > -affect_threshold:
-        return None
 
     predecessor = repo.get(predecessor_id)
     if predecessor is None:
@@ -68,9 +92,15 @@ def handle_regret_candidate(
     if predecessor.source != SourceKind.I_DID:
         raise RepoError("REGRET predecessor must have source=i_did")
     if predecessor.superseded_by is not None:
-        raise RepoError(
-            f"predecessor {predecessor_id} already superseded; cannot mint REGRET"
-        )
+        raise RepoError(f"predecessor {predecessor_id} already superseded; cannot mint REGRET")
+
+    if outcome.surprise_delta > 0:
+        _mint_contradiction_opinion(repo, predecessor, outcome, now=now)
+
+    if outcome.surprise_delta < surprise_threshold:
+        return None
+    if outcome.affect > -affect_threshold:
+        return None
 
     regret = EpisodicMemory(
         memory_id=_new_id(),
@@ -121,9 +151,7 @@ def handle_accomplishment_candidate(
         tier=MemoryTier.ACCOMPLISHMENT,
         source=SourceKind.I_DID,
         content=content,
-        weight=clamp_weight(
-            MemoryTier.ACCOMPLISHMENT, WEIGHT_BOUNDS[MemoryTier.ACCOMPLISHMENT][0]
-        ),
+        weight=clamp_weight(MemoryTier.ACCOMPLISHMENT, WEIGHT_BOUNDS[MemoryTier.ACCOMPLISHMENT][0]),
         affect=outcome.affect,
         confidence_at_creation=outcome.confidence_at_creation,
         surprise_delta=outcome.surprise_delta,
@@ -150,9 +178,7 @@ def handle_affirmation(
         tier=MemoryTier.AFFIRMATION,
         source=SourceKind.I_DID,
         content=content,
-        weight=clamp_weight(
-            MemoryTier.AFFIRMATION, WEIGHT_BOUNDS[MemoryTier.AFFIRMATION][0]
-        ),
+        weight=clamp_weight(MemoryTier.AFFIRMATION, WEIGHT_BOUNDS[MemoryTier.AFFIRMATION][0]),
         supersedes=supersedes,
         immutable=False,
         created_at=now or datetime.now(UTC),

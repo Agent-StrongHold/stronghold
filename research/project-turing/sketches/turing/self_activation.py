@@ -53,8 +53,7 @@ def _recency_state(last: datetime | None, now: datetime, window_days: float) -> 
     return 1.0 - (days / window_days)
 
 
-def source_state(repo: SelfRepo, source_id: str, source_kind: str,
-                 ctx: ActivationContext) -> float:
+def source_state(repo: SelfRepo, source_id: str, source_kind: str, ctx: ActivationContext) -> float:
     """Resolve a source's current state to `[0.0, 1.0]`."""
     if source_kind == "personality_facet":
         facet = repo.get_facet(source_id)
@@ -84,10 +83,17 @@ def source_state(repo: SelfRepo, source_id: str, source_kind: str,
         m = repo.get_mood(ctx.self_id)
         return (m.valence + 1.0) / 2.0
     if source_kind == "memory":
-        # Memory weight is stored externally to self-model; in this sketch we
-        # surface a neutral contribution when the memory row isn't reachable.
-        # The primary consumer (tests) will pass real memory ids as needed.
-        return 0.5
+        from .repo import Repo as _Repo
+
+        mem = repo.conn.execute(
+            "SELECT weight, superseded_by FROM durable_memory WHERE memory_id = ? "
+            "UNION ALL "
+            "SELECT weight, superseded_by FROM episodic_memory WHERE memory_id = ?",
+            (source_id, source_id),
+        ).fetchone()
+        if mem is None:
+            return 0.0
+        return max(0.0, min(1.0, mem[0]))
     if source_kind == "rule":
         return 1.0
     if source_kind == "retrieval":
