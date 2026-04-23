@@ -83,7 +83,8 @@ def test_remove(repo: Repo, self_id: str) -> None:
 
 def test_remove_unknown_returns_false(repo: Repo, self_id: str) -> None:
     wm = WorkingMemory(repo.conn)
-    assert wm.remove(self_id, "nope") is False
+    removed = wm.remove(self_id, "nope")
+    assert removed is False
 
 
 def test_update_priority(repo: Repo, self_id: str) -> None:
