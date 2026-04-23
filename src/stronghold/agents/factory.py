@@ -260,6 +260,7 @@ async def create_agents(
     coin_ledger: Any = None,
     tool_executor: Any = None,
     sa_engine: Any = None,
+    rca_extractor: Any = None,
 ) -> dict[str, Agent]:
     """Load or seed agents, then instantiate runtime Agent objects.
 
@@ -283,6 +284,7 @@ async def create_agents(
         "coin_ledger": coin_ledger,
         "tracer": tracer,
         "tool_executor": tool_executor,
+        "rca_extractor": rca_extractor,
     }
 
     # ── Try loading from database first ──

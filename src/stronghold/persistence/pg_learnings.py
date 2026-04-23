@@ -105,6 +105,19 @@ class PgLearningStore:
                 learning_ids,
             )
 
+    async def mark_outcome(
+        self, learning_ids: list[int], success: bool, *, org_id: str = ""
+    ) -> None:
+        """Record success/failure feedback. No-op in PG until migration lands."""
+        if not learning_ids:
+            return
+        logger.debug(
+            "mark_outcome: ids=%s success=%s org_id=%s — not persisted (schema pending)",
+            learning_ids,
+            success,
+            org_id,
+        )
+
     async def check_auto_promotions(
         self,
         threshold: int = 5,

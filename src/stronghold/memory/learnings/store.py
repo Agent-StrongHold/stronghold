@@ -105,6 +105,23 @@ class InMemoryLearningStore:
             if learning.id in id_set:
                 learning.hit_count += 1
 
+    async def mark_outcome(
+        self, learning_ids: list[int], success: bool, *, org_id: str = ""
+    ) -> None:
+        """Increment success_after_use or failure_after_use per injected learning."""
+        if not learning_ids:
+            return
+        id_set = set(learning_ids)
+        for learning in self._learnings:
+            if learning.id not in id_set:
+                continue
+            if org_id and learning.org_id != org_id:
+                continue
+            if success:
+                learning.success_after_use += 1
+            else:
+                learning.failure_after_use += 1
+
     async def check_auto_promotions(
         self,
         threshold: int = 5,

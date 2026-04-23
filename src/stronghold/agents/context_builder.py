@@ -88,7 +88,8 @@ class ContextBuilder:
                 used = overhead
                 added = 0
                 for lr in promoted:
-                    entry = f"- {lr.learning}"
+                    prefix = f"[{lr.rca_category}] " if lr.rca_category else ""
+                    entry = f"- {prefix}{lr.learning}"
                     if used + len(entry) + 1 > budget_chars:
                         break
                     lines.append(entry)

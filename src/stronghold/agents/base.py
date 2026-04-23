@@ -253,9 +253,11 @@ class Agent:
         # Query learning counts for tracing (what was available to inject)
         injected_learning_count = 0
         promoted_learning_count = 0
+        injected_learning_ids: list[int] = []
         if self._learning_store and self.identity.memory_config.get("learnings"):
             promoted = await self._learning_store.get_promoted(org_id=auth.org_id)
             promoted_learning_count = len(promoted)
+            injected_learning_ids.extend(p.id for p in promoted if p.id is not None)
             if user_text:
                 relevant = await self._learning_store.find_relevant(
                     user_text,
@@ -263,6 +265,7 @@ class Agent:
                     org_id=auth.org_id,
                 )
                 injected_learning_count = len(relevant)
+                injected_learning_ids.extend(r.id for r in relevant if r.id is not None)
 
         if trace:
             with trace.span("prompt.build") as ps:
@@ -495,6 +498,14 @@ class Agent:
                 pricing_version=str(charge_info.get("pricing_version", "")),
             )
             await self._outcome_store.record(outcome)
+
+        # Feedback loop: record whether each injected learning preceded success
+        if injected_learning_ids and self._learning_store:
+            await self._learning_store.mark_outcome(
+                injected_learning_ids,
+                success=not tool_had_failures,
+                org_id=auth.org_id,
+            )
 
         # 12. Finalize trace
         if trace:
