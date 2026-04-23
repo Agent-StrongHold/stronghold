@@ -315,7 +315,7 @@ class TestHighAgentStoreOrgGaps:
                 "add a positive cross-tenant update-rejection test."
             )
 
-    async def test_h8_get_with_empty_org_returns_org_scoped_agents(self) -> None:
+    def test_h8_get_with_empty_org_returns_org_scoped_agents(self) -> None:
         """H8: Empty org_id on get() returns agents from any org.
 
         Behavioral: register an org-scoped agent then call get(name, org_id="").
