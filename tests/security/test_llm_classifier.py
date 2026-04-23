@@ -46,7 +46,7 @@ class TestClassifyToolResult:
         llm = FakeLLMClient()
         llm.set_simple_response("safe")
         result = await classify_tool_result("normal code output", llm, "test-model")
-        assert result["label"] == "inconclusive"
+        assert result["label"] == "safe"
         assert result["model"] == "test-model"
 
     async def test_suspicious_classification(self) -> None:
