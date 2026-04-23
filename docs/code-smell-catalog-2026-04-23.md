@@ -264,12 +264,195 @@ Only two survive in `src/`:
 
 ---
 
+## 7. Second-pass findings
+
+### 7.1 Unawaited background tasks (concrete async bug)
+
+`src/stronghold/api/routes/mason.py:70`
+
+```python
+asyncio.create_task(_dispatch_mason(issue))
+```
+
+The task reference is thrown away. Python docs explicitly warn: "Save a reference to the result of `create_task()`, to avoid a task disappearing mid-execution." Under GC pressure the dispatch can be collected. Fix: keep a module-level `set()` of running tasks and add/discard via `add_done_callback`.
+
+Other `create_task` call sites are safe — `events.py:159` holds `task`, `agents_stream.py:113` polls `task.done()`, `mcp/registries.py:204–206` `gather`s the tasks, `orchestrator/engine.py:106` keeps a worker list, `api/app.py:58` holds `reactor_task`.
+
+### 7.2 Deprecated `asyncio.get_event_loop()` in an async function
+
+`src/stronghold/mcp/deployer.py:56, 215, 237, 259, 284`
+
+Five copies of:
+
+```python
+return await asyncio.get_event_loop().run_in_executor(None, self._deploy_sync, server)
+```
+
+Inside an already-running coroutine `get_event_loop()` is deprecated for this purpose since 3.10 and may raise `DeprecationWarning` on 3.12. Correct: `asyncio.get_running_loop()` or simpler `asyncio.to_thread(self._deploy_sync, server)`.
+
+### 7.3 Naive `datetime.now()` without tz
+
+`src/stronghold/events.py:137` — `now = datetime.now()` inside the reactor tick. The reactor uses this for time-triggered firings (line 212 compares `now.strftime("%H:%M")` to `spec.at_time`). On a container running UTC this is fine; on any host/DST-aware timezone the trigger times drift. Make it `datetime.now(timezone.utc)` and document that `spec.at_time` is UTC.
+
+### 7.4 Resource leak: `MCPDeployerClient._client` never closed
+
+`src/stronghold/sandbox/deployer.py:37–40, 156–157`
+
+```python
+def __init__(self, base_url: str = "") -> None:
+    ...
+    self._client = httpx.AsyncClient(base_url=self._base_url, timeout=30.0)
+
+async def close(self) -> None:
+    pass
+```
+
+Constructor opens an `httpx.AsyncClient`; `close()` is a no-op. Connections and sockets leak for the lifetime of the DI container. Replace `close()` with `await self._client.aclose()` or switch to per-call `async with httpx.AsyncClient(...)`.
+
+### 7.5 Two `httpx.AsyncClient()` calls with no timeout
+
+`src/stronghold/api/routes/marketplace.py:136, 187` — both use `httpx.AsyncClient()` with defaults. Every other call site in the tree sets an explicit timeout (5–600s). A slow external registry hangs the request until the upstream ASGI timeout fires.
+
+### 7.6 `inspect.signature().bind_partial` as a regression guard
+
+`tests/security/test_security_audit_2026_03_30.py:74, 96, 179, 213, 233, 284, 972` and `tests/api/test_issue_620.py:57`, `tests/security/test_audit_regression.py:970`
+
+These tests bind a call signature to assert that a parameter (e.g. `org_id`) is or isn't present. The `docs/test-quality-remediation-plan.md` flags this file's 20 tests as a rewrite target. These signature-shape tests pass even if the implementation body is a stub, so they guard the API contract but not the behavior.
+
+### 7.7 Duplicated auth-header parsing across 17 route files
+
+`auth_header = request.headers.get("authorization")` (or `"Authorization"`) is hand-rolled in **17 route modules** (33 occurrences): `tasks.py`, `schedules.py`, `models.py`, `traces.py`, `webhooks.py`, `agents_stream.py`, `status.py`, `mcp.py`, `admin.py`, `gate_endpoint.py`, `chat.py`, `skills.py`, `sessions.py`, `dashboard.py`, `profile.py`, `agents.py`, `marketplace.py`. Some use `"authorization"`, some use `"Authorization"` (HTTP headers are case-insensitive in Starlette so this works, but the style drift signals copy-paste rather than a shared helper). Bundle into a single dependency/middleware — it already exists as `api/middleware/auth.py` (which §3 notes has no test coverage).
+
+### 7.8 Personal data in migration 011
+
+`migrations/011_seed_admin.sql` hardcodes `blakematthews@agentstronghold.com` with `["admin", "org_admin", "team_admin", "user"]` roles. Every fresh Stronghold deployment — including third-party installs of an Apache-licensed OSS project — creates this specific user as an admin on first boot. Whether or not the `ON CONFLICT DO NOTHING` clause saves existing installs, this should be gated behind an env flag (`STRONGHOLD_DEV_SEED=1`) or moved into `deploy/` fixtures, not shipped as a forward migration.
+
+### 7.9 Production Dockerfile runs as root and ships tests + dev deps
+
+`Dockerfile`:
+
+- No `USER` directive → runs as root. `Dockerfile.worker` correctly creates a `stronghold` user and drops to it; the main API image doesn't.
+- `COPY tests/ tests/` and installs `.[dev]` (pytest, ruff, mypy, bandit) into the runtime image. The comment explains "Mason's workspace validation depends on the dev quality tools existing" — so this is intentional, but it means the attack surface of the API container includes the test suite and every dev dependency. Consider splitting Mason's quality-gate path into its own image or running Mason in a sibling pod.
+- `RUN mkdir -p /workspace && chmod 777 /workspace` — world-writable workspace. Needed for Mason worktrees, but combined with root-as-default this lets any in-pod compromise rewrite Mason's work area.
+
+### 7.10 docker-compose.yml uses static weak credentials
+
+`docker-compose.yml` sets `POSTGRES_USER=stronghold`, `POSTGRES_PASSWORD=stronghold`. Intended for local dev, but `.env.example` doesn't call out that these must be changed, and the compose file binds Postgres ports (check full file before deploy). Add a banner comment and point at `deploy/` for hardened configs.
+
+### 7.11 `unittest.mock` used in 34 test files despite CLAUDE.md rule
+
+CLAUDE.md §Testing Rules §1 explicitly forbids `unittest.mock` — "All protocols have fakes in `tests/fakes.py` — use those, not `unittest.mock`." Yet 34 files import `MagicMock` / `AsyncMock` / `@patch` (107 raw occurrences). Representative offenders: `tests/test_new_modules_2.py`, `tests/test_coverage_final.py`, `tests/api/test_marketplace_coverage.py`, `tests/api/test_mason_routes.py`, `tests/persistence/test_pool.py`. This is the same cluster the test-quality plan calls out as "over-mock" — a linter rule (`ruff` custom rule or `grep` in CI) could prevent regression.
+
+### 7.12 `assert resp.status_code == 200` with no body inspection
+
+Grep for `assert.*is not None$` returns **211 matches** across the test tree, and the existing test-quality audit counts 65 "status-only" tests that check HTTP status but never look at the body. Same backlog, but worth quantifying: 211+65 = ~276 asserts that could pass against a completely broken implementation as long as it returned a 200 with *any* object.
+
+### 7.13 Timeout constants scattered without a central config
+
+25+ literal timeouts across the tree: `5.0`, `10.0`, `15.0`, `30.0`, `60.0`, `180.0`, `300.0`, `600.0`. `tools/github.py` alone uses `30.0` on eleven calls and `60.0` on one (comment-add), with no obvious reason for the split. Cache TTLs are also hardcoded: `_CLAUDE_CACHE_TTL = 300.0` (`skills/connectors.py:39`), `_CACHE_TTL_FULL = 900.0` (`api/routes/mason.py:193`), the Redis prompt-cache TTL `300` baked into `container.py:300`. Pull into `config/defaults.py` or typed config so operators can tune without code edits.
+
+### 7.14 Hash choice: intentional MD5 with `usedforsecurity=False`
+
+`src/stronghold/memory/learnings/embeddings.py:88` — `hashlib.md5(text.encode("utf-8"), usedforsecurity=False).digest()`. The `# noqa: S324` and the surrounding docstring justify it as a deterministic fake-embedding seed for tests. Not a bug, but worth flagging so a future refactor doesn't reach for a "more secure" hash and break reproducibility.
+
+### 7.15 `asyncio.get_event_loop()` in `mcp/deployer.py` is also swallowed by try/except
+
+Three of the five `get_event_loop()` sites (§7.2) are paired with the `B110` try/except/pass at lines 270 and 275 (§4.4). If the executor raises because the loop is mis-acquired, the exception is suppressed — double-layered silence.
+
+### 7.16 `_FakeToolDispatcher`, `_FakeToolRegistry`, `_FakeToolDef` in tests
+
+`tests/test_coverage_final.py:29, 43, 56` — three private fakes defined inline in a test file. CLAUDE.md §Testing Rules §1 says "All protocols have fakes in `tests/fakes.py` — use those." Either promote these fakes to `tests/fakes.py` or fold them into existing ones. Probable cause: the coverage push ran out of time to refactor.
+
+### 7.17 Hash-based LLM classifier fail-open still warrants double-checking
+
+§1.2 already covers the Warden L3 fail-open. Worth cross-referencing `src/stronghold/security/warden/llm_classifier.py` (the file that currently returns `label="safe"` on exception). A broken LLM endpoint turns the strongest warden layer into a no-op — and the tests confirm this is live behavior.
+
+### 7.18 Duplicate `_check_csrf` between `admin.py` and `marketplace.py`
+
+`src/stronghold/api/routes/admin.py:17–35` and `src/stronghold/api/routes/marketplace.py:79–97` are byte-for-byte identical (`diff` returns empty). A CSRF fix in one won't propagate to the other. Hoist into `api/middleware/` or `security/`. While there, check for other near-duplicates between these two files — they also share a `_require_admin` / auth-header-parse shape (§7.7).
+
+### 7.19 Inline `os.environ.get()` in 12 spots bypasses the config layer
+
+CLAUDE.md §Build Rule 4 requires config through env vars or K8s secrets, but those values should flow through `config/`. Direct `os.environ.get()` calls live in:
+
+- `api/app.py:47, 53` — `STRONGHOLD_MAX_CONCURRENCY`, `STRONGHOLD_DISABLE_REACTOR_AUTOSTART`
+- `api/routes/mason.py:369` — `GITHUB_WEBHOOK_SECRET` (security-critical!)
+- `triggers.py:218`, `tools/github.py:129–134, 193`, `tools/workspace.py:29, 112` — GitHub auth material
+- `sandbox/deployer.py:21, 126` — deployer URL + MCP namespace
+
+The webhook-secret read is the most worrying: a deploy that sets the secret in `config/` (where operators expect it to live per the architecture doc) will still let every webhook through because `mason.py` only looks at `os.environ`. Centralize in `config/env.py` with typed accessors.
+
+### 7.20 Docstring/implementation drift in `Conduit._apply_tenant_policy`
+
+`src/stronghold/conduit.py:55–60` — function takes `_tenant_id: str | None = None` but is only called as `_apply_tenant_policy(current_tier)` at line 95 (no tenant ID passed, and the parameter is named with leading underscore to signal it's ignored anyway). Meanwhile, `determine_execution_tier`'s docstring (lines 67–77) lists "3. tenant policy" as part of the "override stack". The stack is advertised but not wired. Either delete step 3 from the docstring, or pass the tenant in and implement.
+
+### 7.21 `asyncio.sleep(2)` and `asyncio.sleep(1)` hardcoded in Artificer
+
+`src/stronghold/agents/artificer/strategy.py:80` and `:213`. No comment on why. Reviewing the file shows these are cooldowns between plan/execute/retry phases — legitimate, but they belong in config alongside §7.13's other timeout constants.
+
+### 7.22 Module-level mutable caches in `mason.py`
+
+`src/stronghold/api/routes/mason.py:192` — `_issues_cache: dict[str, Any] = {"data": None, "fetched_at": 0.0}` shared across requests with no lock. Lines 206–246 read, check TTL, and write back. Under concurrent requests from different users, two reads at `t_read` both see an expired entry, both fetch from GitHub, and the last writer wins. Usually benign for read caches (duplicated work, same data), but any field added later that needs read-modify-write will race.
+
+Same pattern in `_state` at lines 40–48 for router/reactor/container handles, though those are write-once at startup.
+
+### 7.23 `_DELIST_THRESHOLD` used inline at 4 sites
+
+`src/stronghold/api/routes/marketplace.py:35, 49, 51, 74, 350` — five references to the same `= 3` constant. Fine today. Worth noting together with the other config-that-should-be-config items in §7.13. Same for `_MAX_TIMESTAMP_AGE_SECONDS = 300` in `api/routes/webhooks.py:26, 34`.
+
+### 7.24 Inconsistent error-to-HTTP mapping across routes
+
+Only `api/routes/agents.py:117–118` (and chat.py at 133) map `QuotaExhaustedError → 429`. `api/routes/admin.py`, `api/routes/marketplace.py`, and `api/routes/skills.py` hit the same code paths (they all go through `container.route_request` or similar) but don't catch the quota exception. A request at the quota wall returns 500 from those routes even though 429 is the correct answer. Shared middleware for business-error → HTTP mapping would fix this alongside §7.7 auth-header parsing.
+
+### 7.25 No upper bound on user-text before Warden scan / LLM dispatch
+
+`src/stronghold/api/routes/chat.py:58–69` reconstructs `user_text` from the message history and passes it into `route_request` → Warden scan → LLM. Warden's short-circuit heuristics cap certain windows (§1.2 H3 shows the gap bug) but the outer pipeline itself never rejects over-length content. A 5 MB `messages[0].content` fans out to Warden regex passes and then LiteLLM. Cap early (e.g. 100K chars) with a 413.
+
+### 7.26 SSE stream leaks background task on client disconnect
+
+`src/stronghold/api/routes/agents_stream.py:113–143` — the generator starts `task = asyncio.create_task(run_agent())` and polls `task.done()` in a loop. If the client disconnects mid-stream, the generator stops iterating but the task keeps running until agent completion — consuming LLM tokens, holding DB connections, and posting updates to an unread queue. Wrap the generator body in `try/finally: task.cancel()` or use `contextlib.aclosing`.
+
+### 7.27 Response-body shape not validated after `status_code == 200`
+
+`src/stronghold/api/routes/marketplace.py:246, 258` — code accepts any `200` and assumes the body is parseable. If the upstream registry returns HTML (503 page served with status 200, common behind proxies) or a malformed JSON, parsing crashes into the generic exception handler and the user sees a 500. Cheap fix: verify `Content-Type: application/json` before parsing.
+
+### 7.28 Pagination boilerplate duplicated between admin and marketplace routes
+
+`api/routes/admin.py` (learnings list, users list, strikes list) and `api/routes/marketplace.py` (GitHub issues fetch) share a query-limit-offset-cache-TTL shape with no abstraction. Low-priority consolidation target; flagged here so the next pagination change doesn't create a third variant.
+
+### 7.29 Status callback may pass tokens through to the queue
+
+`src/stronghold/api/routes/mason.py:95–136` — the `_log` helper forwards every status string to `queue.add_log(issue_num, msg)`. `msg` originates from `status_callback` calls inside `route_request` and agent strategies; any strategy that interpolates error detail from an HTTP client (e.g. 401 body, upstream auth header) would land raw in a durable queue. Audit callers of `status_callback` to ensure the string is sanitized first, or add a redaction pass in `add_log`.
+
+### 7.30 Tautological loop-then-assert in `test_new_modules_2.py`
+
+`tests/test_new_modules_2.py:179, 196, 218, 240, 254, 272, 287, 304, 317, 337, 353, 372, 390` — repeated pattern:
+
+```python
+found = None
+for trigger in container.reactor._triggers:
+    if trigger.spec.name == "foo":
+        found = trigger
+assert found is not None
+```
+
+The assertion only fires if the loop executed AND matched — but if trigger registration breaks silently, the dict is empty and `found` stays `None`, which would correctly fail. What doesn't fail: if the loop matches any random trigger, the assertion still passes without checking the trigger's content. The inverted pattern is the smell: rather than asserting a known name exists, iterate the reactor's public `get(name)` API.
+
+---
+
 ## Suggested priority order for remediation
 
 1. **Flip the seven `BUG CONFIRMED` security tests** (§1.2). These are active vulnerabilities with fixes pre-written as test contracts.
-2. **Fix the `Intent.tier` type leak** (§1.1) and the two `Any`-return regressions (§1.4, §1.5).
-3. **Un-swallow `ImportError` in `factory.py`** (§2.2) — silent agent-strategy failures will bite hard in production.
-4. **Decompose `Conduit.route_request`** (§4.1) and split `api/routes/admin.py` (§4.3) before they accrete more logic.
-5. **Close the 28 untested modules** (§3) prioritizing `middleware/auth`, `middleware/tracing`, `warden/patterns`, `memory/scopes`.
-6. **Execute the existing test-quality plan** (§4.9) — the work is scoped; this catalog just confirms it's still needed.
-7. **Implement or delete the Forge / Scribe / Warden-at-Arms stubs** (§2.1). If they're near-term on the roadmap, promote to skeletons with failing tests; otherwise drop them so the architecture doc stops overselling.
+2. **Fix the `Intent.tier` type leak** (§1.1), the `Any`-return regressions (§1.4, §1.5), the unawaited-task bug (§7.1), and deprecated `get_event_loop()` (§7.2).
+3. **Close resource leaks**: `MCPDeployerClient._client` (§7.4), SSE task on disconnect (§7.26).
+4. **Un-swallow `ImportError` in `factory.py`** (§2.2) — silent agent-strategy failures will bite hard in production.
+5. **Move `GITHUB_WEBHOOK_SECRET` (and the other 11 env reads) behind `config/`** (§7.19) — a webhook with no secret validation is a remote-execution backdoor.
+6. **Remove the hardcoded admin email from migration 011** (§7.8) — this is cosmetic until someone forks, then it's surprising.
+7. **Fix the root-user prod Dockerfile and the tests-in-prod bundling** (§7.9).
+8. **Decompose `Conduit.route_request`** (§4.1) and split `api/routes/admin.py` (§4.3) before they accrete more logic.
+9. **Hoist duplicated helpers**: `_check_csrf` (§7.18), auth-header parsing (§7.7), Warden scan pattern (§7.14 referenced by subagent), error-to-HTTP mapping (§7.24).
+10. **Add an input-length cap on user text** (§7.25) — cheap DoS guard.
+11. **Close the 28 untested modules** (§3) prioritizing `middleware/auth`, `middleware/tracing`, `warden/patterns`, `memory/scopes`.
+12. **Execute the existing test-quality plan** (§4.9) — the work is scoped; this catalog just confirms it's still needed.
+13. **Implement or delete the Forge / Scribe / Warden-at-Arms stubs** (§2.1). If they're near-term on the roadmap, promote to skeletons with failing tests; otherwise drop them so the architecture doc stops overselling.
+14. **Centralize timeouts / TTLs / thresholds** (§7.13, §7.21, §7.23) as the maintainability base-rate improvement.
