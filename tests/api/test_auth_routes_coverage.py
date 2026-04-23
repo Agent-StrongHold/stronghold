@@ -133,7 +133,6 @@ def _base_config(**auth_overrides: Any) -> StrongholdConfig:
     auth_kwargs: dict[str, Any] = {
         "session_cookie_name": "stronghold_session",
         "session_max_age": 3600,
-        "jwt_secret": "sk-test-key",
     }
     auth_kwargs.update(auth_overrides)
     return StrongholdConfig(
@@ -155,6 +154,7 @@ def _base_config(**auth_overrides: Any) -> StrongholdConfig:
         },
         permissions={"admin": ["*"]},
         router_api_key="sk-test-key",
+        jwt_secret="sk-test-key",
         auth=AuthConfig(**auth_kwargs),
     )
 
