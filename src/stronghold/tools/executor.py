@@ -1,8 +1,15 @@
 """Tool dispatcher: routes tool calls to registered executors.
 
-Looks up the executor from the registry by name, calls it with a timeout,
-and returns a ToolResult. Falls back to HTTP endpoint if the tool definition
-has an endpoint URL configured.
+Looks up the executor from the registry by name, runs the PreToolCall hook
+chain (if configured), then calls the executor with a timeout and returns a
+ToolResult. Falls back to HTTP endpoint if the tool definition has an
+endpoint URL configured.
+
+PreToolCall hooks (S1.2) are inspected between lookup and execution. Verdicts:
+Allow (proceed), Deny (short-circuit, return error), Repair (mutate args for
+subsequent hooks). An empty hook chain is a pass-through — back-compatible
+with callers that construct ToolDispatcher(registry) and call
+execute(tool_name, args).
 """
 
 from __future__ import annotations
@@ -11,34 +18,68 @@ import asyncio
 import logging
 from typing import TYPE_CHECKING, Any
 
+from stronghold.protocols.tool_hooks import (
+    AllowVerdict,
+    DenyVerdict,
+    RepairVerdict,
+)
+from stronghold.types.errors import ConfigError
+
 if TYPE_CHECKING:
+    from collections.abc import Sequence
+
+    from stronghold.protocols.tool_hooks import PreToolCallHook
+    from stronghold.security.sentinel.audit import InMemoryAuditLog
     from stronghold.tools.registry import InMemoryToolRegistry
+    from stronghold.types.auth import AuthContext
     from stronghold.types.tool import ToolResult
 
 logger = logging.getLogger("stronghold.tools.executor")
 
 DEFAULT_TIMEOUT = 30.0  # seconds
+DEFAULT_HOOK_TIMEOUT = 1.0  # seconds — fail-open on hook timeout
 
 
 class ToolDispatcher:
-    """Routes tool calls to registered executors with timeout protection."""
+    """Routes tool calls to registered executors with timeout protection.
+
+    Hooks are inspected in order between tool lookup and execution. First deny
+    short-circuits; repairs chain through to subsequent hooks and the executor.
+    """
 
     def __init__(
         self,
         registry: InMemoryToolRegistry,
         default_timeout: float = DEFAULT_TIMEOUT,
+        *,
+        hooks: Sequence[PreToolCallHook] = (),
+        hook_timeout: float = DEFAULT_HOOK_TIMEOUT,
+        audit_log: InMemoryAuditLog | None = None,
     ) -> None:
         self._registry = registry
         self._default_timeout = default_timeout
+        self._hooks: tuple[PreToolCallHook, ...] = tuple(hooks)
+        self._hook_timeout = hook_timeout
+        self._audit_log = audit_log
 
     async def execute(
         self,
         tool_name: str,
         arguments: dict[str, Any],
+        *,
+        auth: AuthContext | None = None,
     ) -> str:
         """Execute a tool by name. Returns string result for LLM consumption.
 
         This is the callback signature expected by ReactStrategy's tool_executor.
+
+        Args:
+            tool_name: Registered tool name.
+            arguments: Arguments forwarded to the executor (may be repaired by hooks).
+            auth: AuthContext for the caller. Required when a hook chain is configured.
+
+        Raises:
+            ConfigError: hooks are configured but auth is None (fail-closed).
         """
         # Look up executor
         executor = self._registry.get_executor(tool_name)
@@ -48,6 +89,23 @@ class ToolDispatcher:
             if defn and defn.endpoint:
                 return await self._execute_http(defn.endpoint, tool_name, arguments)
             return f"Error: Tool '{tool_name}' not registered"
+
+        # Run the PreToolCall hook chain. Repairs chain; first deny short-circuits.
+        if self._hooks:
+            if auth is None:
+                msg = (
+                    "ToolDispatcher has hooks configured but received auth=None. "
+                    "This would bypass every hook; refusing fail-closed."
+                )
+                raise ConfigError(msg)
+            hook_outcome = await self._run_hook_chain(tool_name, arguments, auth)
+            if isinstance(hook_outcome, DenyVerdict):
+                return (
+                    f"Error: Tool '{tool_name}' denied by {hook_outcome.hook_name}: "
+                    f"{hook_outcome.reason}"
+                )
+            # hook_outcome is the (possibly repaired) arguments dict
+            arguments = hook_outcome
 
         # Execute with timeout
         try:
@@ -62,6 +120,85 @@ class ToolDispatcher:
         except Exception as e:
             logger.warning("Tool %s failed: %s", tool_name, e)
             return f"Error: Tool '{tool_name}' failed: {e}"
+
+    async def _run_hook_chain(
+        self,
+        tool_name: str,
+        arguments: dict[str, Any],
+        auth: AuthContext,
+    ) -> DenyVerdict | dict[str, Any]:
+        """Run hooks in order. Returns DenyVerdict on block, else the final arguments."""
+        current_args = dict(arguments)
+        for hook in self._hooks:
+            verdict = await self._call_hook(hook, tool_name, current_args, auth)
+            await self._audit_verdict(tool_name, hook, verdict, auth)
+            if isinstance(verdict, DenyVerdict):
+                return verdict
+            if isinstance(verdict, RepairVerdict):
+                current_args = dict(verdict.new_arguments)
+            # AllowVerdict: no-op
+        return current_args
+
+    async def _call_hook(
+        self,
+        hook: PreToolCallHook,
+        tool_name: str,
+        arguments: dict[str, Any],
+        auth: AuthContext,
+    ) -> AllowVerdict | DenyVerdict | RepairVerdict:
+        """Call a single hook with a timeout. Fail-open on timeout or exception."""
+        try:
+            return await asyncio.wait_for(
+                hook.check(tool_name, arguments, auth),
+                timeout=self._hook_timeout,
+            )
+        except TimeoutError:
+            logger.warning(
+                "PreToolCall hook %s timed out on %s; treating as Allow",
+                getattr(hook, "name", type(hook).__name__),
+                tool_name,
+            )
+            return AllowVerdict()
+        except Exception:
+            logger.exception(
+                "PreToolCall hook %s raised on %s; treating as Allow",
+                getattr(hook, "name", type(hook).__name__),
+                tool_name,
+            )
+            return AllowVerdict()
+
+    async def _audit_verdict(
+        self,
+        tool_name: str,
+        hook: PreToolCallHook,
+        verdict: AllowVerdict | DenyVerdict | RepairVerdict,
+        auth: AuthContext,
+    ) -> None:
+        """Emit one audit entry per hook verdict (AC 6)."""
+        if self._audit_log is None:
+            return
+        from stronghold.types.security import AuditEntry  # noqa: PLC0415
+
+        if isinstance(verdict, AllowVerdict):
+            verdict_str = "allow"
+            detail = ""
+        elif isinstance(verdict, DenyVerdict):
+            verdict_str = "deny"
+            detail = verdict.reason
+        else:
+            verdict_str = "repair"
+            detail = verdict.reason
+        await self._audit_log.log(
+            AuditEntry(
+                boundary="pretool_hook",
+                user_id=auth.user_id,
+                org_id=auth.org_id,
+                team_id=auth.team_id,
+                tool_name=tool_name,
+                verdict=verdict_str,
+                detail=f"{getattr(hook, 'name', type(hook).__name__)}: {detail}",
+            )
+        )
 
     # SSRF protection: block internal/metadata endpoints
     # Covers full RFC1918, loopback, link-local, metadata, IPv6 private

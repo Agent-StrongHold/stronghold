@@ -747,3 +747,36 @@ class FakeSpecVerifier:
             passed=self._default_pass,
             coverage_pct=coverage,
         )
+
+
+class FakePreToolCallHook:
+    """PreToolCallHook with per-tool-name scripted verdicts (S1.2).
+
+    Default verdict is Allow. Use `set_verdict(tool_name, verdict)` to program
+    specific responses. Every call is recorded for inspection.
+    """
+
+    def __init__(self, name: str = "fake_hook") -> None:
+        from stronghold.protocols.tool_hooks import AllowVerdict  # noqa: PLC0415
+
+        self.name = name
+        self._verdicts: dict[str, Any] = {}
+        self._default: Any = AllowVerdict()
+        self.calls: list[tuple[str, dict[str, Any]]] = []
+
+    def set_verdict(self, tool_name: str, verdict: Any) -> None:
+        """Program a specific verdict for a tool name."""
+        self._verdicts[tool_name] = verdict
+
+    def set_default(self, verdict: Any) -> None:
+        """Override the default (Allow) verdict."""
+        self._default = verdict
+
+    async def check(
+        self,
+        tool_name: str,
+        arguments: dict[str, Any],
+        auth: Any,  # noqa: ARG002
+    ) -> Any:
+        self.calls.append((tool_name, dict(arguments)))
+        return self._verdicts.get(tool_name, self._default)

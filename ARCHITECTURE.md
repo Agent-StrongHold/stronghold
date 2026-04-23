@@ -161,6 +161,35 @@ proactive:
 
 Custom strategies from untrusted sources run in containers. The container is an A2A endpoint — receives a task, calls back to Stronghold for LLM/tools/memory, returns a result. Stronghold manages the container lifecycle.
 
+### 2.5.1 Tool dispatch and PreToolCall hooks
+
+`ToolDispatcher.execute()` is the single chokepoint for every tool call a strategy makes. Between tool lookup and executor invocation, a configured hook chain runs:
+
+```
+strategy → dispatcher.execute(tool, args, auth=...) →
+  lookup → [hook_1, hook_2, ..., hook_N] → executor → result
+           │       │       │
+           ▼       ▼       ▼
+         Allow / Deny / Repair
+```
+
+Verdicts (`src/stronghold/protocols/tool_hooks.py`):
+
+- `AllowVerdict` — proceed unchanged (or with prior repairs).
+- `DenyVerdict(reason, hook_name)` — short-circuit the chain. Dispatcher returns `"Error: Tool '{name}' denied by {hook}: {reason}"`. Executor never runs.
+- `RepairVerdict(new_arguments, reason, hook_name)` — mutate the arguments. Subsequent hooks and the executor see the repaired args.
+
+Rules:
+1. Hooks run in registration order (deterministic).
+2. First deny short-circuits the chain.
+3. Repairs chain: hook N+1 sees the args hook N repaired.
+4. An empty hook chain is a pass-through (back-compat for existing callers).
+5. `auth=None` with a non-empty chain → `ConfigError` (fail-closed on wiring mistakes).
+6. Per-hook timeout (default 1 s); timeout or exception is treated as Allow (fail-open on hook failure). Operators requiring fail-closed semantics append a deny-by-default hook at the chain end.
+7. Every hook verdict emits an `AuditEntry(boundary="pretool_hook", verdict=allow|deny|repair, detail="hook_name: reason")`.
+
+Relationship to Sentinel: **this is pre-call**; Sentinel (§3.3) is post-call. Sentinel validates outputs, schema-repairs tool_call arguments after the LLM emits them, and runs PII filtering. PreToolCall hooks run after schema validation but before the executor — path-scope checks (S2.1), destructive-op escalation (S2.2), and RBAC enforcement (`CasbinToolPolicy`) all plug in here.
+
 ### 2.6 Routing: Conduit + Tournaments
 
 **Default routing:** Intent → agent lookup table. The classifier produces a task_type, the table maps it to an agent.
