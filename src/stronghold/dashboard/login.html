@@ -607,7 +607,7 @@ function submitApiKey(e) {
   }
 
   localStorage.removeItem(TOKEN_KEY);
-  sessionStorage.setItem(TOKEN_KEY, key);
+  sessionStorage.removeItem(TOKEN_KEY);
   localStorage.setItem(TOKEN_TYPE_KEY, 'api_key');
   localStorage.setItem(USER_KEY, 'API Key User');
   location.href = getRedirect();
