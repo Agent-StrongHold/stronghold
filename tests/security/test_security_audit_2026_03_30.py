@@ -236,6 +236,10 @@ class TestCriticalPgPromptManagerOrgGap:
                 "BUG FIXED: PgPromptManager.get() accepts org_id — "
                 "add a positive cross-org prompt isolation test."
             )
+        params = set(sig.parameters.keys())
+        assert "org_id" not in params, (
+            "BUG CONFIRMED: PgPromptManager.get() has no org_id. Cross-org prompt read is possible."
+        )
 
     def test_c4_pg_prompt_upsert_has_no_org_filter(self) -> None:
         """PgPromptManager.upsert() must gain an org_id kwarg.
@@ -335,6 +339,10 @@ class TestHighAgentStoreOrgGaps:
             reasoning_strategy="direct",
             memory_config={},
             org_id="org-alpha",
+        source = inspect.getsource(
+            __import__(
+                "stronghold.agents.store", fromlist=["InMemoryAgentStore"]
+            ).InMemoryAgentStore.get
         )
 
         class _NoopLLM:
@@ -450,9 +458,8 @@ class TestHighWardenScanWindowGap:
         gapped = head_padding + " " + injection + " " + tail_padding
 
         verdict = await warden.scan(gapped, "user_input")
-        assert not verdict.clean, (
-            "Injection in middle of content must be detected — full-content scan should catch it."
-        )
+        # Fixed: overlapping windows now detect injections in gaps
+        assert not verdict.clean, "Injection in gap must be detected with overlapping windows"
 
     async def test_h3_head_detected(self) -> None:
         """Injection in first 10KB is always caught."""
@@ -481,7 +488,7 @@ class TestHighWardenL3FailOpen:
     """
 
     async def test_h4_l3_returns_safe_on_exception(self) -> None:
-        """L3 failure returns label='safe' instead of 'inconclusive'."""
+        """L3 failure correctly returns label='inconclusive' on error."""
         from stronghold.security.warden.llm_classifier import classify_tool_result
 
         failing_llm = FakeLLMClient()
@@ -498,6 +505,7 @@ class TestHighWardenL3FailOpen:
             "Returning 'safe' is a fail-open vulnerability."
         )
         assert "error" in result
+        assert result["label"] == "inconclusive"
 
     async def test_h4_l3_detects_suspicious_when_healthy(self) -> None:
         """Positive: L3 correctly identifies suspicious content."""
