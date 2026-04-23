@@ -32,6 +32,7 @@ from stronghold.security.warden.detector import Warden
 from stronghold.sessions.store import InMemorySessionStore
 from stronghold.tools.executor import ToolDispatcher
 from stronghold.tools.registry import InMemoryToolRegistry
+from stronghold.tracing.noop import NoopTracingBackend
 from stronghold.tracing.phoenix_backend import PhoenixTracingBackend
 from stronghold.types.auth import PermissionTable
 from stronghold.types.errors import ConfigError
@@ -42,6 +43,7 @@ if TYPE_CHECKING:
     from stronghold.protocols.prompts import PromptManager
     from stronghold.protocols.quota import QuotaTracker
     from stronghold.types.config import StrongholdConfig
+    from stronghold.protocols.tracing import TracingBackend
 
 logger = logging.getLogger("stronghold.container")
 
@@ -65,7 +67,7 @@ class Container:
     warden: Warden
     gate: Gate
     sentinel: Sentinel
-    tracer: PhoenixTracingBackend
+    tracer: TracingBackend
     context_builder: ContextBuilder
     intent_registry: IntentRegistry
     llm: LiteLLMClient
@@ -314,8 +316,12 @@ async def create_container(config: StrongholdConfig) -> Container:
         permission_table=permission_table,
         audit_log=audit_log,
     )
-    phoenix_endpoint = config.phoenix_endpoint or "http://phoenix:6006"
-    tracer = PhoenixTracingBackend(endpoint=phoenix_endpoint)
+
+    # Tracing backend: Phoenix if configured, otherwise no-op (CI compatibility)
+    if config.phoenix_endpoint:
+        tracer_backend: TracingBackend = PhoenixTracingBackend(endpoint=config.phoenix_endpoint)
+    else:
+        tracer_backend: TracingBackend = NoopTracingBackend()
     context_builder = ContextBuilder()
     intent_registry = IntentRegistry()
 
@@ -434,7 +440,7 @@ async def create_container(config: StrongholdConfig) -> Container:
         session_store=session_store,
         quota_tracker=quota_tracker,
         coin_ledger=coin_ledger,
-        tracer=tracer,
+        tracer_backend=tracer,
         tool_executor=_tool_exec,
         sa_engine=sa_engine,
     )
@@ -494,7 +500,7 @@ async def create_container(config: StrongholdConfig) -> Container:
         warden=warden,
         gate=gate,
         sentinel=sentinel,
-        tracer=tracer,
+        tracer_backend=tracer,
         context_builder=context_builder,
         intent_registry=intent_registry,
         llm=llm,
