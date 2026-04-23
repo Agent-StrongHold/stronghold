@@ -29,7 +29,7 @@ class Tool(Protocol):
     mode: ToolMode
 
     def invoke(self, **kwargs: Any) -> Any:
-        ...
+        raise NotImplementedError
 
 
 class ToolNotPermitted(RuntimeError):
