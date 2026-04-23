@@ -19,7 +19,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from dataclasses import replace
-from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
+from typing import TYPE_CHECKING, Any, Literal, Protocol, cast, runtime_checkable
 
 from stronghold.types.model import ModelConfig, ProviderConfig
 from stronghold.types.reactor import Event
@@ -30,11 +30,20 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger("stronghold.conduit")
 
+_PriorityTier = Literal["P0", "P1", "P2", "P3", "P4", "P5"]
+
 # ── Execution tier constants ──
-_TIER_LEVELS = {"P0": 0, "P1": 1, "P2": 2, "P3": 3, "P4": 4, "P5": 5}
-_LEVEL_TO_TIER = {v: k for k, v in _TIER_LEVELS.items()}
+_TIER_LEVELS: dict[str, int] = {"P0": 0, "P1": 1, "P2": 2, "P3": 3, "P4": 4, "P5": 5}
+_LEVEL_TO_TIER: dict[int, _PriorityTier] = {
+    0: "P0",
+    1: "P1",
+    2: "P2",
+    3: "P3",
+    4: "P4",
+    5: "P5",
+}
 # Critical tiers that must never be downgraded by cluster pressure.
-_CRITICAL_TIERS = frozenset({"P0", "P1"})
+_CRITICAL_TIERS: frozenset[str] = frozenset({"P0", "P1"})
 
 
 @runtime_checkable
@@ -109,7 +118,7 @@ def determine_execution_tier(
     if current_tier == suggested_tier:
         return intent
 
-    return replace(intent, tier=current_tier)
+    return replace(intent, tier=cast("_PriorityTier", current_tier))
 
 
 # Words that signal consent in response to a data-sharing question.
