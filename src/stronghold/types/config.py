@@ -82,6 +82,7 @@ class RateLimitConfig(BaseModel):
 class AuthConfig(BaseModel):
     """Authentication provider configuration."""
 
+    jwt_secret: str = ""  # HS256 signing key for JWT tokens (separate from API key)
     jwks_url: str = ""
     issuer: str = ""
     audience: str = ""
@@ -118,3 +119,4 @@ class StrongholdConfig(BaseModel):
     cors_origins: list[str] = Field(default_factory=list)
     max_request_body_bytes: int = 1_048_576  # 1 MB
     webhook_secret: str = ""
+    cache_breakpoints_enabled: bool = False
