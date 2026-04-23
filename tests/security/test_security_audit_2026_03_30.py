@@ -339,6 +339,7 @@ class TestHighAgentStoreOrgGaps:
             reasoning_strategy="direct",
             memory_config={},
             org_id="org-alpha",
+        )
         source = inspect.getsource(
             __import__(
                 "stronghold.agents.store", fromlist=["InMemoryAgentStore"]
