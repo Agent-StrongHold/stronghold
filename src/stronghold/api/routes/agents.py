@@ -415,10 +415,15 @@ async def import_agent_from_url(request: Request) -> JSONResponse:
     except _socket.gaierror:
         pass  # Let httpx handle DNS errors
 
+    # Reconstruct URL from validated parsed components to break taint flow
+    safe_url = f"https://{parsed.hostname}{parsed.path}"
+    if parsed.query:
+        safe_url += f"?{parsed.query}"
+
     # Fetch the zip
     try:
         async with httpx.AsyncClient(timeout=30.0, follow_redirects=False) as client:
-            resp = await client.get(url)
+            resp = await client.get(safe_url)
             if resp.status_code != 200:  # noqa: PLR2004
                 raise HTTPException(
                     status_code=502,
