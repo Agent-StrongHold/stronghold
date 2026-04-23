@@ -20,6 +20,10 @@ concurrency:
   group: drift-check
   cancel-in-progress: true
 
+permissions:
+  contents: read
+  issues: write
+
 jobs:
   drift:
     name: Full Repo Quality Check

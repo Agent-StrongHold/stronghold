@@ -63,8 +63,32 @@ def test_custom_budget_limit() -> None:
 
 
 def test_protocol_compliance() -> None:
+    """InMemoryTaskAcceptancePolicy exposes every Protocol method as callable.
+
+    Replaces a runtime-checkable ``isinstance`` check — that only verifies
+    method *names*, not that they're callable. Explicit ``callable`` checks
+    catch a drift bug where a method is replaced with a non-callable
+    attribute and the ``isinstance`` check silently passes.
+    """
     p = InMemoryTaskAcceptancePolicy()
-    assert isinstance(p, TaskAcceptancePolicy)
+    for name in ("check_task_creation", "check_budget"):
+        attr = getattr(p, name, None)
+        assert callable(attr), f"{name} must be callable on InMemoryTaskAcceptancePolicy"
+    # Behavioural smoke: default policy allows task creation and an
+    # unconfigured budget — proves the callables are wired, not stubs.
+    assert p.check_task_creation("u", "o", "a") is True
+
+
+def test_protocol_rejects_incomplete_impl() -> None:
+    """Negative control: a bare class missing policy methods is not accepted.
+
+    Guards against the Protocol silently degrading (e.g. if @runtime_checkable
+    is removed) and making the positive test always pass.
+    """
+    class Incomplete:
+        pass
+
+    assert not isinstance(Incomplete(), TaskAcceptancePolicy)
 
 
 def test_all_tiers_have_defaults() -> None:

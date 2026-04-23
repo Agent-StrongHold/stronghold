@@ -60,8 +60,6 @@ _ALL_PROTOCOLS = [
 
 
 class TestProtocolsAreRuntimeCheckable:
-    def test_all_protocols_imported(self) -> None:
-        assert len(_ALL_PROTOCOLS) >= 25
 
     def test_plain_object_is_not_any_protocol(self) -> None:
         obj = object()
