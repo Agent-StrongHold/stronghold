@@ -63,9 +63,7 @@ async def test_exec_raw_runs_allowlisted_command() -> None:
 async def test_exec_raw_rejects_metacharacter_injection() -> None:
     with tempfile.TemporaryDirectory() as workspace:
         executor = ExecRawExecutor()
-        result = await executor.execute(
-            {"command": "ls; rm -rf /", "workspace": workspace}
-        )
+        result = await executor.execute({"command": "ls; rm -rf /", "workspace": workspace})
         assert result.success is False
         assert result.error is not None
         assert "metacharacter" in result.error
