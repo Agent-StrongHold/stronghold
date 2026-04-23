@@ -397,11 +397,24 @@ async def import_agent_from_url(request: Request) -> JSONResponse:
     if not url:
         raise HTTPException(status_code=400, detail="url is required")
 
-    # SSRF protection: HTTPS only, no private IPs
+    # SSRF protection: HTTPS only, allowlisted hosts only, no private IPs
     parsed = urlparse(url)
     if parsed.scheme != "https":
         raise HTTPException(status_code=400, detail="Only HTTPS URLs are allowed")
-    host = parsed.hostname or ""
+    host = (parsed.hostname or "").lower()
+    if not host:
+        raise HTTPException(status_code=400, detail="URL must include a hostname")
+
+    # Restrict outbound fetches to approved Git hosting domains.
+    # This prevents user-controlled arbitrary destinations (full SSRF).
+    allowed_hosts = {
+        "github.com",
+        "codeload.github.com",
+        "raw.githubusercontent.com",
+        "objects.githubusercontent.com",
+    }
+    if host not in allowed_hosts:
+        raise HTTPException(status_code=400, detail="Host is not allowed for import")
 
     # Resolve hostname and check all resolved IPs against private/reserved ranges.
     # Covers IPv4 RFC1918, loopback, link-local (169.254.x.x), IPv6 mapped
