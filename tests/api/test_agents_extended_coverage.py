@@ -338,13 +338,13 @@ class TestImportAgentFromUrl:
 
     @respx.mock
     def test_import_url_non_200_returns_502(self, ext_agents_app: FastAPI) -> None:
-        respx.get("https://example.com/missing.zip").mock(
+        respx.get("https://github.com/user/repo/missing.zip").mock(
             return_value=HttpxResponse(404, text="Not Found")
         )
         with TestClient(ext_agents_app) as client:
             resp = client.post(
                 "/v1/stronghold/agents/import-url",
-                json={"url": "https://example.com/missing.zip"},
+                json={"url": "https://github.com/user/repo/missing.zip"},
                 headers=AUTH_HEADER,
             )
         assert resp.status_code == 502
@@ -352,13 +352,13 @@ class TestImportAgentFromUrl:
     @respx.mock
     def test_import_url_too_small_response_returns_400(self, ext_agents_app: FastAPI) -> None:
         """Response that is too small to be a valid zip returns 400."""
-        respx.get("https://example.com/tiny.zip").mock(
+        respx.get("https://github.com/user/repo/tiny.zip").mock(
             return_value=HttpxResponse(200, content=b"PK")
         )
         with TestClient(ext_agents_app) as client:
             resp = client.post(
                 "/v1/stronghold/agents/import-url",
-                json={"url": "https://example.com/tiny.zip"},
+                json={"url": "https://github.com/user/repo/tiny.zip"},
                 headers=AUTH_HEADER,
             )
         assert resp.status_code == 400
@@ -367,13 +367,13 @@ class TestImportAgentFromUrl:
     def test_import_url_fetch_error_returns_502(self, ext_agents_app: FastAPI) -> None:
         import httpx as _httpx
 
-        respx.get("https://example.com/fail.zip").mock(
+        respx.get("https://github.com/user/repo/fail.zip").mock(
             side_effect=_httpx.ConnectError("connection reset")
         )
         with TestClient(ext_agents_app) as client:
             resp = client.post(
                 "/v1/stronghold/agents/import-url",
-                json={"url": "https://example.com/fail.zip"},
+                json={"url": "https://github.com/user/repo/fail.zip"},
                 headers=AUTH_HEADER,
             )
         assert resp.status_code == 502
