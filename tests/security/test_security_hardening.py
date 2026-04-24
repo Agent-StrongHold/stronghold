@@ -262,13 +262,26 @@ class TestSessionIDValidation:
 class TestAdminLearningWardenScan:
     """Regression: add_learning must Warden-scan learning text before storing."""
 
+    @staticmethod
+    def _make_app() -> "FastAPI":  # type: ignore[name-defined]
+        import asyncio
+
+        from stronghold.api.app import create_app
+        from stronghold.config.loader import load_config
+        from stronghold.container import create_container
+        from stronghold.security.auth_static import StaticKeyAuthProvider
+
+        app = create_app()
+        container = asyncio.get_event_loop().run_until_complete(create_container(load_config()))
+        container.auth_provider = StaticKeyAuthProvider(api_key="sk-example-stronghold", read_only=False)  # type: ignore[assignment]
+        app.state.container = container
+        return app
+
     def test_malicious_learning_text_rejected(self) -> None:
         """Prompt injection in learning text must be blocked (400)."""
         from fastapi.testclient import TestClient
 
-        from stronghold.api.app import create_app
-
-        app = create_app()
+        app = self._make_app()
         with TestClient(app) as client:
             resp = client.post(
                 "/v1/stronghold/admin/learnings",
@@ -286,9 +299,7 @@ class TestAdminLearningWardenScan:
         """Non-malicious learning text should be stored successfully."""
         from fastapi.testclient import TestClient
 
-        from stronghold.api.app import create_app
-
-        app = create_app()
+        app = self._make_app()
         with TestClient(app) as client:
             resp = client.post(
                 "/v1/stronghold/admin/learnings",
@@ -489,7 +500,10 @@ class TestErrorMessageSanitization:
         container = asyncio.get_event_loop().run_until_complete(
             create_container(load_config())
         )
+        from stronghold.security.auth_static import StaticKeyAuthProvider
+
         container.llm = _RaisingLLM(sensitive)
+        container.auth_provider = StaticKeyAuthProvider(api_key="sk-example-stronghold", read_only=False)  # type: ignore[assignment]
         app.state.container = container
 
         with TestClient(app) as client:
@@ -557,6 +571,9 @@ class TestLimitParameterBounds:
         container = asyncio.get_event_loop().run_until_complete(
             create_container(load_config())
         )
+        from stronghold.security.auth_static import StaticKeyAuthProvider
+
+        container.auth_provider = StaticKeyAuthProvider(api_key="sk-example-stronghold", read_only=False)  # type: ignore[assignment]
         app.state.container = container
 
         # Seed > 500 audit entries so clamp=500 has something to cap.
