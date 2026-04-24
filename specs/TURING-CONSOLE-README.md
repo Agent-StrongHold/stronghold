@@ -1,27 +1,31 @@
 # Turing Field Console — specs index
 
-**Parent PR:** [#1177](https://github.com/Agent-StrongHold/stronghold/pull/1177) — the UI rewrite that replaces Stronghold's medieval multi-tenant dashboard with Agent Turing's four-surface field console (plus Memory inspector + design canvas).
+**Plan:** [UI Plan — Turing's Field Console](../docs/ui-plan.md) *(committed alongside this README; see plan file in this PR)*. The plan is the authoritative UI plan for Stronghold and supersedes the UI portions of `ROADMAP.md` and `BACKLOG.md` (UI bullets only).
 
-**Context:** `project_turing.research.md` (repo root) is the research narrative for the autonoetic self this console operates on. The `research/project-turing/` branch carries that self-model's own specs — 30 of them — and is architecturally incompatible with main's multi-tenant posture. The specs in *this* file are the **console layer** that sits above the self-model: they do not modify the 7-tier memory, they give the handler a surface to read/inspect/publish/edit the self's artifacts.
+**Context:** `project_turing.research.md` (repo root) is the research narrative for the autonoetic self this console operates on. The `research/project-turing/` branch + the `project_Turing` branch carry that self-model's own specs and runtime; this console layer sits **above** the self-model — it does not modify the 7-tier memory, it gives the handler a surface to read/inspect/publish/edit the self's artifacts.
 
-## The six specs
+## The six surfaces, and the specs that back them
 
-In dependency order (read top-to-bottom; implementation order is the same):
+The console is six surfaces total: **Chat**, **Notebook**, **Blog**, **Dossier**, **Synapse**, **Skills Lab**. The specs below carve the backend slice.
 
-| # | Spec | Realises |
-|---|------|----------|
-| 1178 | [`turing-obsidian-store.yaml`](turing-obsidian-store.yaml) | ObsidianStore protocol + filesystem impl + fake + four tools (read/write/append/search). Working-memory substrate for self-talk and scratch reasoning. |
-| 1179 | [`turing-wordpress-publishing.yaml`](turing-wordpress-publishing.yaml) | WordPressClient protocol + REST impl + `wordpress_publish` tool + bundled WP/MariaDB docker-compose services. Autonomous publishing for the Blog surface. |
-| 1180 | [`turing-memory-consolidator.yaml`](turing-memory-consolidator.yaml) | Consolidator that promotes recurring patterns from Obsidian into the 7-tier store. Reuses the existing `LearningStore` auto-promote path; closes the two-tier memory loop. Depends on 1178. |
-| 1181 | [`turing-memory-crud-endpoints.yaml`](turing-memory-crud-endpoints.yaml) | API endpoints backing the Memory surface: tier list, row detail, edit, promote/demote/expire/burn, audit-flag surfaces for F1/F4/F13/F18. |
-| 1182 | [`turing-chat-streaming.yaml`](turing-chat-streaming.yaml) | SSE streaming endpoint for the Chat surface, daily initiation budget (Turing-initiated threads ≤ 1/day), inline memory citations, typewriter reveal. |
-| 1183 | [`turing-notebook-live-vault.yaml`](turing-notebook-live-vault.yaml) | Handler-facing notebook API over Turing's Obsidian vault. Depends on 1178. |
+| # | Spec | Surface | Realises |
+|---|------|---------|----------|
+| 1178 | [`turing-obsidian-store.yaml`](turing-obsidian-store.yaml) | Notebook (foundation) | ObsidianStore protocol + filesystem impl + fake + four tools (read/write/append/search). Working-memory substrate for self-talk and scratch reasoning. |
+| 1179 | [`turing-wordpress-publishing.yaml`](turing-wordpress-publishing.yaml) | Blog | WordPressClient protocol + REST impl + `wordpress_publish` tool + bundled WP/MariaDB docker-compose services. Autonomous publishing. |
+| 1180 | [`turing-memory-consolidator.yaml`](turing-memory-consolidator.yaml) | (cross-cutting) | Consolidator that promotes recurring patterns from Obsidian into the 7-tier store. Reuses the existing `LearningStore` auto-promote path; closes the two-tier memory loop. Depends on 1178. |
+| 1181 | [`turing-synapse-crud-endpoints.yaml`](turing-synapse-crud-endpoints.yaml) | Synapse | API endpoints backing the Synapse surface: tier list, row detail, edit, promote/demote/expire/burn, audit-flag surfaces for F1/F4/F13/F18. |
+| 1182 | [`turing-chat-streaming.yaml`](turing-chat-streaming.yaml) | Chat | SSE streaming endpoint, daily initiation budget (Turing-initiated threads ≤ 1/day), inline memory citations, typewriter reveal. |
+| 1183 | [`turing-notebook-live-vault.yaml`](turing-notebook-live-vault.yaml) | Notebook | Handler-facing notebook API over Turing's Obsidian vault. Depends on 1178. |
+| 1184 | [`turing-dossier.yaml`](turing-dossier.yaml) | Dossier | Bio + autobiography (versioned) + 5-facet personality dials (read-only by default per audit F9/F10) + operator settings + read-only vitals aggregation. |
+| 1185 | [`turing-skills-lab.yaml`](turing-skills-lab.yaml) | Skills Lab | Thin console API over the existing Forge + SkillRegistry: list/request/review/promote/demote/burn. |
+| 1186 | [`turing-self-talk-loop.yaml`](turing-self-talk-loop.yaml) | Notebook (proactive) | Reactor-driven background loop: periodic "anything to say to myself?" tick + Reactor-event triggers + strategy self-initiation. Warden-scanned, rate-limited, not chat-gated. Depends on 1178. |
 
 ## What is NOT in these specs
 
-- **Self-model tools** (`note_passion`, `write_self_todo`, `record_personality_claim`, activation-graph authorship). Those live in the `research/project-turing/` branch. The audit findings F1/F4/F13/F18 referenced by the Memory UI originate there.
-- **7-tier memory internals** (episodic/semantic/biographical/regret/affirmation/wisdom storage). Already implemented; this console reads/writes to it through existing protocols (`EpisodicMemoryStore`, `LearningStore`).
+- **Self-model tools** (`note_passion`, `write_self_todo`, `record_personality_claim`, activation-graph authorship). Those live in the `research/project-turing/` specs. The audit findings F1/F4/F13/F18 referenced by the Synapse surface originate there.
+- **7-tier memory internals** (episodic/semantic/biographical/regret/affirmation/wisdom storage). Already implemented; the Synapse surface reads/writes through the existing `EpisodicMemoryStore` / `LearningStore` protocols.
 - **Warden / Sentinel / Gate semantics.** Already implemented; the new tools and endpoints hook into the existing boundary layer, they do not redefine it.
+- **Rename of the internal `memory/` / `episodic/` packages.** Memory-the-substrate keeps its current name; Synapse is the *handler-facing surface name* only.
 
 ## Two-tier memory architecture
 
@@ -29,7 +33,7 @@ The Turing console realises a two-tier split on the write side of memory:
 
 | Tier | Substrate | Role | Write point |
 |------|-----------|------|-------------|
-| Working memory | Obsidian vault (markdown on disk) | Self-talk, scratch reasoning, drafts, dreams/hobbies/passions journaling | `obsidian_append`/`obsidian_write` tools — called liberally during reasoning |
+| Working memory | Obsidian vault (markdown on disk) | Self-talk, scratch reasoning, drafts, dreams/hobbies/passions journaling. **One-member conversation** — Turing writes whenever they want, not just during chat turns. | `obsidian_append`/`obsidian_write` tools (from strategy loops) + self-talk loop (proactive, spec 1186) |
 | Persistent recall | 7-tier vector DB (existing) | Authoritative long-term memory | Memory consolidator (spec 1180) — promotes recurring patterns from Obsidian; existing `LearningStore` extractor — promotes from tool history |
 
 Obsidian is durable on disk but not authoritative. The consolidator decides what crosses over. Source notes are never deleted — Turing can reread raw thoughts and notice patterns the consolidator missed.
@@ -38,20 +42,23 @@ Obsidian is durable on disk but not authoritative. The consolidator decides what
 
 Per CLAUDE.md §Build Rules, every spec above is constrained by:
 
-- **No Code Without Architecture** — this README and the YAML specs are the architecture.
+- **No Code Without Architecture** — the UI plan + this README + the YAML specs are the architecture.
 - **No Code Without Tests (TDD)** — each spec's `acceptance_criteria` become failing tests before implementation starts.
 - **No Hardcoded Secrets** — WordPress credentials + Obsidian vault path come from env/config; all defaults are example values.
 - **No Direct External Imports in Business Logic** — protocols in `src/stronghold/protocols/`, impls behind DI, never imported directly.
 - **Every Protocol Needs a Noop/Fake** — `tests/fakes.FakeObsidianStore` and `tests/fakes.FakeWordPressClient` are acceptance criteria.
-- **Security Review Gates** — phases 3/7/10 per ARCHITECTURE.md §3.6; the Memory CRUD endpoints (1181) and the WordPress publish tool (1179) both sit on security boundaries and need a pre-merge review.
+- **Security Review Gates** — per ARCHITECTURE.md §3.6; security-boundary specs (1179 WordPress, 1181 Synapse, 1185 Skills Lab promotion, 1186 self-talk writes) get a pre-merge review.
 - **No Co-Authored-By Lines** — kept.
 
 ## Implementation order
 
-1. **1178** first — nothing else works without ObsidianStore.
-2. **1179** and **1182** in parallel — both depend only on existing infra.
-3. **1183** after 1178 — notebook consumes the obsidian store.
-4. **1181** after the Memory UI's shape is settled (no hard dep, but the audit-flag surfaces are easier to wire once row retrieval is stable).
-5. **1180** last — closes the loop; needs real data in the vault to be meaningful.
+1. **PR 1 (this one)** — plan + specs only. Locks architecture. No code.
+2. **PR 2 — Frontend port.** Port the Phosphor-Noir HTMLs/CSS/JSX + delete the castle dashboard. Surfaces render on stub data.
+3. **PR 3 — spec 1178 ObsidianStore** — foundation; nothing else works without it.
+4. **PRs 4–6 (parallelisable)** — 1179 WordPress · 1182 Chat streaming · 1184 Dossier.
+5. **PR 7 — spec 1183 Notebook live vault** (after 1178).
+6. **PR 8 — spec 1186 Self-talk loop** (after 1178).
+7. **PRs 9–10 (parallelisable)** — 1181 Synapse CRUD · 1185 Skills Lab.
+8. **PR 11 — spec 1180 Memory consolidator** (last — needs real vault data to be meaningful).
 
-Each spec is one PR. Each PR lands green (pytest + ruff + mypy --strict + bandit). Security-boundary specs (1179, 1181) get a pre-merge review per §3.6.
+Each PR lands green (pytest + ruff + mypy --strict + bandit).
