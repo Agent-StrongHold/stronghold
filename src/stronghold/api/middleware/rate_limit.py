@@ -33,9 +33,7 @@ _EXEMPT_PREFIXES = (
     "/auth/config",  # Public OIDC config (read-only)
     "/auth/logout",  # Logout (no brute force risk)
     # /auth/login and /auth/register are NOT exempt — brute force protection
-    "/dashboard/",  # Static dashboard pages + JS assets
-    "/greathall",  # Main dashboard
-    "/prompts",  # Prompts page
+    "/dashboard",  # Turing field console (hub + 5 surfaces + static assets)
 )
 # Exact-match exempt paths (these need rate limiting on POST but not GET)
 _EXEMPT_EXACT = frozenset({"/login"})

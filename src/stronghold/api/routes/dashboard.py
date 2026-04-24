@@ -1,7 +1,7 @@
-"""API route: dashboard — serves HTML pages for The Stronghold UI.
+"""API route: dashboard — serves Agent Turing's field console.
 
-Dashboard pages require authentication (server-side check).
-Login/logout/callback pages and static JS assets are public.
+Five surfaces (auth required): Chat, Notebook, Blog, Profile, Memory.
+Login/logout/callback pages and static assets (CSS/JSX/SVG) are public.
 """
 
 from __future__ import annotations
@@ -19,10 +19,14 @@ _DASHBOARD_CANDIDATES = [
     Path("src/stronghold/dashboard"),
 ]
 
+# CSP tuned for the Phosphor-Noir design bundle:
+# - unpkg.com for React 18 + Babel standalone (integrity-hashed in HTML)
+# - 'unsafe-eval' for Babel's in-browser JSX transform
+# - Google Fonts for VT323 + IBM Plex families
 _CSP = "; ".join(
     [
         "default-src 'self'",
-        "script-src 'self' 'unsafe-inline' https://cdn.tailwindcss.com https://cdn.jsdelivr.net",
+        "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://unpkg.com",
         "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
         "font-src https://fonts.gstatic.com",
         "connect-src 'self'",
@@ -33,23 +37,31 @@ _CSP = "; ".join(
 _LOGIN_REDIRECT = HTMLResponse(status_code=302, headers={"Location": "/login"})
 
 
+def _find_path(relative: str) -> Path | None:
+    """Locate a file relative to the dashboard directory across deploy layouts."""
+    for d in _DASHBOARD_CANDIDATES:
+        candidate = d / relative
+        if candidate.exists() and candidate.is_file():
+            return candidate
+    return None
+
+
 def _serve_page(filename: str) -> HTMLResponse:
     """Serve an HTML dashboard page with no-cache and CSP headers."""
-    for d in _DASHBOARD_CANDIDATES:
-        filepath = d / filename
-        if filepath.exists():
-            return HTMLResponse(
-                content=filepath.read_text(encoding="utf-8"),
-                headers={
-                    "Cache-Control": "no-cache, no-store, must-revalidate",
-                    "Pragma": "no-cache",
-                    "Expires": "0",
-                    "Content-Security-Policy": _CSP,
-                },
-            )
+    path = _find_path(filename)
+    if path is None:
+        return HTMLResponse(
+            content=f"<h1>Page not found: {filename}</h1>",
+            status_code=404,
+        )
     return HTMLResponse(
-        content=f"<h1>Page not found: {filename}</h1>",
-        status_code=404,
+        content=path.read_text(encoding="utf-8"),
+        headers={
+            "Cache-Control": "no-cache, no-store, must-revalidate",
+            "Pragma": "no-cache",
+            "Expires": "0",
+            "Content-Security-Policy": _CSP,
+        },
     )
 
 
@@ -57,13 +69,11 @@ async def _check_auth(request: Request) -> bool:
     """Server-side auth check for dashboard pages.
 
     Returns True if authenticated (valid auth header or session cookie).
-    Returns False if no valid credentials found.
     """
     container = getattr(getattr(request.app, "state", None), "container", None)
     if not container:
-        return False  # No container yet (startup) — deny access until ready
+        return False
 
-    # Check auth header
     auth_header = request.headers.get("authorization")
     if auth_header:
         try:
@@ -72,7 +82,6 @@ async def _check_auth(request: Request) -> bool:
         except ValueError:
             pass
 
-    # Check session cookie — must actually validate the token, not just check existence
     cookie_name = container.config.auth.session_cookie_name
     cookie_value = request.cookies.get(cookie_name)
     if not cookie_value:
@@ -87,100 +96,63 @@ async def _check_auth(request: Request) -> bool:
         return False
 
 
-@router.get("/dashboard/skills")
-async def skills_dashboard(request: Request) -> HTMLResponse:
-    """The Armory — skill management dashboard."""
+# ── Turing field-console surfaces (auth required) ──
+
+
+@router.get("/dashboard")
+async def dashboard_hub(request: Request) -> HTMLResponse:
+    """The hub — lists the five surfaces."""
     if not await _check_auth(request):
         return _LOGIN_REDIRECT
-    return _serve_page("skills.html")
+    return _serve_page("index.html")
 
 
-@router.get("/dashboard/security")
-async def security_dashboard(request: Request) -> HTMLResponse:
-    """The Watchtower — security dashboard."""
+@router.get("/dashboard/chat")
+async def chat_surface(request: Request) -> HTMLResponse:
+    """Chat — handler ↔ AT-01 wire."""
     if not await _check_auth(request):
         return _LOGIN_REDIRECT
-    return _serve_page("security.html")
+    return _serve_page("chat.html")
 
 
-@router.get("/dashboard/outcomes")
-async def outcomes_dashboard(request: Request) -> HTMLResponse:
-    """The Treasury — outcomes and analytics dashboard."""
+@router.get("/dashboard/notebook")
+async def notebook_surface(request: Request) -> HTMLResponse:
+    """Notebook — themed Obsidian vault (working memory)."""
     if not await _check_auth(request):
         return _LOGIN_REDIRECT
-    return _serve_page("outcomes.html")
+    return _serve_page("notebook.html")
 
 
-@router.get("/dashboard/agents")
-async def agents_dashboard(request: Request) -> HTMLResponse:
-    """The Knights — agent roster dashboard."""
+@router.get("/dashboard/blog")
+async def blog_surface(request: Request) -> HTMLResponse:
+    """Blog — handler-POV preview of Turing's WordPress field dossier."""
     if not await _check_auth(request):
         return _LOGIN_REDIRECT
-    return _serve_page("agents.html")
-
-
-@router.get("/dashboard/mcp")
-async def mcp_dashboard(request: Request) -> HTMLResponse:
-    """The Forge — MCP server management dashboard."""
-    if not await _check_auth(request):
-        return _LOGIN_REDIRECT
-    return _serve_page("mcp.html")
-
-
-@router.get("/dashboard/quota")
-async def quota_dashboard(request: Request) -> HTMLResponse:
-    """The Ledger — provider quota and budget dashboard."""
-    if not await _check_auth(request):
-        return _LOGIN_REDIRECT
-    return _serve_page("quota.html")
+    return _serve_page("blog.html")
 
 
 @router.get("/dashboard/profile")
-async def profile_dashboard(request: Request) -> HTMLResponse:
-    """Profile — user identity and preferences."""
+async def profile_surface(request: Request) -> HTMLResponse:
+    """Profile — asset dossier."""
     if not await _check_auth(request):
         return _LOGIN_REDIRECT
     return _serve_page("profile.html")
 
 
-@router.get("/dashboard/leaderboard")
-async def leaderboard_dashboard(request: Request) -> HTMLResponse:
-    """The Arena — leaderboard and rankings."""
+@router.get("/dashboard/memory")
+async def memory_surface(request: Request) -> HTMLResponse:
+    """Memory — raw 7-tier DB inspector (CRUD)."""
     if not await _check_auth(request):
         return _LOGIN_REDIRECT
-    return _serve_page("leaderboard.html")
+    return _serve_page("memory.html")
 
 
-@router.get("/dashboard/team")
-async def team_dashboard(request: Request) -> HTMLResponse:
-    """The Barracks — team administration dashboard."""
+@router.get("/dashboard/canvas")
+async def canvas_surface(request: Request) -> HTMLResponse:
+    """Design canvas — all five surfaces side-by-side for review."""
     if not await _check_auth(request):
         return _LOGIN_REDIRECT
-    return _serve_page("team.html")
-
-
-@router.get("/dashboard/dungeon")
-async def dungeon_dashboard(request: Request) -> HTMLResponse:
-    """The Dungeon — strikes, violations, and appeals management."""
-    if not await _check_auth(request):
-        return _LOGIN_REDIRECT
-    return _serve_page("dungeon.html")
-
-
-@router.get("/dashboard/mason")
-async def mason_dashboard(request: Request) -> HTMLResponse:
-    """The Workshop — Mason autonomous agent management (admin)."""
-    if not await _check_auth(request):
-        return _LOGIN_REDIRECT
-    return _serve_page("mason.html")
-
-
-@router.get("/dashboard/org")
-async def org_dashboard(request: Request) -> HTMLResponse:
-    """The Throne Room — organization administration dashboard."""
-    if not await _check_auth(request):
-        return _LOGIN_REDIRECT
-    return _serve_page("org.html")
+    return _serve_page("canvas.html")
 
 
 # ── Login & Auth (public — no auth required) ──
@@ -188,25 +160,22 @@ async def org_dashboard(request: Request) -> HTMLResponse:
 
 @router.get("/logout")
 async def logout_redirect() -> HTMLResponse:
-    """Logout — full nuclear option.
-
-    Returns a page that:
-    1. Server Set-Cookie headers delete HttpOnly cookies
-    2. Client JS deletes everything JS can reach
-    3. Client JS waits 500ms for cookies to clear
-    4. Only THEN redirects to login page
-    """
+    """Logout — clear session cookies and client-side storage, then redirect to /."""
     html = (
         "<!DOCTYPE html><html><head>"
-        "<title>Logging out...</title></head>\n"
-        '<body style="background:#1a1a2e;color:#d4d0c8;'
-        "font-family:monospace;display:flex;align-items:center;"
+        "<title>Disconnecting...</title></head>\n"
+        '<body style="background:#0A0B0A;color:#ECEAE3;'
+        "font-family:'IBM Plex Mono',monospace;display:flex;align-items:center;"
         'justify-content:center;height:100vh;margin:0">'
-        """
-<div style="text-align:center">
-<div style="font-size:3rem;margin-bottom:16px">&#x1F3F0;</div>
-<div>Logging out of the fortress...</div>
-</div>
+        '<div style="text-align:center">'
+        '<div style="font-size:2rem;margin-bottom:16px;color:#5EE88C;'
+        'text-shadow:0 0 10px rgba(94,232,140,0.5)">'
+        "&#x25C6; WIRE &middot; SEVERED</div>"
+        '<div style="font-size:11px;letter-spacing:0.24em;'
+        'text-transform:uppercase;color:#8F9692">'
+        "Disconnecting handler session</div>"
+        "</div>"
+        + """
 <script>
 localStorage.clear();
 sessionStorage.clear();
@@ -216,14 +185,12 @@ document.cookie.split(';').forEach(function(c){
   document.cookie=n+'=;expires=Thu, 01 Jan 1970 00:00:00 GMT;path=/;secure';
   document.cookie=n+'=;expires=Thu, 01 Jan 1970 00:00:00 GMT;path=/;secure;samesite=lax';
 });
-// Wait for cookie deletion to take effect before redirecting
 setTimeout(function(){location.href='/';},500);
 </script>
 </body></html>"""
     )
 
     response = HTMLResponse(content=html)
-    # Server-side: delete HttpOnly cookies that JS can't reach
     for name in (
         "stronghold_session",
         "stronghold_logged_in",
@@ -240,7 +207,7 @@ setTimeout(function(){location.href='/';},500);
 
 @router.get("/login")
 async def login_page() -> HTMLResponse:
-    """The Gates — login page."""
+    """Login page."""
     return _serve_page("login.html")
 
 
@@ -250,6 +217,9 @@ async def login_callback() -> HTMLResponse:
     return _serve_page("login.html")
 
 
+# ── Static assets (public — referenced from HTML pages) ──
+
+
 _NO_CACHE = {
     "Cache-Control": "no-cache, no-store, must-revalidate",
     "Pragma": "no-cache",
@@ -257,24 +227,71 @@ _NO_CACHE = {
 }
 
 
-def _serve_js(filename: str) -> Response:
-    """Serve a JS file with no-cache headers."""
-    for d in _DASHBOARD_CANDIDATES:
-        filepath = d / filename
-        if filepath.exists():
-            return Response(
-                content=filepath.read_text(encoding="utf-8"),
-                media_type="application/javascript",
-                headers=_NO_CACHE,
-            )
-    return Response(content=f"// {filename} not found", media_type="application/javascript")
+def _serve_static(relative: str, media_type: str) -> Response:
+    """Serve a static asset with no-cache headers."""
+    path = _find_path(relative)
+    if path is None:
+        return Response(
+            content=f"// {relative} not found",
+            media_type=media_type,
+            status_code=404,
+        )
+    return Response(
+        content=path.read_text(encoding="utf-8"),
+        media_type=media_type,
+        headers=_NO_CACHE,
+    )
+
+
+def _safe_name(name: str) -> bool:
+    """Reject any path traversal attempts in static asset names."""
+    return (
+        bool(name)
+        and "/" not in name
+        and "\\" not in name
+        and not name.startswith(".")
+        and ".." not in name
+    )
 
 
 @router.get("/dashboard/auth.js")
 async def auth_js() -> Response:
-    return _serve_js("auth.js")
+    return _serve_static("auth.js", "application/javascript")
 
 
-@router.get("/dashboard/scan-report.js")
-async def scan_report_js() -> Response:
-    return _serve_js("scan-report.js")
+@router.get("/dashboard/styles/{filename}")
+async def dashboard_style(filename: str) -> Response:
+    if not _safe_name(filename) or not filename.endswith(".css"):
+        return Response(content="", status_code=404)
+    return _serve_static(f"styles/{filename}", "text/css")
+
+
+@router.get("/dashboard/components/{filename}")
+async def dashboard_component(filename: str) -> Response:
+    if not _safe_name(filename) or not filename.endswith(".jsx"):
+        return Response(content="", status_code=404)
+    return _serve_static(f"components/{filename}", "text/babel")
+
+
+@router.get("/dashboard/assets/{filename}")
+async def dashboard_asset(filename: str) -> Response:
+    if not _safe_name(filename):
+        return Response(content="", status_code=404)
+    ext = filename.rsplit(".", 1)[-1].lower()
+    media = {
+        "svg": "image/svg+xml",
+        "png": "image/png",
+        "jpg": "image/jpeg",
+        "jpeg": "image/jpeg",
+        "webp": "image/webp",
+    }.get(ext)
+    if media is None:
+        return Response(content="", status_code=404)
+    path = _find_path(f"assets/{filename}")
+    if path is None:
+        return Response(content="", status_code=404)
+    return Response(
+        content=path.read_bytes(),
+        media_type=media,
+        headers=_NO_CACHE,
+    )

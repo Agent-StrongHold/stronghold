@@ -501,9 +501,7 @@ class TestGateLLMImprovementPath:
             assert data["improved"] == data["sanitized"]
             assert data["blocked"] is False
 
-    def test_persistent_mode_warden_rescan_blocks_llm_output(
-        self, gate_llm_app: FastAPI
-    ) -> None:
+    def test_persistent_mode_warden_rescan_blocks_llm_output(self, gate_llm_app: FastAPI) -> None:
         """When LLM output contains injection, warden rescan blocks it and falls back."""
         # Set LLM to return something the Warden would flag
         container = gate_llm_app.state.container
@@ -812,9 +810,7 @@ def sessions_cross_org_app() -> FastAPI:
 class TestSessionDeleteCrossOrg:
     """sessions.py line 78: delete session from different org returns 404."""
 
-    def test_delete_other_org_session_returns_404(
-        self, sessions_cross_org_app: FastAPI
-    ) -> None:
+    def test_delete_other_org_session_returns_404(self, sessions_cross_org_app: FastAPI) -> None:
         """Deleting a session that belongs to another org is denied."""
         with TestClient(sessions_cross_org_app) as client:
             resp = client.delete(
@@ -826,26 +822,20 @@ class TestSessionDeleteCrossOrg:
             assert "Session not found" in resp.json()["detail"]
 
 
-# ── 11. dashboard.py: agents dashboard (line 47) ──────────────────
+# ── 11. dashboard.py: chat surface auth gate ──────────────────────
 
 
-class TestAgentsDashboard:
-    """dashboard.py line 47: GET /dashboard/agents serves the agents page."""
+class TestChatSurfaceAuthGate:
+    """dashboard.py: GET /dashboard/chat redirects to /login when unauthed."""
 
-    def test_agents_dashboard_unauth_redirects_or_serves_html(self) -> None:
-        """Without auth, /dashboard/agents redirects; with auth it serves real HTML.
-
-        The old version asserted ``status in (200, 404)`` which passes for
-        any response — even a misconfigured 404. The real contract is
-        auth-guarded: without a container the dashboard router redirects
-        unauthenticated users to /login.
-        """
+    def test_chat_surface_unauth_redirects_to_login(self) -> None:
+        """Without a container, the auth check fails and the router
+        redirects to /login. Verified against the Chat surface, which is
+        representative of every auth-gated Turing surface."""
         app = FastAPI()
         app.include_router(dashboard_router)
         with TestClient(app) as client:
-            resp = client.get("/dashboard/agents", follow_redirects=False)
-            # No container on app.state => _check_auth returns False =>
-            # redirect to /login with 302.
+            resp = client.get("/dashboard/chat", follow_redirects=False)
             assert resp.status_code == 302
             assert resp.headers["location"] == "/login"
 

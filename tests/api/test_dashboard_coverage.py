@@ -1,17 +1,16 @@
-"""Integration tests for api/routes/dashboard.py — HTML page serving, auth, JS assets.
+"""Integration tests for api/routes/dashboard.py — HTML page serving, auth, static assets.
 
-Covers uncovered lines in dashboard.py:
+Covers:
 - _serve_page: found vs 404, CSP headers, no-cache headers
+- _serve_static: found vs 404, content-type + no-cache headers
 - _check_auth: no container, auth header, session cookie, invalid creds
-- All dashboard page routes: skills, security, outcomes, agents, mcp, quota, profile, team, org
+- Every Turing surface route (hub, chat, notebook, blog, profile, memory, canvas)
 - Login/logout/callback routes (public, no auth)
-- JS asset routes: auth.js, scan-report.js
-- _serve_js: found vs not-found
+- Static asset routes (styles/*, components/*, assets/*, auth.js)
 """
 
 from __future__ import annotations
 
-from pathlib import Path
 from typing import Any
 
 import pytest
@@ -24,14 +23,14 @@ from stronghold.agents.intents import IntentRegistry
 from stronghold.agents.store import InMemoryAgentStore
 from stronghold.agents.strategies.direct import DirectStrategy
 from stronghold.api.routes.dashboard import (
-    _check_auth,
-    _serve_js,
     _serve_page,
+    _serve_static,
+)
+from stronghold.api.routes.dashboard import (
     router as dashboard_router,
 )
 from stronghold.classifier.engine import ClassifierEngine
 from stronghold.container import Container
-from stronghold.events import Reactor
 from stronghold.memory.learnings.extractor import ToolCorrectionExtractor
 from stronghold.memory.learnings.store import InMemoryLearningStore
 from stronghold.memory.outcomes import InMemoryOutcomeStore
@@ -49,10 +48,20 @@ from stronghold.tracing.noop import NoopTracingBackend
 from stronghold.types.agent import AgentIdentity
 from stronghold.types.auth import AuthContext, PermissionTable
 from stronghold.types.config import StrongholdConfig, TaskTypeConfig
-from tests.fakes import FakeAuthProvider, FakeLLMClient, FakePromptManager
-
+from tests.fakes import FakeLLMClient, FakePromptManager
 
 AUTH_HEADER = {"Authorization": "Bearer sk-test"}
+
+# The Turing field console's five surfaces + hub + canvas.
+_SURFACE_PATHS = [
+    "/dashboard",
+    "/dashboard/chat",
+    "/dashboard/notebook",
+    "/dashboard/blog",
+    "/dashboard/profile",
+    "/dashboard/memory",
+    "/dashboard/canvas",
+]
 
 
 # ── Shared helpers ─────────────────────────────────────────────────
@@ -101,7 +110,6 @@ def _build_authenticated_app(
     learning_store = InMemoryLearningStore()
     sess = InMemorySessionStore()
 
-    # Seed prompt synchronously via FakePromptManager's dict
     prompts.seed("agent.arbiter.soul", "You are helpful.")
 
     default_agent = Agent(
@@ -161,7 +169,6 @@ class TestServePage:
     def test_existing_file_returns_200_with_html(self) -> None:
         """When the HTML file exists in the dashboard dir, returns 200."""
         resp = _serve_page("login.html")
-        # login.html exists in the dashboard directory
         assert resp.status_code == 200
         assert "text/html" in resp.media_type
         body = resp.body.decode("utf-8")
@@ -175,8 +182,8 @@ class TestServePage:
         csp = resp.headers["content-security-policy"]
         assert "default-src 'self'" in csp
         assert "script-src" in csp
-        # No inline-unsafe relaxations on default-src (check for XSS mitigation).
-        # default-src should not contain 'unsafe-inline' or 'unsafe-eval'.
+        # default-src must stay tight; unsafe-* relaxations are only allowed on
+        # script-src (Babel standalone needs unsafe-eval for in-browser JSX).
         default_src = csp.split(";", 1)[0]
         assert "unsafe-inline" not in default_src
         assert "unsafe-eval" not in default_src
@@ -197,28 +204,24 @@ class TestServePage:
         assert "totally_nonexistent_page_xyz.html" in body
 
 
-# ── _serve_js ──────────────────────────────────────────────────────
+# ── _serve_static ──────────────────────────────────────────────────
 
 
-class TestServeJs:
-    def test_existing_js_returns_content(self) -> None:
-        """_serve_js returns the real file contents, not a stub comment."""
-        resp = _serve_js("auth.js")
+class TestServeStatic:
+    def test_existing_asset_returns_content(self) -> None:
+        """_serve_static returns the real file, not a stub."""
+        resp = _serve_static("auth.js", "application/javascript")
         assert resp.media_type == "application/javascript"
         body = resp.body.decode("utf-8")
-        # The "not found" comment is the single-line fallback used when the
-        # file is missing. A real asset is always bigger than that.
         assert "not found" not in body.lower()
         assert len(body) > 50, "auth.js body looks like a stub"
 
-    def test_nonexistent_js_returns_comment(self) -> None:
-        resp = _serve_js("nonexistent_xyz.js")
-        assert resp.media_type == "application/javascript"
-        body = resp.body.decode("utf-8")
-        assert "not found" in body.lower()
+    def test_nonexistent_asset_returns_404(self) -> None:
+        resp = _serve_static("nonexistent_xyz.js", "application/javascript")
+        assert resp.status_code == 404
 
-    def test_no_cache_headers_on_js(self) -> None:
-        resp = _serve_js("auth.js")
+    def test_no_cache_headers_on_asset(self) -> None:
+        resp = _serve_static("auth.js", "application/javascript")
         assert resp.headers.get("cache-control") == "no-cache, no-store, must-revalidate"
         assert resp.headers.get("pragma") == "no-cache"
 
@@ -231,19 +234,16 @@ class TestCheckAuth:
         """When request.app.state has no container, auth check returns False."""
         app = FastAPI()
         app.include_router(dashboard_router)
-        # No container set on app.state
 
         with TestClient(app) as client:
-            # Access a protected route — should redirect to login
-            resp = client.get("/dashboard/skills", follow_redirects=False)
+            resp = client.get("/dashboard/chat", follow_redirects=False)
             assert resp.status_code == 302
             assert resp.headers["location"] == "/login"
 
     def test_valid_auth_header_grants_access(self) -> None:
         app = _build_authenticated_app()
         with TestClient(app) as client:
-            resp = client.get("/dashboard/skills", headers=AUTH_HEADER)
-            # Real HTML is shipped in src/stronghold/dashboard/ — must be 200.
+            resp = client.get("/dashboard/chat", headers=AUTH_HEADER)
             assert resp.status_code == 200
             assert "text/html" in resp.headers["content-type"]
             assert "<" in resp.text, "expected HTML body, got empty"
@@ -261,7 +261,7 @@ class TestCheckAuth:
         app = _build_authenticated_app(auth_provider=FailingAuthProvider())
         with TestClient(app) as client:
             resp = client.get(
-                "/dashboard/skills",
+                "/dashboard/chat",
                 headers={"Authorization": "Bearer bad-token"},
                 follow_redirects=False,
             )
@@ -269,18 +269,11 @@ class TestCheckAuth:
             assert resp.headers["location"] == "/login"
 
     def test_valid_session_cookie_grants_access(self) -> None:
-        """A valid session cookie is accepted for auth — no login redirect.
-
-        The behavioural contract is "auth succeeded". Whether the page
-        itself renders 200 or 404 (missing template file in the test
-        environment) is independent of the security path. We assert the
-        explicit negative: no redirect to /login.
-        """
-        # Use the actual API key as the cookie value so StaticKeyAuthProvider accepts it
+        """A valid session cookie is accepted for auth — no login redirect."""
         app = _build_authenticated_app()
         with TestClient(app) as client:
             resp = client.get(
-                "/dashboard/agents",
+                "/dashboard/notebook",
                 cookies={"stronghold_session": "sk-test"},
                 follow_redirects=False,
             )
@@ -288,8 +281,6 @@ class TestCheckAuth:
                 f"Valid cookie was rejected: {resp.status_code} loc={resp.headers.get('location')}"
             )
             assert resp.headers.get("location") != "/login"
-            # Route-level outcome: either rendered the page or template missing —
-            # both prove the auth gate did not trigger a redirect.
             assert resp.status_code in {200, 404}
 
     def test_invalid_session_cookie_redirects(self) -> None:
@@ -305,7 +296,7 @@ class TestCheckAuth:
         app = _build_authenticated_app(auth_provider=FailingAuthProvider())
         with TestClient(app) as client:
             resp = client.get(
-                "/dashboard/skills",
+                "/dashboard/chat",
                 cookies={"stronghold_session": "bad-cookie"},
                 follow_redirects=False,
             )
@@ -316,7 +307,7 @@ class TestCheckAuth:
         """No auth header and no cookie redirects to login."""
         app = _build_authenticated_app()
         with TestClient(app) as client:
-            resp = client.get("/dashboard/skills", follow_redirects=False)
+            resp = client.get("/dashboard/chat", follow_redirects=False)
             assert resp.status_code == 302
             assert resp.headers["location"] == "/login"
 
@@ -325,7 +316,7 @@ class TestCheckAuth:
         app = _build_authenticated_app()
         with TestClient(app) as client:
             resp = client.get(
-                "/dashboard/skills",
+                "/dashboard/chat",
                 cookies={"stronghold_session": ""},
                 follow_redirects=False,
             )
@@ -336,60 +327,24 @@ class TestCheckAuth:
 
 
 class TestDashboardPageRoutes:
-    """Test all protected dashboard pages with valid authentication."""
+    """Every Turing surface must serve real HTML under valid auth."""
 
     @pytest.fixture
     def authed_app(self) -> FastAPI:
         return _build_authenticated_app()
 
-    @pytest.mark.parametrize(
-        "path",
-        [
-            "/dashboard/skills",
-            "/dashboard/security",
-            "/dashboard/outcomes",
-            "/dashboard/agents",
-            "/dashboard/mcp",
-            "/dashboard/quota",
-            "/dashboard/profile",
-            "/dashboard/team",
-            "/dashboard/org",
-        ],
-    )
+    @pytest.mark.parametrize("path", _SURFACE_PATHS)
     def test_authenticated_page_returns_html(self, authed_app: FastAPI, path: str) -> None:
-        """Each dashboard page must serve real HTML with auth — not a 404 stub.
-
-        The old form accepted ``200 or 404``, which silently green-lit a broken
-        router. All nine HTML files ship in ``src/stronghold/dashboard/`` so a
-        404 is a real regression.
-        """
         with TestClient(authed_app) as client:
             resp = client.get(path, headers=AUTH_HEADER)
             assert resp.status_code == 200, f"{path} returned {resp.status_code}"
             assert "text/html" in resp.headers["content-type"]
-            # Body must be a real HTML doc, not an empty/error stub.
             body = resp.text
             assert "<" in body and "</" in body
-            # Responses from _serve_page must be no-cache (security hardening).
             assert resp.headers.get("cache-control") == "no-cache, no-store, must-revalidate"
 
-    @pytest.mark.parametrize(
-        "path",
-        [
-            "/dashboard/skills",
-            "/dashboard/security",
-            "/dashboard/outcomes",
-            "/dashboard/agents",
-            "/dashboard/mcp",
-            "/dashboard/quota",
-            "/dashboard/profile",
-            "/dashboard/team",
-            "/dashboard/org",
-        ],
-    )
-    def test_unauthenticated_page_redirects_to_login(
-        self, authed_app: FastAPI, path: str
-    ) -> None:
+    @pytest.mark.parametrize("path", _SURFACE_PATHS)
+    def test_unauthenticated_page_redirects_to_login(self, authed_app: FastAPI, path: str) -> None:
         with TestClient(authed_app) as client:
             resp = client.get(path, follow_redirects=False)
             assert resp.status_code == 302
@@ -407,59 +362,51 @@ class TestPublicRoutes:
         return app
 
     def test_login_page_returns_html(self, app: FastAPI) -> None:
-        """The /login page is a real HTML file shipped with the package."""
         with TestClient(app) as client:
             resp = client.get("/login")
             assert resp.status_code == 200
             assert "text/html" in resp.headers["content-type"]
-            # Login page has a form that posts to the auth flow.
             body = resp.text.lower()
             assert "<html" in body or "<!doctype" in body
 
     def test_login_callback_returns_html(self, app: FastAPI) -> None:
-        """The /login/callback page is served for the OIDC redirect landing."""
         with TestClient(app) as client:
             resp = client.get("/login/callback")
             assert resp.status_code == 200
             assert "text/html" in resp.headers["content-type"]
 
-    def test_logout_clears_cookies_and_returns_html(self, app: FastAPI) -> None:
+    def test_logout_clears_storage_and_returns_html(self, app: FastAPI) -> None:
         with TestClient(app) as client:
             resp = client.get("/logout")
             assert resp.status_code == 200
             assert "text/html" in resp.headers["content-type"]
-
-            # Body should contain logout script
             body = resp.text
-            assert "Logging out" in body
+            # The Phosphor-Noir logout page uses "WIRE · SEVERED" as the
+            # handler-facing string; the client-side script still clears
+            # localStorage + sessionStorage + cookies.
             assert "localStorage.clear" in body
             assert "sessionStorage.clear" in body
 
     def test_logout_sets_delete_cookie_headers(self, app: FastAPI) -> None:
         """/logout must emit Set-Cookie headers with Max-Age=0 for each
-        session cookie — not just render logout JS. The original test
-        only asserted "setTimeout" in resp.text, which ignored the
-        test's own name."""
+        session cookie — not just render logout JS."""
         with TestClient(app) as client:
             resp = client.get("/logout")
             assert resp.status_code == 200
 
             set_cookie_headers = resp.headers.get_list("set-cookie")
-            # At least one Set-Cookie header must be present, and each must
-            # be a deletion (Max-Age=0 or an Expires in the past).
             assert set_cookie_headers, "/logout must emit Set-Cookie headers"
             for raw in set_cookie_headers:
                 lower = raw.lower()
-                assert (
-                    "max-age=0" in lower
-                    or "expires=thu, 01 jan 1970" in lower
-                ), f"Set-Cookie header is not a deletion: {raw!r}"
+                assert "max-age=0" in lower or "expires=thu, 01 jan 1970" in lower, (
+                    f"Set-Cookie header is not a deletion: {raw!r}"
+                )
 
 
-# ── JS asset routes ────────────────────────────────────────────────
+# ── Static asset routes ────────────────────────────────────────────
 
 
-class TestJsAssetRoutes:
+class TestStaticAssetRoutes:
     @pytest.fixture
     def app(self) -> FastAPI:
         app = FastAPI()
@@ -472,11 +419,23 @@ class TestJsAssetRoutes:
             assert resp.status_code == 200
             assert "javascript" in resp.headers["content-type"]
 
-    def test_scan_report_js_returns_javascript(self, app: FastAPI) -> None:
+    def test_styles_css_returns_css(self, app: FastAPI) -> None:
         with TestClient(app) as client:
-            resp = client.get("/dashboard/scan-report.js")
+            resp = client.get("/dashboard/styles/colors_and_type.css")
             assert resp.status_code == 200
-            assert "javascript" in resp.headers["content-type"]
+            assert "text/css" in resp.headers["content-type"]
+
+    def test_component_jsx_returned_as_text_babel(self, app: FastAPI) -> None:
+        with TestClient(app) as client:
+            resp = client.get("/dashboard/components/ui.jsx")
+            assert resp.status_code == 200
+            assert "text/babel" in resp.headers["content-type"]
+
+    def test_asset_svg_returns_image(self, app: FastAPI) -> None:
+        with TestClient(app) as client:
+            resp = client.get("/dashboard/assets/logo-seal.svg")
+            assert resp.status_code == 200
+            assert "image/svg+xml" in resp.headers["content-type"]
 
     def test_js_has_no_cache_headers(self, app: FastAPI) -> None:
         with TestClient(app) as client:
@@ -484,6 +443,22 @@ class TestJsAssetRoutes:
             assert resp.headers.get("cache-control") == "no-cache, no-store, must-revalidate"
             assert resp.headers.get("pragma") == "no-cache"
             assert resp.headers.get("expires") == "0"
+
+    def test_non_css_in_styles_rejected(self, app: FastAPI) -> None:
+        """The styles endpoint must only serve .css files — anything else 404."""
+        with TestClient(app) as client:
+            resp = client.get("/dashboard/styles/evil.js")
+            assert resp.status_code == 404
+
+    def test_non_jsx_in_components_rejected(self, app: FastAPI) -> None:
+        with TestClient(app) as client:
+            resp = client.get("/dashboard/components/evil.js")
+            assert resp.status_code == 404
+
+    def test_unknown_image_ext_rejected(self, app: FastAPI) -> None:
+        with TestClient(app) as client:
+            resp = client.get("/dashboard/assets/evil.exe")
+            assert resp.status_code == 404
 
 
 # ── CSP header comprehensive check ────────────────────────────────
@@ -501,3 +476,21 @@ class TestContentSecurityPolicy:
         assert "font-src" in csp
         assert "connect-src 'self'" in csp
         assert "img-src 'self' data:" in csp
+
+    def test_csp_allows_unpkg_for_react_babel(self) -> None:
+        """The Phosphor-Noir bundle loads React + Babel from unpkg.com
+        with integrity hashes. The CSP must explicitly whitelist unpkg."""
+        resp = _serve_page("login.html")
+        csp = resp.headers.get("content-security-policy", "")
+        assert "https://unpkg.com" in csp
+
+    def test_csp_allows_unsafe_eval_for_babel_jsx(self) -> None:
+        """Babel standalone transforms JSX at runtime, which requires
+        'unsafe-eval' in script-src."""
+        resp = _serve_page("login.html")
+        csp = resp.headers.get("content-security-policy", "")
+        script_src_segment = next(
+            (seg for seg in csp.split(";") if "script-src" in seg),
+            "",
+        )
+        assert "'unsafe-eval'" in script_src_segment

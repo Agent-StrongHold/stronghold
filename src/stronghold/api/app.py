@@ -216,14 +216,4 @@ def create_app() -> FastAPI:
         """Root is the login page — always."""
         return _find_dashboard_file("login.html")
 
-    @app.get("/greathall", response_class=HTMLResponse)
-    async def dashboard() -> str:
-        """Serve the main Stronghold dashboard (auth required)."""
-        return _find_dashboard_file("index.html")
-
-    @app.get("/prompts", response_class=HTMLResponse)
-    async def prompts_ui() -> str:
-        """Serve the prompt management UI."""
-        return _find_dashboard_file("prompts.html")
-
     return app

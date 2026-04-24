@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 420 60" width="420" height="60">
+  <defs>
+    
+    <filter id="glow2"><feGaussianBlur stdDeviation="0.6"></feGaussianBlur><feMerge><feMergeNode></feMergeNode><feMergeNode in="SourceGraphic"></feMergeNode></feMerge></filter>
+  </defs>
+  <g filter="url(#glow2)">
+    <text class="txt" x="10" y="32" font-size="26">PROJECT TURING</text>
+  </g>
+  <text class="sub" x="10" y="50" font-size="9">AUTONOETIC · AGENT · 01</text>
+  <line x1="10" y1="38" x2="410" y2="38" stroke="#334038" stroke-width="1"></line>
+</svg>

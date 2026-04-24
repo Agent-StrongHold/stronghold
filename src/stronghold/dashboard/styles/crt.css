@@ -1,0 +1,226 @@
+/* =========================================================
+   AGENT TURING — CRT Effects
+   Scanlines, phosphor bloom, barrel distortion, flicker.
+   Use sparingly. Every effect is opt-in via a class.
+   ========================================================= */
+
+/* ---------- Scanlines overlay (heavy) ----------
+   Use by wrapping content: <div class="crt"> … </div>
+   or as a fixed overlay on the whole viewport.
+*/
+.crt {
+  position: relative;
+}
+
+.crt::before,
+.crt-scanlines::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 40;
+  background:
+    repeating-linear-gradient(
+      to bottom,
+      rgba(0, 0, 0, 0) 0,
+      rgba(0, 0, 0, 0) 2px,
+      rgba(0, 0, 0, 0.32) 2px,
+      rgba(0, 0, 0, 0.32) 3px
+    );
+  mix-blend-mode: multiply;
+  opacity: 0.9;
+}
+
+/* Slow moving scan sweep — a single bright band drifting down */
+.crt::after,
+.crt-sweep::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 41;
+  background: linear-gradient(
+    to bottom,
+    rgba(94, 232, 140, 0) 0%,
+    rgba(94, 232, 140, 0.08) 48%,
+    rgba(168, 255, 142, 0.14) 50%,
+    rgba(94, 232, 140, 0.08) 52%,
+    rgba(94, 232, 140, 0) 100%
+  );
+  background-size: 100% 300%;
+  background-position: 0 -100%;
+  animation: crt-sweep 6s linear infinite;
+  mix-blend-mode: screen;
+  opacity: 0.55;
+}
+@keyframes crt-sweep {
+  0%   { background-position: 0 -50%; }
+  100% { background-position: 0 150%; }
+}
+
+/* ---------- Light scanlines (2% opacity) ---------- */
+.crt-light::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 40;
+  background:
+    repeating-linear-gradient(
+      to bottom,
+      rgba(0, 0, 0, 0) 0,
+      rgba(0, 0, 0, 0) 2px,
+      rgba(0, 0, 0, 0.12) 2px,
+      rgba(0, 0, 0, 0.12) 3px
+    );
+  mix-blend-mode: multiply;
+}
+
+/* ---------- Phosphor bloom helpers ---------- */
+.bloom-soft { text-shadow: var(--phosphor-glow-soft); }
+.bloom-med  { text-shadow: var(--phosphor-glow-med); }
+.bloom-hot  { text-shadow: var(--phosphor-glow-hot); }
+
+.bloom-amber { text-shadow: var(--amber-glow); color: var(--amber); }
+.bloom-burn  { text-shadow: var(--burn-glow);  color: var(--burn); }
+
+.box-bloom {
+  box-shadow:
+    0 0 0 1px var(--phosphor),
+    0 0 8px rgba(94, 232, 140, 0.35),
+    0 0 24px rgba(94, 232, 140, 0.18);
+}
+
+/* ---------- Barrel curvature ----------
+   Applied to a container to fake CRT screen bulge.
+   Using radial vignette + perspective transform.
+*/
+.crt-curve {
+  border-radius: 26px / 18px;
+  box-shadow:
+    inset 0 0 80px rgba(0, 0, 0, 0.9),
+    inset 0 0 0 2px rgba(94, 232, 140, 0.12),
+    0 0 0 6px #0a0b0a,
+    0 0 0 8px #1b1f1c,
+    0 16px 40px rgba(0, 0, 0, 0.8);
+  overflow: hidden;
+  position: relative;
+  background: var(--ink-1);
+}
+
+/* Radial glow behind content */
+.crt-curve::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 39;
+  background: radial-gradient(
+    ellipse at center,
+    rgba(94, 232, 140, 0.04) 0%,
+    rgba(0, 0, 0, 0) 60%,
+    rgba(0, 0, 0, 0.5) 100%
+  );
+}
+
+/* Actual bulge — use sparingly; applied to inner shell */
+.crt-warp {
+  transform: perspective(1400px) rotateX(0.4deg);
+  border-radius: 22px / 16px;
+  overflow: hidden;
+}
+
+/* ---------- Flicker ---------- */
+@keyframes crt-flicker {
+  0%, 100%    { opacity: 1; }
+  2%          { opacity: 0.82; }
+  4%          { opacity: 1; }
+  20%         { opacity: 1; }
+  20.5%       { opacity: 0.74; }
+  21%         { opacity: 1; }
+  62%         { opacity: 1; }
+  62.3%       { opacity: 0.9; }
+  62.6%       { opacity: 1; }
+}
+.flicker { animation: crt-flicker 4.2s infinite; }
+
+@keyframes crt-interference {
+  0%, 100%   { transform: translateX(0); filter: none; }
+  12%        { transform: translateX(0); }
+  12.5%      { transform: translateX(1px); filter: hue-rotate(6deg); }
+  13%        { transform: translateX(-1px); }
+  13.5%      { transform: translateX(0); filter: none; }
+  72%        { transform: translateX(0); }
+  72.4%      { transform: translateY(1px); filter: contrast(1.2); }
+  72.8%      { transform: translateY(0); filter: none; }
+}
+.interference { animation: crt-interference 9s infinite; }
+
+/* ---------- Typewriter reveal ---------- */
+.typewriter {
+  display: inline-block;
+  overflow: hidden;
+  white-space: nowrap;
+  border-right: 0.08em solid var(--phosphor);
+  animation:
+    typewriter-typing 2.4s steps(40, end) forwards,
+    typewriter-caret 0.9s steps(2) infinite;
+}
+@keyframes typewriter-typing {
+  from { width: 0; }
+  to   { width: 100%; }
+}
+@keyframes typewriter-caret {
+  50% { border-right-color: transparent; }
+}
+
+/* ---------- Blueprint grid background ---------- */
+.bg-blueprint {
+  background-color: var(--ink-1);
+  background-image:
+    linear-gradient(rgba(94, 232, 140, 0.04) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(94, 232, 140, 0.04) 1px, transparent 1px),
+    linear-gradient(rgba(94, 232, 140, 0.07) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(94, 232, 140, 0.07) 1px, transparent 1px);
+  background-size: 10px 10px, 10px 10px, 80px 80px, 80px 80px;
+  background-position: -1px -1px;
+}
+
+/* ---------- Dot grid ---------- */
+.bg-dots {
+  background-color: var(--ink-1);
+  background-image: radial-gradient(rgba(94, 232, 140, 0.14) 1px, transparent 1px);
+  background-size: 18px 18px;
+}
+
+/* ---------- Noise / grain ---------- */
+.grain::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 38;
+  opacity: 0.08;
+  mix-blend-mode: overlay;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 1  0 0 0 0 1  0 0 0 0 1  0 0 0 0.6 0'/></filter><rect width='100%25' height='100%25' filter='url(%23n)'/></svg>");
+}
+
+/* ---------- Corner brackets (decorative frame) ---------- */
+.brackets {
+  position: relative;
+}
+.brackets::before,
+.brackets::after,
+.brackets > .bracket-bl,
+.brackets > .bracket-br {
+  content: "";
+  position: absolute;
+  width: 14px;
+  height: 14px;
+  border: 1px solid var(--phosphor);
+  box-shadow: var(--phosphor-glow-soft);
+}
+.brackets::before { top: 0; left: 0; border-right: 0; border-bottom: 0; }
+.brackets::after  { top: 0; right: 0; border-left: 0; border-bottom: 0; }
+.brackets > .bracket-bl { bottom: 0; left: 0; border-right: 0; border-top: 0; }
+.brackets > .bracket-br { bottom: 0; right: 0; border-left: 0; border-top: 0; }

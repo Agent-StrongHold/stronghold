@@ -227,9 +227,9 @@ var serverConfig = null;
 
 function getRedirect() {
   var params = new URLSearchParams(location.search);
-  var r = params.get('redirect') || '/greathall';
+  var r = params.get('redirect') || '/dashboard';
   // Prevent open redirect — only allow relative paths
-  if (r.indexOf('//') !== -1 || r.indexOf(':') !== -1) return '/greathall';
+  if (r.indexOf('//') !== -1 || r.indexOf(':') !== -1) return '/dashboard';
   return r;
 }
 

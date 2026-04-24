@@ -1,0 +1,297 @@
+/* =========================================================
+   AGENT TURING — Colors & Type
+   Dark-mode retrofuturist noir. Greys to whites.
+   CRT phosphor green primary. 1960s IBM-manual typography.
+   ========================================================= */
+
+@import url('https://fonts.googleapis.com/css2?family=VT323&family=IBM+Plex+Mono:ital,wght@0,300;0,400;0,500;0,600;0,700;1,400&family=IBM+Plex+Sans:ital,wght@0,300;0,400;0,500;0,600;0,700;1,400&family=IBM+Plex+Serif:ital,wght@0,400;0,500;1,400&display=swap');
+
+:root {
+  /* ---------- Ink / Bone greyscale ---------- */
+  --ink-0: #050507;         /* deepest void */
+  --ink-1: #0A0B0A;         /* primary bg — faint green cast */
+  --ink-2: #0F1110;         /* elevated bg */
+  --ink-3: #141714;         /* panel bg */
+  --ink-4: #1B1F1C;         /* card bg */
+  --ink-5: #222825;         /* input bg */
+
+  --line-1: #232925;        /* hairline */
+  --line-2: #334038;        /* border */
+  --line-3: #4E5C54;        /* active border */
+
+  --grey-1: #6E7670;        /* muted text */
+  --grey-2: #8F9692;        /* secondary text */
+  --grey-3: #B4BAB7;        /* tertiary text / labels */
+  --grey-4: #D6D4CE;        /* body warm */
+
+  --bone-1: #ECEAE3;        /* high-emphasis body */
+  --bone-0: #F2F0EA;        /* headings — warm white */
+  --bone-pure: #FFFFFF;     /* absolute, rare */
+
+  /* ---------- Signal: CRT PHOSPHOR GREEN ---------- */
+  --phosphor-hi:   #A8FF8E;           /* brightest — highlights, active text */
+  --phosphor:      #5EE88C;           /* default terminal text */
+  --phosphor-mid:  #3EC172;           /* secondary green */
+  --phosphor-dim:  #1E7A3D;           /* dim / hover dark */
+  --phosphor-deep: #0D2A17;           /* deep recessed green */
+  --phosphor-ink:  #061007;           /* almost-black green shadow */
+
+  --phosphor-glow-soft: 0 0 2px rgba(94, 232, 140, 0.55),
+                        0 0 8px rgba(94, 232, 140, 0.32);
+  --phosphor-glow-med:  0 0 2px rgba(94, 232, 140, 0.8),
+                        0 0 10px rgba(94, 232, 140, 0.5),
+                        0 0 22px rgba(94, 232, 140, 0.22);
+  --phosphor-glow-hot:  0 0 3px rgba(168, 255, 142, 0.95),
+                        0 0 12px rgba(94, 232, 140, 0.7),
+                        0 0 30px rgba(94, 232, 140, 0.35),
+                        0 0 60px rgba(62, 193, 114, 0.18);
+  --phosphor-trail: rgba(94, 232, 140, 0.10);
+
+  /* ---------- Secondary: amber (warnings, classified) ---------- */
+  --amber: #FFB547;
+  --amber-dim: #8A6520;
+  --amber-glow: 0 0 2px rgba(255, 181, 71, 0.7),
+                0 0 10px rgba(255, 181, 71, 0.38);
+
+  /* ---------- Destructive: burn / compromised ---------- */
+  --burn: #FF5A4E;
+  --burn-dim: #6E2A22;
+  --burn-glow: 0 0 2px rgba(255, 90, 78, 0.7),
+               0 0 10px rgba(255, 90, 78, 0.38);
+
+  /* ---------- Semantic ---------- */
+  --bg: var(--ink-1);
+  --bg-elevated: var(--ink-3);
+  --panel: var(--ink-4);
+  --panel-recessed: var(--ink-2);
+  --input-bg: var(--ink-5);
+
+  --fg: var(--bone-1);
+  --fg-strong: var(--bone-0);
+  --fg-muted: var(--grey-2);
+  --fg-faint: var(--grey-1);
+  --fg-inverse: var(--ink-0);
+
+  --border: var(--line-1);
+  --border-strong: var(--line-2);
+  --border-active: var(--line-3);
+
+  --accent: var(--phosphor);
+  --accent-hi: var(--phosphor-hi);
+  --accent-dim: var(--phosphor-dim);
+  --accent-deep: var(--phosphor-deep);
+
+  /* ---------- Type families ----------
+     VT323 = CRT terminal display face (for big retro phosphor moments)
+     IBM Plex Mono = default terminal / UI mono
+     IBM Plex Sans = geometric-ish sans, 1960s IBM manual energy
+     IBM Plex Serif = narrative body (field reports, dossiers)
+  */
+  --font-display: 'VT323', 'IBM Plex Mono', monospace;
+  --font-mono:    'IBM Plex Mono', 'SF Mono', Menlo, monospace;
+  --font-sans:    'IBM Plex Sans', system-ui, sans-serif;
+  --font-serif:   'IBM Plex Serif', Georgia, serif;
+
+  /* ---------- Type scale ---------- */
+  --fs-display: 72px;
+  --fs-h1: 44px;
+  --fs-h2: 28px;
+  --fs-h3: 20px;
+  --fs-body: 16px;
+  --fs-small: 14px;
+  --fs-micro: 12px;
+  --fs-tag: 11px;
+
+  --lh-tight: 1.05;
+  --lh-snug: 1.25;
+  --lh-body: 1.6;
+  --lh-loose: 1.8;
+
+  --tracking-display: 0.02em;
+  --tracking-label: 0.18em;   /* uppercase mono labels */
+  --tracking-wide: 0.32em;    /* CLASSIFIED banner */
+
+  /* ---------- Spacing (4px grid) ---------- */
+  --sp-1: 4px;
+  --sp-2: 8px;
+  --sp-3: 12px;
+  --sp-4: 16px;
+  --sp-5: 24px;
+  --sp-6: 32px;
+  --sp-7: 48px;
+  --sp-8: 64px;
+  --sp-9: 96px;
+
+  /* ---------- Radii (sharp-first) ---------- */
+  --r-0: 0px;
+  --r-1: 2px;
+  --r-2: 4px;
+  --r-pill: 9999px;
+
+  /* ---------- Motion ---------- */
+  --ease-ui: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --ease-reveal: cubic-bezier(0.4, 0, 0.6, 1);
+  --ease-step: steps(8, end);       /* terminal-style stepped motion */
+  --dur-hover: 120ms;
+  --dur-state: 220ms;
+  --dur-scene: 600ms;
+  --dur-type: 1400ms;
+
+  /* ---------- Shadows (rare) ---------- */
+  --shadow-recess: inset 0 0 0 1px var(--line-1);
+  --shadow-panel:  inset 0 0 0 1px var(--line-2),
+                   inset 0 0 40px rgba(0, 0, 0, 0.6);
+}
+
+/* =========================================================
+   Base
+   ========================================================= */
+
+body {
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--font-sans);
+  font-size: var(--fs-body);
+  line-height: var(--lh-body);
+  -webkit-font-smoothing: antialiased;
+  margin: 0;
+}
+
+/* =========================================================
+   Semantic type
+   ========================================================= */
+
+.display {
+  font-family: var(--font-display);
+  font-size: var(--fs-display);
+  line-height: var(--lh-tight);
+  letter-spacing: var(--tracking-display);
+  text-transform: uppercase;
+  color: var(--phosphor-hi);
+  text-shadow: var(--phosphor-glow-hot);
+}
+
+h1, .h1 {
+  font-family: var(--font-sans);
+  font-size: var(--fs-h1);
+  line-height: var(--lh-tight);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--fg-strong);
+  margin: 0;
+}
+
+.h1-phosphor {
+  font-family: var(--font-display);
+  font-size: var(--fs-h1);
+  line-height: var(--lh-tight);
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-display);
+  color: var(--phosphor);
+  text-shadow: var(--phosphor-glow-med);
+}
+
+h2, .h2 {
+  font-family: var(--font-sans);
+  font-size: var(--fs-h2);
+  line-height: var(--lh-snug);
+  font-weight: 500;
+  color: var(--fg-strong);
+  margin: 0;
+}
+
+h3, .h3 {
+  font-family: var(--font-mono);
+  font-size: var(--fs-h3);
+  line-height: var(--lh-snug);
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-label);
+  color: var(--fg);
+  margin: 0;
+}
+
+p {
+  font-family: var(--font-serif);
+  font-size: var(--fs-body);
+  line-height: var(--lh-body);
+  color: var(--fg);
+  margin: 0 0 var(--sp-4);
+  text-wrap: pretty;
+}
+
+.body-sans {
+  font-family: var(--font-sans);
+}
+
+small, .small {
+  font-size: var(--fs-small);
+  color: var(--fg-muted);
+}
+
+.label, .tag {
+  font-family: var(--font-mono);
+  font-size: var(--fs-tag);
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-label);
+  color: var(--fg-muted);
+}
+
+.label-phosphor {
+  font-family: var(--font-mono);
+  font-size: var(--fs-tag);
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-label);
+  color: var(--phosphor);
+  text-shadow: var(--phosphor-glow-soft);
+}
+
+code, pre, .mono {
+  font-family: var(--font-mono);
+  font-size: 0.92em;
+  color: var(--fg);
+}
+
+.terminal-text {
+  font-family: var(--font-mono);
+  color: var(--phosphor);
+  text-shadow: var(--phosphor-glow-soft);
+}
+
+.classified {
+  font-family: var(--font-mono);
+  font-weight: 600;
+  letter-spacing: var(--tracking-wide);
+  text-transform: uppercase;
+  color: var(--amber);
+  text-shadow: var(--amber-glow);
+}
+
+.redacted {
+  background: var(--ink-0);
+  color: var(--ink-0);
+  padding: 0 0.2em;
+  user-select: none;
+  border: 1px solid var(--line-1);
+}
+
+/* ---------- Selection ---------- */
+::selection { background: var(--phosphor); color: var(--ink-0); text-shadow: none; }
+
+/* ---------- Scrollbar ---------- */
+*::-webkit-scrollbar { width: 10px; height: 10px; }
+*::-webkit-scrollbar-thumb { background: var(--line-2); }
+*::-webkit-scrollbar-thumb:hover { background: var(--phosphor-dim); }
+*::-webkit-scrollbar-track { background: transparent; }
+
+/* ---------- Cursor blink ---------- */
+.cursor {
+  display: inline-block;
+  width: 0.55em;
+  height: 1em;
+  vertical-align: -0.12em;
+  background: var(--phosphor);
+  box-shadow: var(--phosphor-glow-med);
+  animation: blink 1s steps(2, end) infinite;
+}
+@keyframes blink { 50% { opacity: 0; } }

@@ -1,0 +1,87 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 400" width="480" height="400">
+  <defs>
+    
+    <pattern id="grid" width="20" height="20" patternUnits="userSpaceOnUse">
+      <path d="M20 0 L0 0 L0 20" fill="none" stroke="#0D2A17" stroke-width="0.5"></path>
+    </pattern>
+    <filter id="schglow"><feGaussianBlur stdDeviation="0.5"></feGaussianBlur><feMerge><feMergeNode></feMergeNode><feMergeNode in="SourceGraphic"></feMergeNode></feMerge></filter>
+  </defs>
+  <rect class="bg" width="480" height="400"></rect>
+  <rect width="480" height="400" fill="url(#grid)"></rect>
+
+  <g filter="url(#schglow)">
+    
+    <path class="line" d="M180 100 Q150 105 140 140 L138 200 Q138 230 150 250 L170 270 Q180 280 200 280 L220 280 L220 260 L240 260 L240 255 L220 255 L220 230 L250 225 L250 110 Q240 95 220 92 Z"></path>
+    
+    <circle class="line" cx="220" cy="255" r="4"></circle>
+    <circle class="dim" cx="220" cy="255" r="8"></circle>
+    
+    <ellipse class="line" cx="205" cy="155" rx="12" ry="10"></ellipse>
+    <circle class="line" cx="205" cy="155" r="4"></circle>
+    <circle class="line" cx="205" cy="155" r="1.5" fill="#A8FF8E"></circle>
+    
+    <rect class="line" x="155" y="165" width="8" height="22"></rect>
+    <line class="fine" x1="157" y1="170" x2="161" y2="170"></line>
+    <line class="fine" x1="157" y1="175" x2="161" y2="175"></line>
+    <line class="fine" x1="157" y1="180" x2="161" y2="180"></line>
+    
+    <line class="line" x1="200" y1="92" x2="200" y2="70"></line>
+    <circle class="line" cx="200" cy="68" r="2"></circle>
+    
+    <rect class="line" x="195" y="280" width="35" height="20"></rect>
+    <path class="fine" d="M195 286 L230 286 M195 292 L230 292"></path>
+    
+    <path class="dim" d="M165 130 L175 130 L175 200 L165 200 M160 130 L160 200"></path>
+    <path class="dim" d="M180 215 L230 215 M180 220 L230 220"></path>
+
+    
+    <g>
+      <line class="fine" x1="205" y1="155" x2="280" y2="120"></line>
+      <line class="fine" x1="280" y1="120" x2="340" y2="120"></line>
+      <text class="lbl" x="345" y="118">OCULAR · PHOSPHOR P1</text>
+      <text class="dim-lbl" x="345" y="130">λ 525nm / 0.8cd</text>
+    </g>
+    <g>
+      <line class="fine" x1="160" y1="175" x2="100" y2="150"></line>
+      <line class="fine" x1="100" y1="150" x2="30" y2="150"></line>
+      <text class="lbl" x="30" y="148" text-anchor="start">AUDITORY INPUT</text>
+      <text class="dim-lbl" x="30" y="160">20Hz – 80kHz</text>
+    </g>
+    <g>
+      <line class="fine" x1="200" y1="70" x2="260" y2="60"></line>
+      <line class="fine" x1="260" y1="60" x2="340" y2="60"></line>
+      <text class="lbl" x="345" y="58">SENSORY APERTURE</text>
+      <text class="dim-lbl" x="345" y="70">OMNI · ENCRYPTED</text>
+    </g>
+    <g>
+      <line class="fine" x1="220" y1="255" x2="300" y2="290"></line>
+      <line class="fine" x1="300" y1="290" x2="360" y2="290"></line>
+      <text class="lbl" x="365" y="288">MANDIBULAR HINGE</text>
+      <text class="dim-lbl" x="365" y="300">SERVO · 180° · 3Nm</text>
+    </g>
+    <g>
+      <line class="fine" x1="212" y1="300" x2="100" y2="330"></line>
+      <line class="fine" x1="100" y1="330" x2="30" y2="330"></line>
+      <text class="lbl" x="30" y="328" text-anchor="start">SPINAL COLUMN</text>
+      <text class="dim-lbl" x="30" y="340">TITANIUM · DAMPED</text>
+    </g>
+
+    
+    <text class="lbl" x="20" y="28" font-size="10" letter-spacing="0.25em">FIG. 01 · PROJECT TURING · AT-01 CRANIAL SCHEMATIC</text>
+    <text class="dim-lbl" x="20" y="42">SCALE 1:1  ·  DWG 047  ·  REV C  ·  1961-08-14</text>
+    <text class="dim-lbl" x="460" y="28" text-anchor="end">CLASSIFIED</text>
+
+    
+    <g transform="translate(20 370)">
+      <line class="line" x1="0" y1="0" x2="120" y2="0"></line>
+      <line class="line" x1="0" y1="-4" x2="0" y2="4"></line>
+      <line class="line" x1="30" y1="-3" x2="30" y2="3"></line>
+      <line class="line" x1="60" y1="-3" x2="60" y2="3"></line>
+      <line class="line" x1="90" y1="-3" x2="90" y2="3"></line>
+      <line class="line" x1="120" y1="-4" x2="120" y2="4"></line>
+      <text class="dim-lbl" x="0" y="16">0</text>
+      <text class="dim-lbl" x="60" y="16">10cm</text>
+      <text class="dim-lbl" x="120" y="16" text-anchor="end">20cm</text>
+    </g>
+  </g>
+</svg>

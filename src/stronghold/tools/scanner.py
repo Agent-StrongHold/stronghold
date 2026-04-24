@@ -148,8 +148,10 @@ def detect_sidebar_inconsistencies(
 
     ref_content = reference_file.read_text(encoding="utf-8")
     ref_links = set(re.findall(r'href="(/[^"]+)"', ref_content))
-    # Only sidebar links (not script/css)
-    nav_pages = ("/greathall", "/prompts")
+    # Only sidebar/nav links (not script/css). The Turing console keeps
+    # every surface under /dashboard/, so there are no legacy top-level
+    # nav destinations to whitelist here.
+    nav_pages: tuple[str, ...] = ()
     ref_links = {lnk for lnk in ref_links if "/dashboard/" in lnk or lnk in nav_pages}
 
     inconsistent: list[str] = []
