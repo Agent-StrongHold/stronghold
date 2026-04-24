@@ -69,22 +69,22 @@ class TestMemoryRepoProtocolConformance:
         assert repo.get("no-such-id") is None
 
     def test_ac2_durable_rejects_soft_delete(self, repo: MemoryRepo) -> None:
-        from turing.protocols import ImmutableViolation
+        from turing.repo import ImmutableViolation
 
         m = _memory(tier=MemoryTier.REGRET, weight=0.7, source=SourceKind.I_DID)
         repo.insert(m)
-        with pytest.raises((ImmutableViolation, Exception)):
+        with pytest.raises(ImmutableViolation):
             repo.soft_delete("m1")
 
     def test_ac3_superseded_by_settable_once(self, repo: MemoryRepo) -> None:
-        from turing.protocols import ImmutableViolation
+        from turing.repo import ImmutableViolation
 
         m1 = _memory(memory_id="m1")
         m2 = _memory(memory_id="m2", supersedes="m1")
         repo.insert(m1)
         repo.insert(m2)
         repo.set_superseded_by("m1", "m2")
-        with pytest.raises((ImmutableViolation, Exception)):
+        with pytest.raises(ImmutableViolation):
             repo.set_superseded_by("m1", "m3")
 
     def test_ac4_decay_weight_clamps_to_floor(self, repo: MemoryRepo) -> None:
