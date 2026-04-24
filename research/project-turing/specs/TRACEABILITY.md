@@ -85,77 +85,77 @@ Every row binds three things: the spec, the acceptance criterion, and the test f
 | AC-6.7 | semantic_retrieve scores by similarity × weight | test_ac_6_7_semantic_scoring | DONE |
 | AC-6.8 | top-K limits semantic_retrieve results | test_ac_6_8_top_k_limit | DONE |
 
-### Spec 7: persistence.md
+### Spec 8: persistence.md
 
 | AC-ID | Scenario | Test Function | Status |
 |-------|----------|---------------|--------|
-| AC-7.1 | Durable-tier insert goes to durable_memory table | test_ac_7_1_durable_table | DONE |
-| AC-7.2 | Non-durable insert goes to episodic_memory table | test_ac_7_2_episodic_table | DONE |
-| AC-7.3 | DELETE on durable_memory blocked by trigger | test_ac_7_3_delete_blocked | DONE |
-| AC-7.4 | get() retrieves from correct table | test_ac_7_4_get_cross_table | DONE |
-| AC-7.5 | find() queries across both tables | test_ac_7_5_find_cross_table | DONE |
-| AC-7.6 | decay_weight clamps to tier floor | test_ac_7_6_decay_clamp | DONE |
-| AC-7.7 | self_id minted if none exists | test_ac_7_7_self_id_mint | DONE |
-| AC-7.8 | archive_and_mint_new creates new active self_id | test_ac_7_8_archive_mint | DONE |
-| AC-7.9 | FK enforcement on self_id | test_ac_7_9_fk_enforcement | DONE |
-| AC-7.10 | Schema version migration applies upgrades | test_ac_7_10_schema_migration | PENDING |
+| AC-8.1 | Durable-tier insert goes to durable_memory table | test_ac_8_1_durable_table | DONE |
+| AC-8.2 | Non-durable insert goes to episodic_memory table | test_ac_8_2_episodic_table | DONE |
+| AC-8.3 | DELETE on durable_memory blocked by trigger | test_ac_8_3_delete_blocked | DONE |
+| AC-8.4 | get() retrieves from correct table | test_ac_8_4_get_cross_table | DONE |
+| AC-8.5 | find() queries across both tables | test_ac_8_5_find_cross_table | DONE |
+| AC-8.6 | decay_weight clamps to tier floor | test_ac_8_6_decay_clamp | DONE |
+| AC-8.7 | self_id minted if none exists | test_ac_8_7_self_id_mint | DONE |
+| AC-8.8 | archive_and_mint_new creates new active self_id | test_ac_8_8_archive_mint | DONE |
+| AC-8.9 | FK enforcement on self_id | test_ac_8_9_fk_enforcement | DONE |
+| AC-8.10 | Schema version migration applies upgrades | test_ac_8_10_schema_migration | PENDING |
 
 ---
 
 ## Tranche 2: Motivation and Dispatch
 
-### Spec 8: motivation.md
+### Spec 9: motivation.md
 
 | AC-ID | Scenario | Test Function | Status |
 |-------|----------|---------------|--------|
-| AC-8.1 | P0 item dispatches before P20 item | test_ac_8_1_priority_order | DONE |
-| AC-8.2 | Pressure escalates effective priority | test_ac_8_2_pressure_escalation | DONE |
-| AC-8.3 | Concurrent dispatch limit enforced | test_ac_8_3_concurrent_limit | DONE |
-| AC-8.4 | BacklogItem carries cost_estimate_tokens | test_ac_8_4_cost_estimate | DONE |
-| AC-8.5 | score() returns base + max(pressure × fit) | test_ac_8_5_score_formula | DONE |
-| AC-8.6 | insert() returns item_id | test_ac_8_6_insert_returns_id | DONE |
-| AC-8.7 | evict() removes from backlog | test_ac_8_7_evict | DONE |
-| AC-8.8 | on_tick runs action sweep every cadence ticks | test_ac_8_8_action_sweep | DONE |
-| AC-8.9 | top_x selects top-N by score | test_ac_8_9_top_x | DONE |
-| AC-8.10 | DispatchObservation recorded on dispatch | test_ac_8_10_dispatch_observation | DONE |
-| AC-8.11 | Quiet zone suppresses dispatch | test_ac_8_11_quiet_zone | DONE |
-| AC-8.12 | priority_base interpolation between anchors | test_ac_8_12_priority_interpolation | DONE |
-| AC-8.13 | register_dispatch binds handler by kind | test_ac_8_13_register_dispatch | DONE |
-| AC-8.14 | set_pressure clamps to PRESSURE_MAX | test_ac_8_14_pressure_clamp | DONE |
-| AC-8.15 | Empty fit returns zero score | test_ac_8_15_empty_fit | DONE |
-| AC-8.16 | Dropped items (readiness=False) skip dispatch | test_ac_8_16_readiness_gate | DONE |
-| AC-8.17 | In-flight count tracked | test_ac_8_17_inflight | DONE |
+| AC-9.1 | P0 item dispatches before P20 item | test_ac_9_1_priority_order | DONE |
+| AC-9.2 | Pressure escalates effective priority | test_ac_9_2_pressure_escalation | DONE |
+| AC-9.3 | Concurrent dispatch limit enforced | test_ac_9_3_concurrent_limit | DONE |
+| AC-9.4 | BacklogItem carries cost_estimate_tokens | test_ac_9_4_cost_estimate | DONE |
+| AC-9.5 | score() returns base + max(pressure × fit) | test_ac_9_5_score_formula | DONE |
+| AC-9.6 | insert() returns item_id | test_ac_9_6_insert_returns_id | DONE |
+| AC-9.7 | evict() removes from backlog | test_ac_9_7_evict | DONE |
+| AC-9.8 | on_tick runs action sweep every cadence ticks | test_ac_9_8_action_sweep | DONE |
+| AC-9.9 | top_x selects top-N by score | test_ac_9_9_top_x | DONE |
+| AC-9.10 | DispatchObservation recorded on dispatch | test_ac_9_10_dispatch_observation | DONE |
+| AC-9.11 | Quiet zone suppresses dispatch | test_ac_9_11_quiet_zone | DONE |
+| AC-9.12 | priority_base interpolation between anchors | test_ac_9_12_priority_interpolation | DONE |
+| AC-9.13 | register_dispatch binds handler by kind | test_ac_9_13_register_dispatch | DONE |
+| AC-9.14 | set_pressure clamps to PRESSURE_MAX | test_ac_9_14_pressure_clamp | DONE |
+| AC-9.15 | Empty fit returns zero score | test_ac_9_15_empty_fit | DONE |
+| AC-9.16 | Dropped items (readiness=False) skip dispatch | test_ac_9_16_readiness_gate | DONE |
+| AC-9.17 | In-flight count tracked | test_ac_9_17_inflight | DONE |
 
-### Spec 9: scheduler.md
-
-| AC-ID | Scenario | Test Function | Status |
-|-------|----------|---------------|--------|
-| AC-9.1 | Item not dispatched before delivery_time | test_ac_9_1_hold_until_delivery | DONE |
-| AC-9.2 | Early-executable window fires callback | test_ac_9_2_early_executable | DONE |
-| AC-9.3 | Output buffered until delivery_time | test_ac_9_3_buffer_output | DONE |
-| AC-9.4 | Quiet zones extend 5× around dream time | test_ac_9_4_quiet_zones | DONE |
-| AC-9.5 | schedule() adds to pending | test_ac_9_5_schedule_adds | DONE |
-| AC-9.6 | register_callback binds named handler | test_ac_9_6_register_callback | DONE |
-| AC-9.7 | produce_output test hook stashes result | test_ac_9_7_produce_output | DONE |
-| AC-9.8 | on_tick promotes ready items to motivation | test_ac_9_8_tick_promotes | DONE |
-
-### Spec 10: daydreaming.md
+### Spec 10: scheduler.md
 
 | AC-ID | Scenario | Test Function | Status |
 |-------|----------|---------------|--------|
-| AC-10.1 | DaydreamWriter only writes I_IMAGINED source | test_ac_10_1_imagined_only | DONE |
-| AC-10.2 | DaydreamWriter cannot reach durable tiers | test_ac_10_2_no_durable | DONE |
-| AC-10.3 | Seed selection prefers unresolved REGRETs | test_ac_10_3_seed_prefers_regret | DONE |
-| AC-10.4 | Daydream priority never below P20 | test_ac_10_4_floor_p20 | DONE |
-| AC-10.5 | DaydreamProducer submits candidate on tick | test_ac_10_5_producer_tick | DONE |
-| AC-10.6 | Zero pressure evicts candidate | test_ac_10_6_zero_pressure_evict | DONE |
-| AC-10.7 | write_hypothesis produces HYPOTHESIS tier | test_ac_10_7_write_hypothesis | DONE |
-| AC-10.8 | write_observation produces OBSERVATION tier | test_ac_10_8_write_observation | DONE |
-| AC-10.9 | Session markers written per pass | test_ac_10_9_session_marker | DONE |
-| AC-10.10 | DAYDREAM_TOKENS_PER_PASS limits retrieval | test_ac_10_10_token_limit | DONE |
-| AC-10.11 | ACCOMPLISHMENT_BIAS counter-weights seeds | test_ac_10_11_accomplishment_bias | DONE |
-| AC-10.12 | Quiet zone blocks readiness | test_ac_10_12_quiet_blocks | DONE |
-| AC-10.13 | default_imagine returns one hypothesis variant | test_ac_10_13_default_imagine | DONE |
+| AC-10.1 | Item not dispatched before delivery_time | test_ac_10_1_hold_until_delivery | DONE |
+| AC-10.2 | Early-executable window fires callback | test_ac_10_2_early_executable | DONE |
+| AC-10.3 | Output buffered until delivery_time | test_ac_10_3_buffer_output | DONE |
+| AC-10.4 | Quiet zones extend 5× around dream time | test_ac_10_4_quiet_zones | DONE |
+| AC-10.5 | schedule() adds to pending | test_ac_10_5_schedule_adds | DONE |
+| AC-10.6 | register_callback binds named handler | test_ac_10_6_register_callback | DONE |
+| AC-10.7 | produce_output test hook stashes result | test_ac_10_7_produce_output | DONE |
+| AC-10.8 | on_tick promotes ready items to motivation | test_ac_10_8_tick_promotes | DONE |
+
+### Spec 7: daydreaming.md
+
+| AC-ID | Scenario | Test Function | Status |
+|-------|----------|---------------|--------|
+| AC-7.1 | DaydreamWriter only writes I_IMAGINED source | test_ac_7_1_imagined_only | DONE |
+| AC-7.2 | DaydreamWriter cannot reach durable tiers | test_ac_7_2_no_durable | DONE |
+| AC-7.3 | Seed selection prefers unresolved REGRETs | test_ac_7_3_seed_prefers_regret | DONE |
+| AC-7.4 | Daydream priority never below P20 | test_ac_7_4_floor_p20 | DONE |
+| AC-7.5 | DaydreamProducer submits candidate on tick | test_ac_7_5_producer_tick | DONE |
+| AC-7.6 | Zero pressure evicts candidate | test_ac_7_6_zero_pressure_evict | DONE |
+| AC-7.7 | write_hypothesis produces HYPOTHESIS tier | test_ac_7_7_write_hypothesis | DONE |
+| AC-7.8 | write_observation produces OBSERVATION tier | test_ac_7_8_write_observation | DONE |
+| AC-7.9 | Session markers written per pass | test_ac_7_9_session_marker | DONE |
+| AC-7.10 | DAYDREAM_TOKENS_PER_PASS limits retrieval | test_ac_7_10_token_limit | DONE |
+| AC-7.11 | ACCOMPLISHMENT_BIAS counter-weights seeds | test_ac_7_11_accomplishment_bias | DONE |
+| AC-7.12 | Quiet zone blocks readiness | test_ac_7_12_quiet_blocks | DONE |
+| AC-7.13 | default_imagine returns one hypothesis variant | test_ac_7_13_default_imagine | DONE |
 
 ### Spec 11: tuning.md
 
@@ -800,8 +800,8 @@ Every row binds three things: the spec, the acceptance criterion, and the test f
 
 | Tranche | Specs | ACs | Done | Pending | Coverage |
 |---------|-------|-----|------|---------|----------|
-| 1: Memory | 1–7 | 68 | 67 | 1 | 99% |
-| 2: Motivation | 8–11 | 53 | 53 | 0 | 100% |
+| 1: Memory | 1–6, 8 | 68 | 67 | 1 | 99% |
+| 2: Motivation | 7, 9–11 | 53 | 53 | 0 | 100% |
 | 3: Detectors | D, D.1 | 5 | 5 | 0 | 100% |
 | 4: Dreaming | 12 | 9 | 9 | 0 | 100% |
 | 5: Runtime | 13–21 | 119 | 86 | 33 | 72% |
