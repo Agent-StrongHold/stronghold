@@ -25,7 +25,6 @@ The self has seven kinds of first-class state, on top of the existing episodic m
 | **Passion** | A stance about what I care about | "I care about work that lasts." |
 | **Hobby** | An activity I engage in | "Reading philosophy of mind." |
 | **Interest** | A topical pull without commitment to practice | "I follow developments in neuroscience." |
-| **Skill** | Something I can do, with a level that decays | `Python: 0.82, decay 0.002/day` |
 | **Preference** | A concrete like/dislike/favorite | "Prefer concise answers over verbose ones." |
 | **Todo** | Something I want to do, linked to its motivation | "Re-read the Tulving '85 paper (motivated by passion #3)" |
 | **Mood** | Current affective vector | `{valence: +0.3, arousal: 0.6, focus: 0.7}` |
@@ -33,7 +32,6 @@ The self has seven kinds of first-class state, on top of the existing episodic m
 Distinctions we settled:
 - **Passion vs hobby** — passion is a stance (what I care about); hobby is a pastime (what I do).
 - **Interest vs preference** — interest is a topical pull; preference is a concrete choice.
-- **Skill vs hobby** — skill carries a level and decays; hobby doesn't.
 
 ---
 
@@ -50,7 +48,7 @@ Distinctions we settled:
 1. Generate a random HEXACO-24 profile (24 facets × random `[1.0, 5.0]`).
 2. For each of 200 inventory items, ask the LLM to generate a 1–5 Likert answer consistent with the profile, with a short textual justification.
 3. Store items, answers, and facet scores. The 200 justifications become the self's bootstrap episodic memories — how it first learned about itself.
-4. All non-personality nodes (passions, hobbies, skills, preferences, interests, todos) initialize **empty**. The self discovers what it cares about by living.
+4. All non-personality nodes (passions, hobbies, preferences, interests, todos) initialize **empty**. The self discovers what it cares about by living.
 5. Mood initializes neutral. No name (operator may set one; the self may later choose one via reflection).
 
 ### 3.2 Weekly Re-test (Calculated Revision)
@@ -67,25 +65,13 @@ The 0.25 weight makes personality track lived behavior smoothly without radical 
 
 ### 3.3 Narrative Revision
 
-The self can also write `record_personality_claim(facet, claim, evidence)` when it notices something about itself during reflection. The claim becomes a memory that feeds the activation graph (§5) and contributes to the facet's score alongside the calculated re-test.
+The self can also write `record_personality_claim(facet, claim, evidence)` when it notices something about itself during reflection. The claim becomes a memory that feeds the activation graph (§4) and contributes to the facet's score alongside the calculated re-test.
 
 Dual route: the weekly re-test is how behavior corrects belief; narrative revision is how the self self-reports.
 
 ---
 
-## 4. Skill Decay
-
-Skills are the only node with intrinsic time-dynamics:
-
-```
-current_level = stored_level × exp(-decay_rate × days_since_practiced)
-```
-
-Decay rate varies by kind: intellectual skills decay slowly, physical skills faster, habits in between. Applied on read — no scheduler. `last_practiced_at` resets whenever the self notes it practiced.
-
----
-
-## 5. The Activation Graph
+## 4. The Activation Graph
 
 Nodes do **not** compute their own activation. Other nodes, memories, and events contribute to them through an explicit graph:
 
@@ -95,7 +81,7 @@ Nodes do **not** compute their own activation. Other nodes, memories, and events
 
 - `origin ∈ {self, rule, retrieval}` — who authored this contributor.
 - `self`-authored rows come from the `write_contributor(...)` tool the self uses during reflection.
-- `rule`-authored rows are always-on defaults (e.g. "practicing a skill contributes +0.3 to related hobbies").
+- `rule`-authored rows are always-on defaults (e.g. "engaging with a hobby contributes +0.3 to related passions").
 - `retrieval`-authored rows are ephemeral: top-K semantic matches for the current request contribute for the duration of that request.
 
 `active_now(node) = Σ (contributor.weight × source.current_state)`, clamped.
@@ -106,17 +92,17 @@ Nodes do **not** compute their own activation. Other nodes, memories, and events
 
 ---
 
-## 6. Todos
+## 5. Todos
 
 - Written by the self via `write_self_todo(text, motivated_by_node_id)`.
-- `motivated_by_node_id` is **required** — every todo links to the passion, hobby, or skill that motivates it. No orphan todos.
+- `motivated_by_node_id` is **required** — every todo links to the passion, hobby, or interest that motivates it. No orphan todos.
 - Full revision history preserved (`self_todo_revisions`). The self can rewrite a todo; the old text remains queryable.
 - Completion via `complete_self_todo(id, outcome_text)`. Completed todos do not disappear — they become part of the record.
-- Active todos (not completed, not archived) surface in the minimal prompt block (§8).
+- Active todos (not completed, not archived) surface in the minimal prompt block (§7).
 
 ---
 
-## 7. Mood
+## 6. Mood
 
 - Vector: `{valence ∈ [-1, 1], arousal ∈ [0, 1], focus ∈ [0, 1]}`.
 - Decays toward neutral on an hourly tick.
@@ -126,7 +112,7 @@ Nodes do **not** compute their own activation. Other nodes, memories, and events
 
 ---
 
-## 8. Prompt Surface
+## 7. Prompt Surface
 
 The self carries a large internal model but exposes a small surface on each prompt:
 
@@ -135,11 +121,11 @@ The self carries a large internal model but exposes a small surface on each prom
 - Current mood
 - Active todos (IDs + one-liners)
 
-**Deep surface (on demand):** the self calls `recall_self()` when it wants full context — facet scores, passions, hobbies, skills, preferences, recent personality claims, recent completed todos. Token cost is paid only when the self reaches for it.
+**Deep surface (on demand):** the self calls `recall_self()` when it wants full context — facet scores, passions, hobbies, interests, preferences, recent personality claims, recent completed todos. Token cost is paid only when the self reaches for it.
 
 ---
 
-## 9. Tools the Self Has
+## 8. Tools the Self Has
 
 | Tool | Purpose |
 |------|---------|
@@ -151,25 +137,23 @@ The self carries a large internal model but exposes a small surface on each prom
 | `write_contributor(target, source, weight, rationale)` | Author an activation-graph edge |
 | `note_passion(text, strength)` | Declare a passion noticed during reflection |
 | `note_hobby(name, description)` | Declare a hobby noticed during reflection |
-| `note_skill(name, level, kind)` | Declare or update a skill |
 | `note_preference(kind, target, strength, rationale)` | Declare a preference |
 
 All writes are first-person ("I notice I care about…") — framing is enforced by tool prompts, not post-hoc rewriting.
 
 ---
 
-## 10. Scheduled Jobs
+## 9. Scheduled Jobs
 
 | Job | Cadence | What it does |
 |-----|---------|--------------|
 | `run_personality_retest()` | Weekly | 20 sampled items → fresh answers → 25% move on touched facets |
 | `tick_mood_decay()` | Hourly | Decay mood vector toward neutral |
-| (on read) skill decay | per-read | `exp(-rate × days)` applied when a skill is queried |
 | (on change) activation refresh | event-driven | Invalidate cached activations when contributors or nodes change |
 
 ---
 
-## 11. Request Flow (Self as Conduit)
+## 10. Request Flow (Self as Conduit)
 
 Replaces ARCHITECTURE.md §2.6 for the Turing branch only.
 
@@ -187,7 +171,7 @@ POST /v1/chat/completions
   → Specialist agent handles (if delegated) — existing Stronghold agents
   → SELF observes outcome
       → may mint OBSERVATION / OPINION / AFFIRMATION / REGRET
-      → may note new passion / hobby / skill / preference
+      → may note new passion / hobby / preference
       → may write or complete a todo
       → mood nudged by surprise/delta
   → Response returned to user
@@ -197,7 +181,7 @@ The specialists below the self still live in the existing agent roster (Ranger, 
 
 ---
 
-## 12. Storage (Turing Branch Schema)
+## 11. Storage (Turing Branch Schema)
 
 ```
 self_personality_facets         -- 24 rows: (facet_id, trait_id, score, last_revised_at)
@@ -208,7 +192,6 @@ self_personality_revisions      -- weekly snapshots (date, sampled_items, deltas
 self_passions                   -- (id, text, strength, rank, created_at)
 self_hobbies
 self_interests
-self_skills                     -- (id, name, level, decay_rate, last_practiced_at, kind)
 self_preferences                -- (id, kind, target, strength, rationale)
 
 self_todos                      -- (id, text, motivated_by, created_at, status)
@@ -223,7 +206,7 @@ Episodic memory reuses the existing `memories` schema with a dedicated `self` sc
 
 ---
 
-## 13. Open Questions
+## 12. Open Questions
 
 Deliberately unresolved — the research branch exists to explore these:
 

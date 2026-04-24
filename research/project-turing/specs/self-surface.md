@@ -32,9 +32,6 @@ Define the full shape of the self-surface: every tool the self has for reading a
   - `note_hobby(name, description, contributes_to=None)`
   - `note_interest(topic, description, contributes_to=None)`
   - `note_preference(kind, target, strength, rationale, contributes_to=None)`
-  - `note_skill(name, level, kind, decay_rate_per_day=None, contributes_to=None)`
-  - `practice_skill(skill_id, new_level=None, notes="")`
-  - `downgrade_skill(skill_id, new_level, reason)`
   - `rerank_passions(ordered_ids)`
   - `revise_passion(id, strength=None, text=None)`
   - `revise_preference(id, strength=None, rationale=None)`
@@ -56,7 +53,7 @@ Define the full shape of the self-surface: every tool the self has for reading a
 
 ### `recall_self()` output
 
-- **AC-28.7.** `recall_self()` returns a structured view with these top-level keys: `self_id`, `personality`, `passions`, `hobbies`, `interests`, `skills`, `preferences`, `active_todos`, `mood`, `recent_personality_claims`, `recent_completed_todos`. Test asserts every key is populated.
+- **AC-28.7.** `recall_self()` returns a structured view with these top-level keys: `self_id`, `personality`, `passions`, `hobbies`, `interests`, `preferences`, `active_todos`, `mood`, `recent_personality_claims`, `recent_completed_todos`. Test asserts every key is populated.
 - **AC-28.8.** `personality` is a list of 24 `{trait, facet, score, active_now}` entries. `score` is the stored value; `active_now` is computed via the activation graph (spec 25). Test.
 - **AC-28.9.** Each node kind's list returns only non-archived entries sorted by `active_now` descending. Test sorting.
 - **AC-28.10.** `mood` returns the full numeric state `(valence, arousal, focus, descriptor)`. Test.
@@ -77,7 +74,7 @@ Define the full shape of the self-surface: every tool the self has for reading a
   ```
   I am self:turing (moderate Openness, high Conscientiousness, low Extraversion).
   Right now: alert, attentive; focused.
-  My active todos: [todo:42] Re-read Tulving '85; [todo:51] Practice embedding tests.
+  My active todos: [todo:42] Re-read Tulving '85; [todo:51] Draft the consolidation note.
   I care about: work that lasts.
   ```
 
@@ -95,7 +92,7 @@ Define the full shape of the self-surface: every tool the self has for reading a
 
 ### Permissions and trust
 
-- **AC-28.22.** Self-tools are trust-tier `t0` (built-in, core trust). Skill Forge cannot create tools at this trust tier. Test.
+- **AC-28.22.** Self-tools are trust-tier `t0` (built-in, core trust). The Forge agent cannot create tools at this trust tier. Test.
 - **AC-28.23.** Self-tools are NOT routable — they are not discoverable via `list_tools()` for any specialist agent. Only the self's system runtime has them in its registry. Test.
 - **AC-28.24.** The `write_contributor` tool cannot set `origin = RETRIEVAL` (spec 25 AC-25.13). Attempting raises. Test.
 
@@ -160,7 +157,6 @@ def recall_self(self_id: str) -> dict:
     passions    = _sorted_nodes(repo.list_passions(self_id),   ctx)
     hobbies     = _sorted_nodes(repo.list_hobbies(self_id),    ctx)
     interests   = _sorted_nodes(repo.list_interests(self_id),  ctx)
-    skills      = _sorted_skills(repo.list_skills(self_id),    ctx.now)
     preferences = _sorted_nodes(repo.list_preferences(self_id),ctx)
     active_todos = repo.list_active_todos(self_id)
 
@@ -178,7 +174,6 @@ def recall_self(self_id: str) -> dict:
         "passions":                 passions,
         "hobbies":                  hobbies,
         "interests":                interests,
-        "skills":                   skills,
         "preferences":              preferences,
         "active_todos":             [_summarize_todo(t) for t in active_todos],
         "mood":                     mood_view,

@@ -24,7 +24,7 @@
 ### Bootstrap-complete precondition
 
 - **AC-35.1.** `_bootstrap_complete(repo, self_id)` returns True iff `count_facets == 24` AND `count_answers == 200` AND `has_mood`. Test for each False branch.
-- **AC-35.2.** Every write-tool — `note_passion`, `note_hobby`, `note_interest`, `note_preference`, `note_skill`, `write_self_todo`, `revise_self_todo`, `complete_self_todo`, `archive_self_todo`, `practice_skill`, `downgrade_skill`, `rerank_passions`, `write_contributor`, `record_personality_claim`, `retract_contributor_by_counter`, `note_engagement`, `note_interest_trigger` — calls `_bootstrap_complete` first; failure raises `SelfNotReady`. Test per tool.
+- **AC-35.2.** Every write-tool — `note_passion`, `note_hobby`, `note_interest`, `note_preference`, `write_self_todo`, `revise_self_todo`, `complete_self_todo`, `archive_self_todo`, `rerank_passions`, `write_contributor`, `record_personality_claim`, `retract_contributor_by_counter`, `note_engagement`, `note_interest_trigger` — calls `_bootstrap_complete` first; failure raises `SelfNotReady`. Test per tool.
 - **AC-35.3.** `recall_self` and `render_minimal_block` already enforce this (spec 28 AC-28.25). Behavior unchanged.
 - **AC-35.4.** Internal calls made by the bootstrap procedure itself — writing facets, items, answers, mood — do NOT go through these tools; they use the repo directly. The precondition does not fire on bootstrap. Test: bootstrap completes without raising.
 
@@ -32,7 +32,7 @@
 
 - **AC-35.5.** `ActivationCache` is a process-local dict keyed by `(node_id, ctx.hash)` with TTL `ACTIVATION_CACHE_TTL = timedelta(seconds=30)`. Hit returns cached float; miss computes and stores. Test asserts ≤ 1 row-read for two consecutive `active_now` calls on the same node.
 - **AC-35.6.** Writing a contributor (via `insert_contributor`, `mark_contributor_retracted`, or by a retrieval-contributor GC pass) invalidates cache entries for `target_node_id`. Test.
-- **AC-35.7.** Mutating a source node (facet score update, skill practice, mood tick, passion strength change) invalidates cache entries for every target that has a contributor pointing from this source. Test with a small graph.
+- **AC-35.7.** Mutating a source node (facet score update, mood tick, passion strength change) invalidates cache entries for every target that has a contributor pointing from this source. Test with a small graph.
 - **AC-35.8.** Cache is keyed on `ctx.hash`. The hash includes `self_id`, `now` rounded to the minute, and `retrieval_similarity` hash. Different retrieval contexts produce different cache entries. Test.
 - **AC-35.9.** Cache size is bounded at `ACTIVATION_CACHE_MAX_ENTRIES = 1024` with LRU eviction. Test.
 
@@ -102,9 +102,9 @@ def invalidate_cache_for(node_ids: Iterable[str]) -> None:
 
 ```python
 # self_repo.py — every update_* and insert_contributor gains:
-def update_skill(self, s: Skill, *, acting_self_id: str) -> None:
-    if s.self_id != acting_self_id:
-        raise CrossSelfAccess(f"{s.self_id} vs {acting_self_id}")
+def update_passion(self, p: Passion, *, acting_self_id: str) -> None:
+    if p.self_id != acting_self_id:
+        raise CrossSelfAccess(f"{p.self_id} vs {acting_self_id}")
     ...
 ```
 

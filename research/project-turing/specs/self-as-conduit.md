@@ -71,7 +71,7 @@ Replace the classifier → route → handle pipeline with a self-reasoning step 
   - Receives the specialist's result (or error, or clarification-response, or decline).
   - May mint AFFIRMATION / REGRET / LESSON memories via standard write-paths (spec 4).
   - May nudge mood via `apply_event_nudge` (spec 27 AC-27.10).
-  - May `note_passion` / `note_hobby` / `note_skill` / `note_preference` if the experience prompts a noticed self-attribute.
+  - May `note_passion` / `note_hobby` / `note_preference` if the experience prompts a noticed self-attribute.
   - May complete an active todo if the request advanced it.
 
   All writes are in first person. Test asserts every post-dispatch write is attributed to the self and written before the response returns.
@@ -198,7 +198,7 @@ async def _observe(self_id, decision, outcome, budget, timeout):
                                 tools=_OBSERVATION_TOOLS)
     # _OBSERVATION_TOOLS ⊂ SELF_TOOL_REGISTRY — a read+write subset:
     #   apply_event_nudge, write_self_todo, complete_self_todo,
-    #   note_passion, note_hobby, note_skill, note_preference,
+    #   note_passion, note_hobby, note_preference,
     #   record_personality_claim, mint_affirmation, mint_regret, mint_lesson
     for call in result.tool_calls:
         _invoke_self_tool(self_id, call)
