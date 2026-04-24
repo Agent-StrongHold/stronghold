@@ -1,0 +1,201 @@
+# Spec 1187: Frontend port — Phosphor/Noir shell + six stub surfaces + installable themes
+#
+# Parent: UI Plan — Turing's Field Console (see docs/ui-plan.md +
+# specs/TURING-CONSOLE-README.md).
+#
+# This is PR 2 in the Turing console implementation order. No backend endpoints
+# are wired in this PR — the surfaces render against stub fixtures whose shape
+# matches each backend spec's API contract. Backend PRs (1178, 1179, 1181–1186)
+# then swap stubs for live endpoints without modifying the ported scaffolding.
+#
+# Reference assets live in the Claude Design bundle at
+# https://api.anthropic.com/v1/design/h/Ep6F75A8GJNtWBrIKNDIdw — implementers
+# refetch and pixel-match. The bundle contains: five standalone HTML surfaces
+# (Chat, Notebook, Profile, Memory, index hub) with matching JSX components;
+# shared CSS (colors_and_type.css, crt.css); a full Phosphor/Noir WordPress
+# FSE block theme; a Phosphor/Noir Obsidian theme; SVG assets.
+#
+# Two renames apply at port time: Memory → Synapse, Profile → Dossier (see
+# docs/ui-plan.md). The bundle's Profile card already shows "◆ PR-03 · DOSSIER"
+# as its subtitle — the rename is cosmetic-to-surface only and does not touch
+# src/stronghold/memory/ internals.
+#
+# The bundle has no Skills-Lab mock. The Skills Lab surface in this port
+# matches the Phosphor/Noir conventions established by the other five surfaces
+# (topbar, classification banner, section-label chrome, card grid, amber for
+# pending / burn for destructive). Spec 1185 owns the API; this spec owns the
+# stub page.
+
+issue_number: 1187
+title: "Frontend port — Phosphor/Noir shell, six stub surfaces, installable WordPress + Obsidian themes"
+status: active
+complexity: L
+
+protocols_touched:
+  - (no new protocols — UI layer only)
+
+reference_assets:
+  design_bundle_url: "https://api.anthropic.com/v1/design/h/Ep6F75A8GJNtWBrIKNDIdw"
+  bundle_files_used:
+    - "project/styles/colors_and_type.css          → src/stronghold/dashboard/styles/tokens.css (verbatim, renamed)"
+    - "project/styles/crt.css                       → src/stronghold/dashboard/styles/crt.css (verbatim)"
+    - "project/components/ui.jsx                    → src/stronghold/dashboard/components/ui.jsx (verbatim, imports adjusted)"
+    - "project/index.html                           → src/stronghold/dashboard/index.html (shell stripped to topbar + router mount)"
+    - "project/Chat.html + components/chat.jsx      → stub under Chat surface (real wire-up in spec 1182)"
+    - "project/Notebook.html + components/notebook.jsx → stub under Notebook surface (real wire-up in spec 1183)"
+    - "project/Profile.html + components/profile.jsx → renamed Dossier; stub under Dossier surface (real wire-up in spec 1184)"
+    - "project/Memory.html + components/memory.jsx  → renamed Synapse; stub under Synapse surface (real wire-up in spec 1181)"
+    - "project/components/blog.jsx                  → handler-preview component on the Blog surface (public theme is shipped separately)"
+    - "project/themes/wordpress/phosphor-noir/      → themes/wordpress/phosphor-noir/ (verbatim, installable FSE block theme)"
+    - "project/themes/obsidian/phosphor-noir/       → themes/obsidian/phosphor-noir/ (verbatim, installable Obsidian theme)"
+    - "project/assets/*.svg                         → src/stronghold/dashboard/assets/*.svg (verbatim)"
+  bundle_files_dropped:
+    - "project/Agent Turing UI.html                 (design canvas — not shipped to production)"
+    - "project/components/design-canvas.jsx         (design canvas wrapper — not shipped)"
+
+files_touched:
+  # ── new: design system ──
+  - src/stronghold/dashboard/styles/tokens.css
+  - src/stronghold/dashboard/styles/crt.css
+  - src/stronghold/dashboard/components/ui.jsx
+  - src/stronghold/dashboard/components/topbar.jsx
+  - src/stronghold/dashboard/components/classification_banner.jsx
+  - src/stronghold/dashboard/components/section_label.jsx
+  - src/stronghold/dashboard/components/card.jsx
+  - src/stronghold/dashboard/app.jsx
+  - src/stronghold/dashboard/router.jsx
+  - src/stronghold/dashboard/index.html
+  # ── new: per-surface stub pages ──
+  - src/stronghold/dashboard/pages/chat.jsx
+  - src/stronghold/dashboard/pages/notebook.jsx
+  - src/stronghold/dashboard/pages/blog.jsx
+  - src/stronghold/dashboard/pages/dossier.jsx
+  - src/stronghold/dashboard/pages/synapse.jsx
+  - src/stronghold/dashboard/pages/skills-lab.jsx
+  # ── new: stub fixtures matching each backend spec's API shape ──
+  - src/stronghold/dashboard/stubs/chat.json
+  - src/stronghold/dashboard/stubs/notebook.json
+  - src/stronghold/dashboard/stubs/blog.json
+  - src/stronghold/dashboard/stubs/dossier.json
+  - src/stronghold/dashboard/stubs/synapse.json
+  - src/stronghold/dashboard/stubs/skills-lab.json
+  # ── new: assets ──
+  - src/stronghold/dashboard/assets/logo-seal.svg
+  - src/stronghold/dashboard/assets/logo-wordmark.svg
+  - src/stronghold/dashboard/assets/logo-at-mark.svg
+  - src/stronghold/dashboard/assets/turing-bare.svg
+  - src/stronghold/dashboard/assets/turing-noir.svg
+  - src/stronghold/dashboard/assets/turing-schematic.svg
+  - src/stronghold/dashboard/assets/blueprint-bg.svg
+  - src/stronghold/dashboard/assets/grain.svg
+  # ── new: installable themes (shipped, not ported) ──
+  - themes/wordpress/phosphor-noir/style.css
+  - themes/wordpress/phosphor-noir/theme.json
+  - themes/wordpress/phosphor-noir/functions.php
+  - themes/wordpress/phosphor-noir/header.php
+  - themes/wordpress/phosphor-noir/footer.php
+  - themes/wordpress/phosphor-noir/index.php
+  - themes/wordpress/phosphor-noir/single.php
+  - themes/wordpress/phosphor-noir/page.php
+  - themes/wordpress/phosphor-noir/comments.php
+  - themes/wordpress/phosphor-noir/templates/index.html
+  - themes/wordpress/phosphor-noir/templates/single.html
+  - themes/wordpress/phosphor-noir/templates/page.html
+  - themes/wordpress/phosphor-noir/parts/header.html
+  - themes/wordpress/phosphor-noir/parts/footer.html
+  - themes/wordpress/phosphor-noir/readme.txt
+  - themes/obsidian/phosphor-noir/theme.css
+  - themes/obsidian/phosphor-noir/manifest.json
+  # ── removed: castle-themed dashboard pages superseded by Turing surfaces ──
+  - "DELETE src/stronghold/dashboard/agents.html       # → merged into Dossier + Skills Lab"
+  - "DELETE src/stronghold/dashboard/dungeon.html      # → replaced by Synapse"
+  - "DELETE src/stronghold/dashboard/mason.html        # → replaced by Skills Lab"
+  - "DELETE src/stronghold/dashboard/prompts.html      # → out of scope; tracked for a follow-up surface"
+  - "DELETE src/stronghold/dashboard/scan-report.js    # → replaced by Synapse audit-flag surfaces"
+  - "DELETE src/stronghold/dashboard/profile.html      # → replaced by Dossier"
+  # Kept as-is (non-Turing / cross-cutting):
+  #   dashboard/login.html, auth.js, leaderboard.html, mcp.html, org.html,
+  #   outcomes.html, quota.html, security.html, skills.html, team.html
+  #   (these are not castle-themed Turing surfaces; a follow-up PR ports them.)
+  # ── tests ──
+  - tests/dashboard/test_design_tokens.py
+  - tests/dashboard/test_router.py
+  - tests/dashboard/test_stub_fixtures_shape.py
+  - tests/dashboard/test_themes_installable.py
+  - tests/dashboard/test_rename_consistency.py
+
+acceptance_criteria:
+  - "src/stronghold/dashboard/styles/tokens.css exposes the full Phosphor/Noir CSS custom-property set (--ink-0..5, --bone-0..1, --phosphor + --phosphor-hi/mid/dim/deep/ink, --amber, --burn, type families, type scale, tracking scale, 4px spacing scale, radii, motion easings/durations) byte-equivalent to the bundle's colors_and_type.css"
+  - "src/stronghold/dashboard/styles/crt.css is byte-equivalent to the bundle's crt.css and is opt-in via a body class (.crt-on) that can be toggled from an app-shell setting"
+  - "Six pages are mounted at /dashboard/chat, /dashboard/notebook, /dashboard/blog, /dashboard/dossier, /dashboard/synapse, /dashboard/skills-lab; unknown /dashboard/* routes return a 404 surface themed to match"
+  - "The app shell renders a topbar (project mark, breadcrumb, UTC clock, wire status), optional classification banner, and a left-rail nav that lists the six surfaces; nav uses phosphor glow on hover"
+  - "Each of the six pages imports its stub fixture from src/stronghold/dashboard/stubs/<surface>.json and renders against it; no live API calls are made in this spec"
+  - "Stub fixtures match the response shapes declared in the corresponding backend spec's acceptance_criteria: chat.json → spec 1182 SSE payload shapes; notebook.json → spec 1183 tree/note/graph shapes; dossier.json → spec 1184 {bio, autobiography_latest, facets[], cumulative_drift, vitals}; synapse.json → spec 1181 {tiers[], rows[], row_detail}; skills-lab.json → spec 1185 skills list + pending queue shapes; blog.json → spec 1179 post list + draft shapes"
+  - "The Memory → Synapse rename is applied consistently: no file under src/stronghold/dashboard/ references memory.jsx, Memory.html, /api/memory, or memory_crud; all references use synapse.jsx, Synapse.html (or pages/synapse.jsx), /api/synapse, synapse_crud"
+  - "The Profile → Dossier rename is applied consistently: no file under src/stronghold/dashboard/ references profile.jsx, Profile.html (as a Turing surface), /api/profile, or profile_read; all references use dossier.jsx, pages/dossier.jsx, /api/dossier, dossier_read"
+  - "Legacy castle-themed pages (agents.html, dungeon.html, mason.html, prompts.html, scan-report.js, profile.html) are removed and their links are scrubbed from any index.html / README pointers in the repo; a grep for 'Great Hall', 'Knights', 'Armory', 'Watchtower', 'Treasury', 'Scrolls' inside src/ returns zero hits (references in BACKLOG.md / ROADMAP.md / CHANGELOG.md are preserved as historical record)"
+  - "themes/wordpress/phosphor-noir/ installs cleanly in WordPress 6.4+: theme.json validates against the WP schema; functions.php has no parse errors under PHP 8.1+; readme.txt passes the WordPress theme-check linter for block themes"
+  - "themes/obsidian/phosphor-noir/ contains a valid manifest.json ({name, version, minAppVersion, author, authorUrl}) and a theme.css that loads without console errors in Obsidian 1.5+; test_themes_installable.py verifies the manifest shape and that theme.css parses"
+  - "The dashboard works in the three latest stable versions of Chrome, Firefox, and Safari; font imports fall back to system stacks when the Google Fonts CDN is unreachable (VT323 → 'IBM Plex Mono' → monospace; IBM Plex Mono → SF Mono → Menlo → monospace; IBM Plex Sans → system-ui → sans-serif; IBM Plex Serif → Georgia → serif)"
+  - "SVG assets are served with Content-Type: image/svg+xml; no SVG contains inline event handlers (onload, onclick, ...) or external script references"
+  - "Design-token test (tests/dashboard/test_design_tokens.py) parses tokens.css and asserts presence + exact hex values for every token enumerated in docs/ui-plan.md"
+  - "Router test (tests/dashboard/test_router.py) asserts each of the six routes mounts the expected page component and that unknown /dashboard/* routes render the 404 surface"
+  - "Stub-shape test (tests/dashboard/test_stub_fixtures_shape.py) validates each JSON fixture against a pydantic schema derived from the corresponding backend spec's response shape"
+  - "Rename test (tests/dashboard/test_rename_consistency.py) fails if the strings 'memory.jsx', 'Memory.html', '/api/memory', 'memory_crud', 'profile.jsx' (as a Turing surface), 'Profile.html', '/api/profile' appear anywhere under src/stronghold/dashboard/"
+  - "The frontend port ships zero business logic: no file under src/stronghold/dashboard/ imports from src/stronghold/memory/, src/stronghold/router/, src/stronghold/security/, or any other business-logic module"
+  - "All writes (if any — e.g. CRT-toggle persistence) go to localStorage and carry no identifying data"
+
+invariants:
+  - name: no_live_api_in_port
+    description: "The port PR ships stubs only; no fetch/axios call to a /api/* endpoint exists inside dashboard/ outside of a clearly marked TODO-stub hook that will be filled in by the corresponding backend PR"
+    kind: state_invariant
+    expression: "grep -r 'fetch(\\'/api' src/stronghold/dashboard/ returns 0 hits outside files ending .stub-hook.jsx"
+    severity: critical
+
+  - name: rename_is_total
+    description: "Legacy surface names (Memory, Profile for the Turing dossier) do not appear anywhere in the ported dashboard tree"
+    kind: state_invariant
+    expression: "tests/dashboard/test_rename_consistency.py passes"
+    severity: critical
+
+  - name: tokens_are_source_of_truth
+    description: "Surface pages reference design values only via CSS custom properties from tokens.css; no hardcoded phosphor/ink/bone hex values appear in page or component CSS"
+    kind: state_invariant
+    expression: "grep -rE '#(5EE88C|A8FF8E|F2F0EA|ECEAE3|0A0B0A|FFB547|FF5A4E)' src/stronghold/dashboard/ returns hits only in styles/tokens.css"
+    severity: high
+
+  - name: no_business_logic_in_ui
+    description: "The dashboard tree depends only on the backend via HTTP (future) and reads stubs from disk (now); no direct Python imports of stronghold business logic"
+    kind: state_invariant
+    expression: "no .jsx/.ts(x)/.js/.py file under src/stronghold/dashboard/ imports from src/stronghold/{memory,router,security,classifier,agents,protocols}/"
+    severity: critical
+
+  - name: themes_are_installable_verbatim
+    description: "themes/wordpress/phosphor-noir/ and themes/obsidian/phosphor-noir/ are copied verbatim from the design bundle and carry no references to Stronghold internals; they are standalone artifacts end-users can drop into a WordPress or Obsidian install"
+    kind: state_invariant
+    expression: "grep -rE 'stronghold|src/stronghold' themes/ returns 0 hits"
+    severity: critical
+
+  - name: no_inline_svg_scripts
+    description: "No SVG asset contains inline JavaScript (onload / onclick / <script>)"
+    kind: state_invariant
+    expression: "grep -rE '<script|onload=|onclick=|onerror=' src/stronghold/dashboard/assets/*.svg returns 0 hits"
+    severity: critical
+
+  - name: fonts_degrade_gracefully
+    description: "Every font-family declaration ends in a system fallback; no declaration ships that would render Times-New-Roman under CDN failure"
+    kind: state_invariant
+    expression: "every font-family declaration in tokens.css has at least two fallbacks terminating in a generic family (serif | sans-serif | monospace)"
+    severity: high
+
+  - name: port_is_additive_for_non_turing_pages
+    description: "The port PR does not modify or delete dashboard pages that are not castle-themed Turing surfaces (login, auth, leaderboard, mcp, org, outcomes, quota, security, skills, team stay untouched); a follow-up PR will port them"
+    kind: state_invariant
+    expression: "git diff --name-status base..head -- src/stronghold/dashboard/ shows no modifications to the preserved set enumerated in files_touched comments"
+    severity: high
+
+  - name: classification_banner_is_cosmetic
+    description: "The `[ CLASSIFIED · HANDLER EYES ONLY ]` banner is purely visual chrome; it does not gate, hide, or alter any data rendered on the surface"
+    kind: state_invariant
+    expression: "no conditional in any page component keys off the banner's mount state"
+    severity: medium

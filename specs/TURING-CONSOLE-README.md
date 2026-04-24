@@ -1,12 +1,12 @@
 # Turing Field Console — specs index
 
-**Plan:** [UI Plan — Turing's Field Console](../docs/ui-plan.md) *(committed alongside this README; see plan file in this PR)*. The plan is the authoritative UI plan for Stronghold and supersedes the UI portions of `ROADMAP.md` and `BACKLOG.md` (UI bullets only).
+**Plan:** [UI Plan — Turing's Field Console](../docs/ui-plan.md). The plan is the authoritative UI plan for Stronghold and supersedes the UI portions of `ROADMAP.md` and `BACKLOG.md` (UI bullets only).
 
 **Context:** `project_turing.research.md` (repo root) is the research narrative for the autonoetic self this console operates on. The `research/project-turing/` branch + the `project_Turing` branch carry that self-model's own specs and runtime; this console layer sits **above** the self-model — it does not modify the 7-tier memory, it gives the handler a surface to read/inspect/publish/edit the self's artifacts.
 
 ## The six surfaces, and the specs that back them
 
-The console is six surfaces total: **Chat**, **Notebook**, **Blog**, **Dossier**, **Synapse**, **Skills Lab**. The specs below carve the backend slice.
+The console is six surfaces total: **Chat**, **Notebook**, **Blog**, **Dossier**, **Synapse**, **Skills Lab**. The specs below carve the backend slice plus the one-shot frontend port (1187).
 
 | # | Spec | Surface | Realises |
 |---|------|---------|----------|
@@ -19,6 +19,7 @@ The console is six surfaces total: **Chat**, **Notebook**, **Blog**, **Dossier**
 | 1184 | [`turing-dossier.yaml`](turing-dossier.yaml) | Dossier | Bio + autobiography (versioned) + 5-facet personality dials (read-only by default per audit F9/F10) + operator settings + read-only vitals aggregation. |
 | 1185 | [`turing-skills-lab.yaml`](turing-skills-lab.yaml) | Skills Lab | Thin console API over the existing Forge + SkillRegistry: list/request/review/promote/demote/burn. |
 | 1186 | [`turing-self-talk-loop.yaml`](turing-self-talk-loop.yaml) | Notebook (proactive) | Reactor-driven background loop: periodic "anything to say to myself?" tick + Reactor-event triggers + strategy self-initiation. Warden-scanned, rate-limited, not chat-gated. Depends on 1178. |
+| 1187 | [`turing-frontend-port.yaml`](turing-frontend-port.yaml) | (all six) | Frontend port: Phosphor/Noir design system + app shell + six stub surface pages + installable WordPress + Obsidian themes. Renames Memory → Synapse and Profile → Dossier at port time. No backend endpoints wired — stub data only; each backend spec swaps its stub for a live call. |
 
 ## What is NOT in these specs
 
@@ -53,7 +54,7 @@ Per CLAUDE.md §Build Rules, every spec above is constrained by:
 ## Implementation order
 
 1. **PR 1 (this one)** — plan + specs only. Locks architecture. No code.
-2. **PR 2 — Frontend port.** Port the Phosphor-Noir HTMLs/CSS/JSX + delete the castle dashboard. Surfaces render on stub data.
+2. **PR 2 — spec 1187 Frontend port.** Port the Phosphor/Noir HTMLs/CSS/JSX + remove the castle-themed Turing surfaces. Six stub pages render against JSON fixtures shaped like each backend spec's response. Ships the two installable themes (WordPress, Obsidian) verbatim from the design bundle.
 3. **PR 3 — spec 1178 ObsidianStore** — foundation; nothing else works without it.
 4. **PRs 4–6 (parallelisable)** — 1179 WordPress · 1182 Chat streaming · 1184 Dossier.
 5. **PR 7 — spec 1183 Notebook live vault** (after 1178).
