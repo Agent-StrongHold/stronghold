@@ -186,8 +186,10 @@ class TestWorkingMemoryProtocolConformance:
         r = Repo()
         wm = WorkingMemory(r.conn)
         eid = wm.add("self-1", "hello")
-        assert wm.remove("self-1", eid) is True
-        assert wm.remove("self-1", eid) is False
+        removed_first = wm.remove("self-1", eid)
+        assert removed_first is True
+        removed_second = wm.remove("self-1", eid)
+        assert removed_second is False
         r.close()
 
     def test_ac10_clear_returns_count(self) -> None:
