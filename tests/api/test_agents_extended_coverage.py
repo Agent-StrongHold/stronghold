@@ -159,7 +159,7 @@ def ext_agents_app() -> FastAPI:
 
         return Container(
             config=config,
-            auth_provider=StaticKeyAuthProvider(api_key="sk-test"),
+            auth_provider=StaticKeyAuthProvider(api_key="sk-test", read_only=False),
             permission_table=PermissionTable.from_config({"admin": ["*"]}),
             router=RouterEngine(InMemoryQuotaTracker()),
             classifier=ClassifierEngine(),
