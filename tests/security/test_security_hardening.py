@@ -272,7 +272,7 @@ class TestAdminLearningWardenScan:
         from stronghold.security.auth_static import StaticKeyAuthProvider
 
         app = create_app()
-        container = asyncio.get_event_loop().run_until_complete(create_container(load_config()))
+        container = asyncio.run(create_container(load_config()))
         container.auth_provider = StaticKeyAuthProvider(api_key="sk-example-stronghold", read_only=False)  # type: ignore[assignment]
         app.state.container = container
         return app
