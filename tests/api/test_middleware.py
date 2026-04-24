@@ -395,12 +395,7 @@ def _auth_app() -> FastAPI:
         try:
             ctx = await auth_provider.authenticate(auth_header)
         except ValueError:
-            detail = (
-                "Missing Authorization header"
-                if auth_header is None
-                else "Invalid Authorization header"
-            )
-            return JSONResponse(status_code=401, content={"detail": detail})  # test helper only
+            return JSONResponse(status_code=401, content={"detail": "Authentication failed"})  # test helper only
         return JSONResponse({"user_id": ctx.user_id, "auth_method": ctx.auth_method})
 
     return app
