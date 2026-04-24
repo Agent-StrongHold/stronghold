@@ -39,13 +39,15 @@ from turing.self_repo import SelfRepo
 @pytest.fixture
 def repos() -> tuple[Repo, SelfRepo]:
     r = Repo(None)
-    return r, SelfRepo(r.conn)
+    yield r, SelfRepo(r.conn)
+    r.close()
 
 
 @pytest.fixture
 def self_id(repos) -> str:
     r, _ = repos
     from turing.self_identity import bootstrap_self_id
+
     return bootstrap_self_id(r.conn)
 
 

@@ -33,7 +33,8 @@ from turing.self_repo import SelfRepo
 @pytest.fixture
 def srepo() -> SelfRepo:
     r = Repo(None)
-    return SelfRepo(r.conn)
+    yield SelfRepo(r.conn)
+    r.close()
 
 
 @pytest.fixture
@@ -121,12 +122,15 @@ def test_ac_24_4_preference_different_kinds_ok(srepo, self_id, new_id) -> None:
 # --------- AC-24.5 skills ---------------------------------------------------
 
 
-@pytest.mark.parametrize("kind,expected_rate", [
-    (SkillKind.INTELLECTUAL, 0.0005),
-    (SkillKind.PHYSICAL, 0.005),
-    (SkillKind.HABIT, 0.002),
-    (SkillKind.SOCIAL, 0.001),
-])
+@pytest.mark.parametrize(
+    "kind,expected_rate",
+    [
+        (SkillKind.INTELLECTUAL, 0.0005),
+        (SkillKind.PHYSICAL, 0.005),
+        (SkillKind.HABIT, 0.002),
+        (SkillKind.SOCIAL, 0.001),
+    ],
+)
 def test_ac_24_5_default_decay_rates(srepo, self_id, new_id, kind, expected_rate) -> None:
     s = note_skill(srepo, self_id, f"skill-{kind.value}", 0.5, kind, new_id)
     assert s.decay_rate_per_day == expected_rate
@@ -199,8 +203,12 @@ def test_ac_24_15_downgrade_lowers_and_requires_reason(srepo, self_id, new_id) -
 
 def test_ac_24_12_current_level_exponential_decay() -> None:
     s = Skill(
-        node_id="x", self_id="s", name="p", kind=SkillKind.PHYSICAL,
-        stored_level=1.0, decay_rate_per_day=0.005,
+        node_id="x",
+        self_id="s",
+        name="p",
+        kind=SkillKind.PHYSICAL,
+        stored_level=1.0,
+        decay_rate_per_day=0.005,
         last_practiced_at=datetime.now(UTC) - timedelta(days=30),
     )
     assert current_level(s, datetime.now(UTC)) == pytest.approx(math.exp(-0.15), rel=1e-4)

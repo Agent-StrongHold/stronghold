@@ -28,7 +28,8 @@ from turing.self_surface import (
 @pytest.fixture
 def srepo() -> SelfRepo:
     r = Repo(None)
-    return SelfRepo(r.conn)
+    yield SelfRepo(r.conn)
+    r.close()
 
 
 @pytest.fixture
@@ -36,8 +37,7 @@ def self_id(srepo: SelfRepo) -> str:
     return bootstrap_self_id(srepo.conn)
 
 
-def _seed_minimal_self(srepo: SelfRepo, self_id: str,
-                       facet_score: float = 3.0) -> None:
+def _seed_minimal_self(srepo: SelfRepo, self_id: str, facet_score: float = 3.0) -> None:
     now = datetime.now(UTC)
     for trait, facet in ALL_FACETS:
         srepo.insert_facet(
@@ -50,9 +50,7 @@ def _seed_minimal_self(srepo: SelfRepo, self_id: str,
                 last_revised_at=now,
             )
         )
-    srepo.insert_mood(
-        Mood(self_id=self_id, valence=0.0, arousal=0.3, focus=0.5, last_tick_at=now)
-    )
+    srepo.insert_mood(Mood(self_id=self_id, valence=0.0, arousal=0.3, focus=0.5, last_tick_at=now))
 
 
 # --------- AC-28.25 recall before bootstrap complete ----------------------
@@ -107,12 +105,24 @@ def test_ac_28_9_passions_sorted_by_active_now_desc(srepo, self_id) -> None:
     # explicit contributors, since active_now with zero contributors is 0.5
     # for both. Check the list is present and sort-stable.
     srepo.insert_passion(
-        Passion(node_id="passion:1", self_id=self_id, text="A", strength=0.9,
-                rank=0, first_noticed_at=datetime.now(UTC))
+        Passion(
+            node_id="passion:1",
+            self_id=self_id,
+            text="A",
+            strength=0.9,
+            rank=0,
+            first_noticed_at=datetime.now(UTC),
+        )
     )
     srepo.insert_passion(
-        Passion(node_id="passion:2", self_id=self_id, text="B", strength=0.1,
-                rank=1, first_noticed_at=datetime.now(UTC))
+        Passion(
+            node_id="passion:2",
+            self_id=self_id,
+            text="B",
+            strength=0.1,
+            rank=1,
+            first_noticed_at=datetime.now(UTC),
+        )
     )
     got = recall_self(srepo, self_id)
     assert len(got["passions"]) == 2
@@ -138,8 +148,14 @@ def test_ac_28_13_recall_no_writes(srepo, self_id) -> None:
 def test_ac_28_15_minimal_block_four_lines_when_fully_populated(srepo, self_id) -> None:
     _seed_minimal_self(srepo, self_id)
     srepo.insert_passion(
-        Passion(node_id="passion:top", self_id=self_id, text="lasting work",
-                strength=0.9, rank=0, first_noticed_at=datetime.now(UTC))
+        Passion(
+            node_id="passion:top",
+            self_id=self_id,
+            text="lasting work",
+            strength=0.9,
+            rank=0,
+            first_noticed_at=datetime.now(UTC),
+        )
     )
     srepo.insert_todo(
         SelfTodo(
@@ -168,8 +184,14 @@ def test_ac_28_16_minimal_block_omits_empty_lines(srepo, self_id) -> None:
 def test_ac_28_15_minimal_block_respects_todo_count(srepo, self_id) -> None:
     _seed_minimal_self(srepo, self_id)
     srepo.insert_passion(
-        Passion(node_id="passion:m", self_id=self_id, text="M", strength=0.5,
-                rank=0, first_noticed_at=datetime.now(UTC))
+        Passion(
+            node_id="passion:m",
+            self_id=self_id,
+            text="M",
+            strength=0.5,
+            rank=0,
+            first_noticed_at=datetime.now(UTC),
+        )
     )
     for i in range(MINIMAL_TODO_COUNT + 5):
         srepo.insert_todo(

@@ -46,7 +46,8 @@ from turing.self_repo import SelfRepo
 @pytest.fixture
 def srepo() -> SelfRepo:
     r = Repo(None)
-    return SelfRepo(r.conn)
+    yield SelfRepo(r.conn)
+    r.close()
 
 
 @pytest.fixture
@@ -87,13 +88,13 @@ def seeded_passion(srepo, self_id):
 @pytest.fixture
 def seeded_mood(srepo, self_id):
     srepo.insert_mood(
-        Mood(self_id=self_id, valence=0.6, arousal=0.3, focus=0.5,
-             last_tick_at=datetime.now(UTC))
+        Mood(self_id=self_id, valence=0.6, arousal=0.3, focus=0.5, last_tick_at=datetime.now(UTC))
     )
 
 
-def _ctx(self_id: str, now: datetime | None = None,
-         retrieval: dict[str, float] | None = None) -> ActivationContext:
+def _ctx(
+    self_id: str, now: datetime | None = None, retrieval: dict[str, float] | None = None
+) -> ActivationContext:
     return ActivationContext(
         self_id=self_id,
         now=now or datetime.now(UTC),
@@ -134,12 +135,24 @@ def test_ac_25_6_single_positive_self_contributor_moves_up(
 
 def test_ac_25_6_sum_over_multiple_contributors(srepo, self_id, seeded_facet) -> None:
     srepo.insert_passion(
-        Passion(node_id="passion:10", self_id=self_id, text="x",
-                strength=1.0, rank=0, first_noticed_at=datetime.now(UTC))
+        Passion(
+            node_id="passion:10",
+            self_id=self_id,
+            text="x",
+            strength=1.0,
+            rank=0,
+            first_noticed_at=datetime.now(UTC),
+        )
     )
     srepo.insert_passion(
-        Passion(node_id="passion:11", self_id=self_id, text="y",
-                strength=0.5, rank=1, first_noticed_at=datetime.now(UTC))
+        Passion(
+            node_id="passion:11",
+            self_id=self_id,
+            text="y",
+            strength=0.5,
+            rank=1,
+            first_noticed_at=datetime.now(UTC),
+        )
     )
     srepo.insert_contributor(
         ActivationContributor(
@@ -214,16 +227,23 @@ def test_ac_25_4_inhibitory_contributor_subtracts(
 
 def test_ac_25_7_personality_facet_remap_to_0_1(srepo, self_id, seeded_facet) -> None:
     # score=3 → (3-1)/4 = 0.5
-    assert source_state(srepo, seeded_facet, "personality_facet", _ctx(self_id)) == pytest.approx(0.5)
+    assert source_state(srepo, seeded_facet, "personality_facet", _ctx(self_id)) == pytest.approx(
+        0.5
+    )
 
 
 def test_ac_25_7_passion_state_is_strength(srepo, self_id, seeded_passion) -> None:
-    assert source_state(srepo, seeded_passion.node_id, "passion", _ctx(self_id)) == pytest.approx(0.8)
+    assert source_state(srepo, seeded_passion.node_id, "passion", _ctx(self_id)) == pytest.approx(
+        0.8
+    )
 
 
 def test_ac_25_7_hobby_state_from_recency(srepo, self_id) -> None:
     fresh = Hobby(
-        node_id="hobby:1", self_id=self_id, name="recent", description="",
+        node_id="hobby:1",
+        self_id=self_id,
+        name="recent",
+        description="",
         last_engaged_at=datetime.now(UTC) - timedelta(days=1),
     )
     srepo.insert_hobby(fresh)
@@ -233,7 +253,10 @@ def test_ac_25_7_hobby_state_from_recency(srepo, self_id) -> None:
     assert got == pytest.approx(1.0 - 1.0 / HOBBY_RECENCY_DAYS, rel=1e-6)
 
     stale = Hobby(
-        node_id="hobby:2", self_id=self_id, name="stale", description="",
+        node_id="hobby:2",
+        self_id=self_id,
+        name="stale",
+        description="",
         last_engaged_at=datetime.now(UTC) - timedelta(days=60),
     )
     srepo.insert_hobby(stale)
@@ -242,7 +265,10 @@ def test_ac_25_7_hobby_state_from_recency(srepo, self_id) -> None:
 
 def test_ac_25_7_interest_state_from_recency(srepo, self_id) -> None:
     fresh = Interest(
-        node_id="interest:1", self_id=self_id, topic="neuro", description="",
+        node_id="interest:1",
+        self_id=self_id,
+        topic="neuro",
+        description="",
         last_noticed_at=datetime.now(UTC) - timedelta(days=3),
     )
     srepo.insert_interest(fresh)
@@ -254,8 +280,12 @@ def test_ac_25_7_interest_state_from_recency(srepo, self_id) -> None:
 
 def test_ac_25_7_skill_state_is_current_level(srepo, self_id) -> None:
     s = Skill(
-        node_id="skill:x", self_id=self_id, name="x", kind=SkillKind.INTELLECTUAL,
-        stored_level=1.0, decay_rate_per_day=0.001,
+        node_id="skill:x",
+        self_id=self_id,
+        name="x",
+        kind=SkillKind.INTELLECTUAL,
+        stored_level=1.0,
+        decay_rate_per_day=0.001,
         last_practiced_at=datetime.now(UTC) - timedelta(days=100),
     )
     srepo.insert_skill(s)
@@ -287,7 +317,9 @@ def test_ac_25_7_unknown_source_kind_raises(srepo, self_id) -> None:
 # --------- AC-25.8 deterministic -------------------------------------------
 
 
-def test_ac_25_8_deterministic_under_same_clock(srepo, self_id, seeded_facet, seeded_passion) -> None:
+def test_ac_25_8_deterministic_under_same_clock(
+    srepo, self_id, seeded_facet, seeded_passion
+) -> None:
     srepo.insert_contributor(
         ActivationContributor(
             node_id="c",
@@ -310,9 +342,7 @@ def test_ac_25_8_deterministic_under_same_clock(srepo, self_id, seeded_facet, se
 # --------- AC-25.12 expired retrieval contributors -------------------------
 
 
-def test_ac_25_12_expired_retrieval_contributors_ignored(
-    srepo, self_id, seeded_facet
-) -> None:
+def test_ac_25_12_expired_retrieval_contributors_ignored(srepo, self_id, seeded_facet) -> None:
     past_expiry = datetime.now(UTC) - timedelta(seconds=1)
     srepo.insert_contributor(
         ActivationContributor(
@@ -403,8 +433,14 @@ def test_ac_25_22_dominant_sum_saturates_below_one(srepo, self_id, seeded_facet)
     for i in range(5):
         pid = f"passion:{i}"
         srepo.insert_passion(
-            Passion(node_id=pid, self_id=self_id, text=f"p{i}",
-                    strength=1.0, rank=i, first_noticed_at=datetime.now(UTC))
+            Passion(
+                node_id=pid,
+                self_id=self_id,
+                text=f"p{i}",
+                strength=1.0,
+                rank=i,
+                first_noticed_at=datetime.now(UTC),
+            )
         )
         srepo.insert_contributor(
             ActivationContributor(

@@ -135,3 +135,17 @@ def test_fake_reactor_spawn_is_synchronous() -> None:
     future = reactor.spawn(lambda: "ok")
     assert future.done()
     assert future.result() == "ok"
+
+
+def test_fake_reactor_spawn_captures_base_exception() -> None:
+    from turing.reactor import FakeReactor
+
+    reactor = FakeReactor()
+
+    def _raise_key() -> None:
+        raise KeyboardInterrupt("user abort")
+
+    future = reactor.spawn(_raise_key)
+    assert future.done()
+    with pytest.raises(KeyboardInterrupt, match="user abort"):
+        future.result()
