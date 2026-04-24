@@ -385,7 +385,7 @@ async def import_agent_from_url(request: Request) -> JSONResponse:
     """
     import ipaddress as _ipaddress  # noqa: PLC0415
     import socket as _socket  # noqa: PLC0415
-    from urllib.parse import urlparse  # noqa: PLC0415
+    from urllib.parse import parse_qsl, urlencode, urlparse  # noqa: PLC0415
 
     import httpx  # noqa: PLC0415
 
@@ -401,9 +401,17 @@ async def import_agent_from_url(request: Request) -> JSONResponse:
     parsed = urlparse(url)
     if parsed.scheme != "https":
         raise HTTPException(status_code=400, detail="Only HTTPS URLs are allowed")
+    if parsed.username or parsed.password:
+        raise HTTPException(status_code=400, detail="Userinfo in URL is not allowed")
+    if parsed.port not in (None, 443):
+        raise HTTPException(status_code=400, detail="Only default HTTPS port is allowed")
+    if parsed.fragment:
+        raise HTTPException(status_code=400, detail="URL fragments are not allowed")
     host = (parsed.hostname or "").lower()
     if not host:
         raise HTTPException(status_code=400, detail="URL must include a hostname")
+    if not parsed.path.startswith("/"):
+        raise HTTPException(status_code=400, detail="URL path must be absolute")
 
     # Restrict outbound fetches to approved Git hosting domains.
     # This prevents user-controlled arbitrary destinations (full SSRF).
@@ -425,13 +433,14 @@ async def import_agent_from_url(request: Request) -> JSONResponse:
             ip = _ipaddress.ip_address(info[4][0])
             if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved:
                 raise HTTPException(status_code=400, detail="URL resolves to private/reserved IP")
-    except _socket.gaierror:
-        pass  # Let httpx handle DNS errors
+    except _socket.gaierror as e:
+        raise HTTPException(status_code=400, detail=f"Hostname resolution failed: {e}") from e
 
-    # Reconstruct URL from validated parsed components to break taint flow
-    safe_url = f"https://{parsed.hostname}{parsed.path}"
+    # Reconstruct URL from validated parsed components.
+    # Keep only canonical HTTPS URL parts after validation.
+    safe_url = f"https://{host}{parsed.path}"
     if parsed.query:
-        safe_url += f"?{parsed.query}"
+        safe_url += f"?{urlencode(parse_qsl(parsed.query, keep_blank_values=True), doseq=True)}"
 
     # Fetch the zip
     try:
