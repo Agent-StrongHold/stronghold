@@ -26,8 +26,13 @@ from ..types import EpisodicMemory, MemoryTier, SourceKind
 logger = logging.getLogger("turing.runtime.journal")
 
 
-# How often to poll, in ticks. At 100Hz: 100 ticks = 1s; 6000 = 1 min.
 DEFAULT_JOURNAL_POLL_TICKS: int = 200
+_JOURNAL_TIERS: list[tuple[MemoryTier, str]] = [
+    (MemoryTier.REGRET, "regret"),
+    (MemoryTier.ACCOMPLISHMENT, "accomplishment"),
+    (MemoryTier.AFFIRMATION, "commitment"),
+    (MemoryTier.WISDOM, "wisdom"),
+]
 
 
 class Journal:
@@ -95,7 +100,6 @@ class Journal:
         self._refresh_identity()
 
     def _extract_timestamps(self, entries: list[str]) -> list[str]:
-        # First line of each entry contains an ISO timestamp; lift them out.
         out: list[str] = []
         for entry in entries:
             for line in entry.splitlines():
@@ -110,13 +114,8 @@ class Journal:
     def _collect_entries_since(self, cutoff: datetime) -> list[str]:
         entries: list[tuple[datetime, str]] = []
 
-        # Durable: REGRET, ACCOMPLISHMENT, AFFIRMATION, WISDOM.
-        for tier, label in [
-            (MemoryTier.REGRET, "regret"),
-            (MemoryTier.ACCOMPLISHMENT, "accomplishment"),
-            (MemoryTier.AFFIRMATION, "commitment"),
-            (MemoryTier.WISDOM, "wisdom"),
-        ]:
+        durable = []
+        for tier, label in _JOURNAL_TIERS:
             for m in self._repo.find(
                 self_id=self._self_id,
                 tier=tier,
@@ -124,18 +123,20 @@ class Journal:
                 created_after=cutoff,
                 include_superseded=True,
             ):
-                entries.append((m.created_at, _render_durable(m, label)))
+                durable.append((m.created_at, _render_durable(m, label)))
 
         # Episodic LESSONs (non-durable but significant).
+        lessons = []
         for m in self._repo.find(
             self_id=self._self_id,
             tier=MemoryTier.LESSON,
             source=SourceKind.I_DID,
             created_after=cutoff,
         ):
-            entries.append((m.created_at, _render_durable(m, "lesson")))
+            lessons.append((m.created_at, _render_durable(m, "lesson")))
 
-        # Dream session markers (final markers contain the full report).
+        # Dream session markers.
+        dreams = []
         for m in self._repo.find(
             self_id=self._self_id,
             tier=MemoryTier.OBSERVATION,
@@ -145,8 +146,9 @@ class Journal:
             if "dream session" in m.content and (
                 "completed" in m.content or "truncated" in m.content
             ):
-                entries.append((m.created_at, _render_dream(m)))
+                dreams.append((m.created_at, _render_dream(m)))
 
+        entries = durable + lessons + dreams
         entries.sort(key=lambda e: e[0])
         return [text for _, text in entries]
 
@@ -195,17 +197,10 @@ def _render_durable(m: EpisodicMemory, label: str) -> str:
     affect_str = f"affect {m.affect:+.2f}" if m.affect else ""
     intent_str = f"intent: `{m.intent_at_time}`" if m.intent_at_time else ""
     meta = "  ·  ".join(filter(None, [weight_str, affect_str, intent_str]))
-    body = (
-        f"## {timestamp} — {label}\n\n"
-        f"{m.content}\n\n"
-        f"_{meta}_\n"
-    )
+    body = f"## {timestamp} — {label}\n\n{m.content}\n\n_{meta}_\n"
     return body
 
 
 def _render_dream(m: EpisodicMemory) -> str:
     timestamp = m.created_at.isoformat()
-    return (
-        f"## {timestamp} — dream session\n\n"
-        f"{m.content}\n"
-    )
+    return f"## {timestamp} — dream session\n\n{m.content}\n"

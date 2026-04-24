@@ -94,9 +94,7 @@ class RealReactor:
                     try:
                         handler(self.tick_count)
                     except Exception:
-                        logger.exception(
-                            "handler raised during tick %d", self.tick_count
-                        )
+                        logger.exception("handler raised during tick %d", self.tick_count)
 
                 next_at_ns += self._period_ns
                 now_ns = time.monotonic_ns()
@@ -129,9 +127,8 @@ class RealReactor:
             sorted_drift = sorted(self._drift_ns)
             idx = min(len(sorted_drift) - 1, int(len(sorted_drift) * 0.99))
             drift_p99_ms = sorted_drift[idx] / 1_000_000
-        # ThreadPoolExecutor doesn't expose queue depth cleanly; introspect.
-        queued = self._executor._work_queue.qsize()  # type: ignore[attr-defined]
-        active = max(0, len(self._executor._threads) - queued)  # best-effort
+        queued = self._executor_queue_depth()
+        active = max(0, len(self._executor._threads) - queued)
         return ReactorStatus(
             tick_count=self.tick_count,
             tick_rate_hz=self._tick_rate_hz,
@@ -140,3 +137,9 @@ class RealReactor:
             executor_queued=queued,
             running=self._running,
         )
+
+    def _executor_queue_depth(self) -> int:
+        try:
+            return self._executor._work_queue.qsize()
+        except AttributeError:
+            return 0

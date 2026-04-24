@@ -89,8 +89,8 @@ class PipelineState:
 @dataclass
 class BacklogItem:
     item_id: str
-    class_: int                                       # priority class; smaller = higher
-    kind: str                                         # dispatched via registered handler
+    class_: int  # priority class; smaller = higher
+    kind: str  # dispatched via registered handler
     payload: Any = None
     fit: dict[str, float] = field(default_factory=dict)
     readiness: Callable[["PipelineState"], bool] | None = None
@@ -115,6 +115,7 @@ class DispatchObservation:
 
 # --- Scoring --------------------------------------------------------------
 
+
 def score(item: BacklogItem, pressure: PressureVec) -> tuple[float, str]:
     """Return (score, chosen_pool). `chosen_pool = ""` when no fit has nonzero pressure."""
     if item.dynamic_priority is not None:
@@ -135,6 +136,7 @@ def score(item: BacklogItem, pressure: PressureVec) -> tuple[float, str]:
 
 
 # --- Motivation component -------------------------------------------------
+
 
 class Motivation:
     """Backlog, two loops, dispatch.
@@ -189,6 +191,9 @@ class Motivation:
     def evict(self, item_id: str) -> None:
         self._backlog.pop(item_id, None)
 
+    def get_backlog_item(self, item_id: str) -> BacklogItem | None:
+        return self._backlog.get(item_id)
+
     @property
     def backlog(self) -> list[BacklogItem]:
         return list(self._backlog.values())
@@ -222,9 +227,7 @@ class Motivation:
                 continue
             self._dispatch(item, chosen_pool, score_val)
 
-    def _dispatch(
-        self, item: BacklogItem, chosen_pool: str, score_val: float
-    ) -> None:
+    def _dispatch(self, item: BacklogItem, chosen_pool: str, score_val: float) -> None:
         handler = self._handlers.get(item.kind)
         if handler is None:
             raise ValueError(f"no dispatch handler registered for kind={item.kind!r}")

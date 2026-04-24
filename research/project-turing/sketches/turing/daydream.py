@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import logging
 from concurrent.futures import Future
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any, Protocol
 from uuid import uuid4
@@ -47,6 +47,7 @@ ACCOMPLISHMENT_BIAS: float = 0.5
 
 
 # --- Writer ---------------------------------------------------------------
+
 
 class DaydreamWriter:
     """Only API: write HYPOTHESIS or OBSERVATION at source=I_IMAGINED.
@@ -78,9 +79,7 @@ class DaydreamWriter:
         self._repo.insert(m)
         return m.memory_id
 
-    def write_observation(
-        self, content: str, context: dict[str, Any] | None = None
-    ) -> str:
+    def write_observation(self, content: str, context: dict[str, Any] | None = None) -> str:
         m = EpisodicMemory(
             memory_id=str(uuid4()),
             self_id=self._self_id,
@@ -96,6 +95,7 @@ class DaydreamWriter:
 
 
 # --- Imagine function (pluggable) -----------------------------------------
+
 
 class ImagineFn(Protocol):
     """Stand-in for a bounded LLM call. Tests pin this to a fake."""
@@ -129,6 +129,7 @@ def default_imagine(
 
 
 # --- Producer -------------------------------------------------------------
+
 
 @dataclass
 class DaydreamPayload:
@@ -215,7 +216,7 @@ class DaydreamProducer:
     def _readiness(self, state: PipelineState) -> bool:
         if state.in_any_quiet_zone():
             return False
-        item = self._motivation._backlog.get(self._active_candidate_id or "")
+        item = self._motivation.get_backlog_item(self._active_candidate_id or "")
         if item is None:
             return False
         score_val, _ = score(item, state.pressure)
@@ -231,7 +232,7 @@ class DaydreamProducer:
     def _on_dispatch(self, item: BacklogItem, chosen_pool: str) -> None:
         payload: DaydreamPayload = item.payload
         if payload.producer is not self:
-            return                    # not ours; shouldn't happen under single-producer per pool
+            return  # not ours; shouldn't happen under single-producer per pool
         self._active_candidate_id = None
 
         seed = self._select_seed()
@@ -242,9 +243,7 @@ class DaydreamProducer:
 
         retrieved = self._retrieve_related(seed)
         session_id = str(uuid4())
-        future = self._reactor.spawn(
-            self._imagine, seed, retrieved, self._pool_name
-        )
+        future = self._reactor.spawn(self._imagine, seed, retrieved, self._pool_name)
         self._pending.append((future, seed, session_id))
         # Collect immediately in case the reactor resolved synchronously
         # (FakeReactor does).
@@ -259,9 +258,7 @@ class DaydreamProducer:
             try:
                 proposals = future.result()
             except Exception:
-                logger.exception(
-                    "daydream imagine failed for session %s", session_id
-                )
+                logger.exception("daydream imagine failed for session %s", session_id)
                 self._write_session_marker(session_id, writes=0, seed=seed)
                 continue
             writer = DaydreamWriter(self._repo, self._self_id, session_id)

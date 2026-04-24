@@ -26,6 +26,11 @@ logger = logging.getLogger("turing.runtime.quota")
 
 
 DEFAULT_QUALITY_WEIGHT: float = 1.0
+_SECONDS_PER_WINDOW_FLOOR: float = 1.0
+
+
+def _pool_score(headroom: int, quality_weight: float, seconds_to_reset: float) -> float:
+    return headroom * quality_weight / max(_SECONDS_PER_WINDOW_FLOOR, seconds_to_reset)
 
 
 @dataclass(frozen=True)
@@ -74,34 +79,23 @@ class FreeTierQuotaTracker:
         if window.headroom <= 0:
             return 0.0
         now = datetime.now(UTC)
-        seconds_to_reset = max(
-            1.0, (window.window_ends_at - now).total_seconds()
-        )
-        raw = (
-            window.headroom * reg.quality_weight / seconds_to_reset
-        )
+        seconds_to_reset = (window.window_ends_at - now).total_seconds()
+        raw = _pool_score(window.headroom, reg.quality_weight, seconds_to_reset)
         return min(raw, PRESSURE_MAX)
 
     def pressure_vec(self) -> dict[str, float]:
-        return {
-            pool_name: self.pressure_for(pool_name)
-            for pool_name in self._registrations
-        }
+        return {pool_name: self.pressure_for(pool_name) for pool_name in self._registrations}
 
     def select_best_provider(self) -> str | None:
         best_name: str | None = None
         best_score: float = 0.0
+        now = datetime.now(UTC)
         for pool_name, reg in self._registrations.items():
             window = reg.provider.quota_window()
             if window is None or window.headroom <= 0:
                 continue
-            now = datetime.now(UTC)
-            proximity = max(
-                1.0, (window.window_ends_at - now).total_seconds()
-            )
-            score = (
-                window.headroom * reg.quality_weight / proximity
-            )
+            seconds_to_reset = (window.window_ends_at - now).total_seconds()
+            score = _pool_score(window.headroom, reg.quality_weight, seconds_to_reset)
             if score > best_score:
                 best_score = score
                 best_name = pool_name
