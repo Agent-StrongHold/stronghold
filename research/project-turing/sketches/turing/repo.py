@@ -19,6 +19,8 @@ from .types import DURABLE_TIERS, EpisodicMemory, MemoryTier, SourceKind
 
 _NON_DURABLE_TIERS: frozenset[MemoryTier] = frozenset(MemoryTier) - DURABLE_TIERS
 
+_VALID_TABLES: frozenset[str] = frozenset({"durable_memory", "episodic_memory"})
+
 
 class RepoError(RuntimeError):
     pass
@@ -76,6 +78,11 @@ class Repo:
         self._conn.executescript(schema_path.read_text())
         self._conn.commit()
 
+    @staticmethod
+    def _validate_table(table: str) -> None:
+        if table not in _VALID_TABLES:
+            raise RepoError(f"invalid table name: {table!r}")
+
     # ------------------------------------------------------------------ insert
 
     def insert(self, memory: EpisodicMemory) -> str:
@@ -92,6 +99,7 @@ class Repo:
         if memory.tier == MemoryTier.WISDOM:
             self._validate_wisdom_invariants(memory)
         table = "durable_memory" if memory.tier in DURABLE_TIERS else "episodic_memory"
+        self._validate_table(table)
         try:
             self._conn.execute(
                 f"""
@@ -159,9 +167,7 @@ class Repo:
                 f"WISDOM origin_episode_id {memory.origin_episode_id} does not resolve to any marker"
             )
 
-    def _row_for_insert(
-        self, m: EpisodicMemory, include_deleted: bool
-    ) -> tuple:
+    def _row_for_insert(self, m: EpisodicMemory, include_deleted: bool) -> tuple:
         base = [
             m.memory_id,
             m.self_id,
@@ -225,15 +231,12 @@ class Repo:
         return chain
 
     def _fetch_by_id(self, memory_id: str, table: str) -> sqlite3.Row | None:
-        cur = self._conn.execute(
-            f"SELECT * FROM {table} WHERE memory_id = ?", (memory_id,)
-        )
+        self._validate_table(table)
+        cur = self._conn.execute(f"SELECT * FROM {table} WHERE memory_id = ?", (memory_id,))
         cur.row_factory = sqlite3.Row
         return cur.fetchone()
 
-    def _row_to_memory(
-        self, row: sqlite3.Row, *, include_deleted: bool
-    ) -> EpisodicMemory:
+    def _row_to_memory(self, row: sqlite3.Row, *, include_deleted: bool) -> EpisodicMemory:
         return EpisodicMemory(
             memory_id=row["memory_id"],
             self_id=row["self_id"],
@@ -273,9 +276,7 @@ class Repo:
             if row is None:
                 continue
             if row[0] is not None:
-                raise ImmutableViolation(
-                    f"superseded_by already set on {memory_id}"
-                )
+                raise ImmutableViolation(f"superseded_by already set on {memory_id}")
             self._conn.execute(
                 f"UPDATE {table} SET superseded_by = ? WHERE memory_id = ?",
                 (successor_id, memory_id),
@@ -319,6 +320,7 @@ class Repo:
             raise RepoError(f"no memory with id {memory_id}")
         new_weight = clamp_weight(m.tier, m.weight - delta)
         table = "durable_memory" if m.tier in DURABLE_TIERS else "episodic_memory"
+        self._validate_table(table)
         self._conn.execute(
             f"UPDATE {table} SET weight = ? WHERE memory_id = ?",
             (new_weight, memory_id),
@@ -337,9 +339,7 @@ class Repo:
         if m is None:
             raise RepoError(f"no memory with id {memory_id}")
         if m.immutable or m.tier in DURABLE_TIERS:
-            raise ImmutableViolation(
-                f"cannot delete immutable/durable memory {memory_id}"
-            )
+            raise ImmutableViolation(f"cannot delete immutable/durable memory {memory_id}")
         self._conn.execute(
             "UPDATE episodic_memory SET deleted = 1 WHERE memory_id = ?",
             (memory_id,),
@@ -403,6 +403,7 @@ class Repo:
         include_deleted: bool,
         include_superseded: bool,
     ) -> Iterator[EpisodicMemory]:
+        self._validate_table(table)
         where: list[str] = []
         params: list[object] = []
         if self_id is not None:
@@ -438,15 +439,12 @@ class Repo:
         cur = self._conn.execute(sql, tuple(params))
         cur.row_factory = sqlite3.Row
         for row in cur.fetchall():
-            yield self._row_to_memory(
-                row, include_deleted=(table == "episodic_memory")
-            )
+            yield self._row_to_memory(row, include_deleted=(table == "episodic_memory"))
 
     def count_by_tier(self, tier: MemoryTier) -> int:
         table = "durable_memory" if tier in DURABLE_TIERS else "episodic_memory"
-        cur = self._conn.execute(
-            f"SELECT COUNT(*) FROM {table} WHERE tier = ?", (tier.value,)
-        )
+        self._validate_table(table)
+        cur = self._conn.execute(f"SELECT COUNT(*) FROM {table} WHERE tier = ?", (tier.value,))
         return int(cur.fetchone()[0])
 
 
