@@ -316,10 +316,11 @@ async def create_container(config: StrongholdConfig) -> Container:
         permission_table=permission_table,
         audit_log=audit_log,
     )
+    tracer: TracingBackend
     if config.phoenix_endpoint:
-        tracer: TracingBackend = PhoenixTracingBackend(endpoint=config.phoenix_endpoint)
+        tracer = PhoenixTracingBackend(endpoint=config.phoenix_endpoint)
     else:
-        tracer: TracingBackend = NoopTracingBackend()
+        tracer = NoopTracingBackend()
     context_builder = ContextBuilder()
     intent_registry = IntentRegistry()
 
@@ -425,6 +426,16 @@ async def create_container(config: StrongholdConfig) -> Container:
 
     coin_ledger = PgCoinLedger(db_pool, config) if db_pool else NoOpCoinLedger()
 
+    # Wire RCA extractor if enabled in config
+    rca_extractor = None
+    if config.learnings.rca_enabled:
+        from stronghold.memory.learnings.extractor import RCAExtractor  # noqa: PLC0415
+
+        rca_extractor = RCAExtractor(
+            llm_client=llm,
+            rca_model=config.learnings.rca_model or "auto",
+        )
+
     agents = await create_agents(
         agents_dir=agents_dir,
         prompt_manager=prompt_manager,
@@ -441,6 +452,7 @@ async def create_container(config: StrongholdConfig) -> Container:
         tracer=tracer,
         tool_executor=_tool_exec,
         sa_engine=sa_engine,
+        rca_extractor=rca_extractor,
     )
 
     reactor = Reactor()
@@ -465,7 +477,7 @@ async def create_container(config: StrongholdConfig) -> Container:
 
     learning_promoter = LearningPromoter(
         learning_store,
-        threshold=5,
+        threshold=config.learnings.promotion_threshold,
         approval_gate=approval_gate,
     )
 
