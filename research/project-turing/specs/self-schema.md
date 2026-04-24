@@ -1,6 +1,6 @@
 # Spec 22 — Self-model schema
 
-*Tables and value types for the durable self-model nodes: personality, passions, hobbies, interests, preferences, skills, todos, mood, and the activation-graph edges that relate them.*
+*Tables and value types for the durable self-model nodes: personality, passions, hobbies, interests, preferences, todos, mood, and the activation-graph edges that relate them.*
 
 **Depends on:** [schema.md](./schema.md), [tiers.md](./tiers.md).
 **Depended on by:** [personality.md](./personality.md), [self-nodes.md](./self-nodes.md), [activation-graph.md](./activation-graph.md), [self-todos.md](./self-todos.md), [mood.md](./mood.md), [self-surface.md](./self-surface.md), [self-bootstrap.md](./self-bootstrap.md), [self-as-conduit.md](./self-as-conduit.md).
@@ -9,7 +9,7 @@
 
 ## Current state
 
-- `EpisodicMemory` (spec 1) carries the memory layer. No tables exist for persistent self-model nodes — personality, passions, hobbies, interests, preferences, skills, todos, mood.
+- `EpisodicMemory` (spec 1) carries the memory layer. No tables exist for persistent self-model nodes — personality, passions, hobbies, interests, preferences, todos, mood.
 - `self_id` is minted (spec 8) but no state is indexed to it beyond memory.
 - The Conduit treats every request as a fresh classification; there is no durable "what I am" it consults.
 
@@ -24,8 +24,8 @@ Every node kind shares four common fields: `node_id`, `self_id`, `created_at`, `
 ### Node identity and ownership
 
 - **AC-22.1.** Every self-model row has a `node_id` that is unique within its table and a `self_id` that matches the owning self. Inserting a row without `self_id` raises. Test.
-- **AC-22.2.** `NodeKind` is an enum over `{personality_facet, passion, hobby, interest, preference, skill, todo, mood}`. Used as `source_kind` and `target_kind` in the activation graph (spec 25). Test for every enum member.
-- **AC-22.3.** `node_id` values are prefixed by node kind (`facet:honesty_humility.sincerity`, `passion:42`, `skill:python`, ...) so the graph can resolve kind without a join. Regex-based validation test on insert.
+- **AC-22.2.** `NodeKind` is an enum over `{personality_facet, passion, hobby, interest, preference, todo, mood}`. Used as `source_kind` and `target_kind` in the activation graph (spec 25). Test for every enum member.
+- **AC-22.3.** `node_id` values are prefixed by node kind (`facet:honesty_humility.sincerity`, `passion:42`, `hobby:reading`, ...) so the graph can resolve kind without a join. Regex-based validation test on insert.
 
 ### Personality tables
 
@@ -42,31 +42,26 @@ Every node kind shares four common fields: `node_id`, `self_id`, `created_at`, `
 - **AC-22.11.** `self_interests` rows: `topic`, `description`, `last_noticed_at`. No strength field; same rationale as hobbies. Test.
 - **AC-22.12.** `self_preferences` rows: `kind ∈ {like, dislike, favorite, avoid}`, `target: str`, `strength ∈ [0.0, 1.0]`, `rationale`. `(self_id, kind, target)` is unique. Duplicate insert raises. Test.
 
-### Skills
-
-- **AC-22.13.** `self_skills` rows: `name`, `kind ∈ {intellectual, physical, habit, social}`, `stored_level ∈ [0.0, 1.0]`, `decay_rate_per_day > 0.0`, `last_practiced_at`. Out-of-range level raises. Non-positive decay rate raises. Test.
-- **AC-22.14.** `stored_level` is never mutated by decay. Decay is a read-time transformation (spec 24 §4). A write that mutates `stored_level` must set `last_practiced_at = now()` in the same transaction. Test.
-
 ### Todos
 
-- **AC-22.15.** `self_todos` rows: `text`, `motivated_by_node_id` (required, foreign-key-like reference into any self-model table), `status ∈ {active, completed, archived}`, `outcome_text` (nullable; required iff status = completed), `created_at`. Insert without `motivated_by_node_id` raises. Marking `completed` without `outcome_text` raises. Test.
-- **AC-22.16.** `self_todo_revisions` rows: `todo_id`, `revision_num` (monotonic per todo), `text_before`, `text_after`, `revised_at`. Append-only — updating or deleting a revision row raises. Test.
+- **AC-22.13.** `self_todos` rows: `text`, `motivated_by_node_id` (required, foreign-key-like reference into any self-model table), `status ∈ {active, completed, archived}`, `outcome_text` (nullable; required iff status = completed), `created_at`. Insert without `motivated_by_node_id` raises. Marking `completed` without `outcome_text` raises. Test.
+- **AC-22.14.** `self_todo_revisions` rows: `todo_id`, `revision_num` (monotonic per todo), `text_before`, `text_after`, `revised_at`. Append-only — updating or deleting a revision row raises. Test.
 
 ### Mood
 
-- **AC-22.17.** `self_mood` has exactly one row per `self_id` at any time (singleton state). A second insert raises; updates mutate the existing row. Test.
-- **AC-22.18.** Mood row carries `valence ∈ [-1.0, 1.0]`, `arousal ∈ [0.0, 1.0]`, `focus ∈ [0.0, 1.0]`, `last_tick_at`. Out-of-range values raise. Test.
+- **AC-22.15.** `self_mood` has exactly one row per `self_id` at any time (singleton state). A second insert raises; updates mutate the existing row. Test.
+- **AC-22.16.** Mood row carries `valence ∈ [-1.0, 1.0]`, `arousal ∈ [0.0, 1.0]`, `focus ∈ [0.0, 1.0]`, `last_tick_at`. Out-of-range values raise. Test.
 
 ### Activation-graph table
 
-- **AC-22.19.** `self_activation_contributors` rows: `target_node_id`, `target_kind: NodeKind`, `source_id` (node_id, memory_id, or rule_id), `source_kind ∈ NodeKind ∪ {memory, rule, retrieval}`, `weight ∈ [-1.0, 1.0]` (negative allowed for inhibitory edges), `origin ∈ {self, rule, retrieval}`, `rationale: str`, `created_at`. Out-of-range weight raises. Test.
-- **AC-22.20.** A contributor where `target_node_id == source_id` raises (no direct self-loops). Test.
-- **AC-22.21.** `origin = retrieval` rows carry an `expires_at` timestamp. All other origins carry `expires_at = NULL` (durable). Test.
+- **AC-22.17.** `self_activation_contributors` rows: `target_node_id`, `target_kind: NodeKind`, `source_id` (node_id, memory_id, or rule_id), `source_kind ∈ NodeKind ∪ {memory, rule, retrieval}`, `weight ∈ [-1.0, 1.0]` (negative allowed for inhibitory edges), `origin ∈ {self, rule, retrieval}`, `rationale: str`, `created_at`. Out-of-range weight raises. Test.
+- **AC-22.18.** A contributor where `target_node_id == source_id` raises (no direct self-loops). Test.
+- **AC-22.19.** `origin = retrieval` rows carry an `expires_at` timestamp. All other origins carry `expires_at = NULL` (durable). Test.
 
 ### Cross-cutting invariants
 
-- **AC-22.22.** Every table has `created_at` and `updated_at` in UTC. Updates that don't touch `updated_at` raise (enforced by the repo layer). Test.
-- **AC-22.23.** No self-model table is deletable by the LLM. Only the operator can hard-delete a row; the self can only mark `status=archived` on todos or set `strength=0` on passions/preferences. Test.
+- **AC-22.20.** Every table has `created_at` and `updated_at` in UTC. Updates that don't touch `updated_at` raise (enforced by the repo layer). Test.
+- **AC-22.21.** No self-model table is deletable by the LLM. Only the operator can hard-delete a row; the self can only mark `status=archived` on todos or set `strength=0` on passions/preferences. Test.
 
 ## Implementation
 
@@ -90,7 +85,6 @@ class NodeKind(StrEnum):
     HOBBY = "hobby"
     INTEREST = "interest"
     PREFERENCE = "preference"
-    SKILL = "skill"
     TODO = "todo"
     MOOD = "mood"
 
@@ -99,13 +93,6 @@ class ContributorOrigin(StrEnum):
     SELF = "self"           # self-authored via write_contributor tool
     RULE = "rule"           # always-on default rule
     RETRIEVAL = "retrieval" # ephemeral per-request semantic match
-
-
-class SkillKind(StrEnum):
-    INTELLECTUAL = "intellectual"
-    PHYSICAL = "physical"
-    HABIT = "habit"
-    SOCIAL = "social"
 
 
 class PreferenceKind(StrEnum):
@@ -217,19 +204,7 @@ class Preference(SelfNode):
     rationale: str
 ```
 
-### 22.5 Skills
-
-```python
-@dataclass
-class Skill(SelfNode):
-    name: str
-    kind: SkillKind
-    stored_level: float               # [0.0, 1.0]; never decayed on disk
-    decay_rate_per_day: float         # > 0.0
-    last_practiced_at: datetime
-```
-
-### 22.6 Todos
+### 22.5 Todos
 
 ```python
 @dataclass
@@ -249,7 +224,7 @@ class SelfTodoRevision(SelfNode):
     revised_at: datetime
 ```
 
-### 22.7 Mood
+### 22.6 Mood
 
 ```python
 @dataclass
@@ -260,7 +235,7 @@ class Mood(SelfNode):
     last_tick_at: datetime
 ```
 
-### 22.8 Activation graph
+### 22.7 Activation graph
 
 ```python
 @dataclass
@@ -283,7 +258,7 @@ class ActivationContributor(SelfNode):
             raise ValueError("retrieval contributors must set expires_at; others must not")
 ```
 
-### 22.9 Schema SQL sketch
+### 22.8 Schema SQL sketch
 
 ```sql
 -- All tables are CREATE TABLE IF NOT EXISTS. self_id is a foreign key
@@ -303,7 +278,7 @@ CREATE TABLE self_personality_facets (
 
 -- Analogous tables for: self_personality_items, self_personality_answers,
 -- self_personality_revisions, self_passions, self_hobbies, self_interests,
--- self_preferences, self_skills, self_todos, self_todo_revisions, self_mood,
+-- self_preferences, self_todos, self_todo_revisions, self_mood,
 -- self_activation_contributors.
 
 CREATE TABLE self_mood (

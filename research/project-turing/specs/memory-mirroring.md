@@ -31,25 +31,24 @@ For each spec AC that calls for a memory mirror, the corresponding code path inv
 - **AC-32.5.** Spec 23 AC-23.17 — retest answers (20/week) each write an OBSERVATION via `mirror_observation(intent_at_time="personality retest")`.
 - **AC-32.6.** Spec 23 AC-23.19 — `record_personality_claim` writes an OPINION via `mirror_opinion(intent_at_time="narrative personality revision")`.
 - **AC-32.7.** Spec 24 AC-24.8 — `note_engagement(hobby_id, notes)` writes an OBSERVATION via `mirror_observation(intent_at_time="engage hobby")`.
-- **AC-32.8.** Spec 24 AC-24.10 — `practice_skill` writes an OBSERVATION via `mirror_observation(intent_at_time="practice skill")`.
-- **AC-32.9.** Spec 25 AC-25.19 — `write_contributor(origin=self)` writes an OBSERVATION via `mirror_observation(intent_at_time="write contributor")`.
-- **AC-32.10.** Spec 26 AC-26.12 — `complete_self_todo` writes an AFFIRMATION via `mirror_affirmation(intent_at_time="complete self todo")`; the AFFIRMATION's `memory_id` is then used as the source of the +0.3 reinforcement contributor (spec 26 AC-26.14) — removes the caller-supplied-memory-id workaround in the current sketch.
-- **AC-32.11.** Spec 27 AC-27.9 — every `nudge_mood` writes an OBSERVATION via `mirror_observation(intent_at_time="mood nudge")` with `context = {dim, delta, reason}`.
-- **AC-32.12.** Spec 29 AC-29.17 — bootstrap `finalize` writes a LESSON via `mirror_lesson(intent_at_time="self bootstrap complete")`.
-- **AC-32.13.** Spec 36 (Warden-on-self-writes) blocked attempts write an OBSERVATION `"warden blocked self write"` — see spec 36.
+- **AC-32.8.** Spec 25 AC-25.19 — `write_contributor(origin=self)` writes an OBSERVATION via `mirror_observation(intent_at_time="write contributor")`.
+- **AC-32.9.** Spec 26 AC-26.12 — `complete_self_todo` writes an AFFIRMATION via `mirror_affirmation(intent_at_time="complete self todo")`; the AFFIRMATION's `memory_id` is then used as the source of the +0.3 reinforcement contributor (spec 26 AC-26.14) — removes the caller-supplied-memory-id workaround in the current sketch.
+- **AC-32.10.** Spec 27 AC-27.9 — every `nudge_mood` writes an OBSERVATION via `mirror_observation(intent_at_time="mood nudge")` with `context = {dim, delta, reason}`.
+- **AC-32.11.** Spec 29 AC-29.17 — bootstrap `finalize` writes a LESSON via `mirror_lesson(intent_at_time="self bootstrap complete")`.
+- **AC-32.12.** Spec 36 (Warden-on-self-writes) blocked attempts write an OBSERVATION `"warden blocked self write"` — see spec 36.
 
 ### Transactionality
 
-- **AC-32.14.** A self-model write and its mirror succeed-or-fail atomically. A mirror failure after a successful write rolls back the write. Test with an induced failure in the bridge.
-- **AC-32.15.** The bridge never mutates existing memories; it only inserts. Test over all five helpers.
+- **AC-32.13.** A self-model write and its mirror succeed-or-fail atomically. A mirror failure after a successful write rolls back the write. Test with an induced failure in the bridge.
+- **AC-32.14.** The bridge never mutates existing memories; it only inserts. Test over all five helpers.
 
 ### Observability
 
-- **AC-32.16.** Every mirrored memory is tagged via `context.mirror = True`. Queries that count self-originated memories filter on this. Test.
+- **AC-32.15.** Every mirrored memory is tagged via `context.mirror = True`. Queries that count self-originated memories filter on this. Test.
 
 ### Counter assertions
 
-- **AC-32.17.** After running the full sketch test suite, the count of episodic+durable memories for any bootstrapped `self_id` equals the count of self-model mutations plus 200 (bootstrap answers) plus 1 (finalize LESSON). Integration test.
+- **AC-32.16.** After running the full sketch test suite, the count of episodic+durable memories for any bootstrapped `self_id` equals the count of self-model mutations plus 200 (bootstrap answers) plus 1 (finalize LESSON). Integration test.
 
 ## Implementation
 

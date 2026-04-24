@@ -22,7 +22,7 @@ A minimal, durable, first-person task list. Every todo has required provenance (
 
 - **AC-26.1.** `write_self_todo(text, motivated_by_node_id)` inserts a `SelfTodo` row with `status = ACTIVE`, `created_at = now()`, `outcome_text = None`. Test.
 - **AC-26.2.** `motivated_by_node_id` is required. Insertion without it raises. Test.
-- **AC-26.3.** `motivated_by_node_id` must reference an existing, non-archived self-model node (passion, hobby, interest, preference, skill, personality_facet). Dangling references raise. Test.
+- **AC-26.3.** `motivated_by_node_id` must reference an existing, non-archived self-model node (passion, hobby, interest, preference, personality_facet). Dangling references raise. Test.
 - **AC-26.4.** `text` is capped at 500 characters. Longer text raises with a `TodoTextTooLong` error. Test at 500, 501.
 - **AC-26.5.** There is no limit on active todos per self, but the tuning detector (spec 11) flags when count > `TODO_VOLUME_THRESHOLD` (default 50) as a signal of possible thrashing. Flag-only.
 
@@ -175,7 +175,7 @@ Active todos in the minimal prompt block appear as:
 ```
 Active todos (3):
  - [todo:42] Re-read Tulving '85 (motivated by passion:3)
- - [todo:51] Practice embedding-index tests (motivated by skill:embeddings)
+ - [todo:51] Read the Tulving '85 paper (motivated by interest:philosophy_of_mind)
  - [todo:77] Write a note about last week's retest shift (motivated by facet:openness.inquisitiveness)
 ```
 

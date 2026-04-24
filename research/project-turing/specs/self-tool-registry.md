@@ -92,11 +92,10 @@ def register_self_tool(tool: SelfTool) -> None:
 
 
 # At module-import time, register every tool (recall_self, write_self_todo,
-# note_passion, note_hobby, note_interest, note_preference, note_skill,
-# revise_self_todo, complete_self_todo, archive_self_todo, practice_skill,
-# downgrade_skill, rerank_passions, write_contributor,
-# record_personality_claim, retract_contributor_by_counter, note_engagement,
-# note_interest_trigger).
+# note_passion, note_hobby, note_interest, note_preference,
+# revise_self_todo, complete_self_todo, archive_self_todo,
+# rerank_passions, write_contributor, record_personality_claim,
+# retract_contributor_by_counter, note_engagement, note_interest_trigger).
 ```
 
 `write_contributor`, `record_personality_claim`, `retract_contributor_by_counter` live in `self_contributors.py` (new file) so their implementations don't bloat `self_surface.py`.

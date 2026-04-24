@@ -41,7 +41,6 @@ Every self-model node has an `active_now(node_id, context)` computed value in `[
   - `source_kind == personality_facet`: `(score - 1.0) / 4.0` (remap 1..5 to 0..1).
   - `source_kind == passion` or `preference`: `strength`.
   - `source_kind == hobby` or `interest`: `1.0 if last_engaged/noticed within HOBBY_RECENCY_DAYS else recency_decay`.
-  - `source_kind == skill`: `current_level(skill)` (spec 24 §24.2).
   - `source_kind == mood`: a dimension chosen by the contributor's `rationale` parsing (default: valence mapped to `[0,1]`).
   - `source_kind == memory`: `clamp(memory.weight, 0.0, 1.0)`.
   - `source_kind == rule`: `1.0` (rules are always "on" at full strength; the edge's own `weight` scales them).
@@ -105,9 +104,6 @@ def source_state(
     if source_kind == "interest":
         i = repo.get_interest(source_id)
         return _recency_state(i.last_noticed_at, context.now, INTEREST_RECENCY_DAYS)
-    if source_kind == "skill":
-        s = repo.get_skill(source_id)
-        return current_level(s, context.now)
     if source_kind == "mood":
         m = repo.get_mood(context.self_id)
         return (m.valence + 1.0) / 2.0

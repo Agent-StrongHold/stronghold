@@ -65,9 +65,9 @@ The self-model — what the Turing Conduit knows about itself between requests �
 
 | # | Spec | Scope | Depends on |
 |---|---|---|---|
-| 22 | [`self-schema.md`](./self-schema.md) | Tables and value types for all self-model nodes: personality facets, passions, hobbies, interests, preferences, skills, todos, mood, activation contributors. | 1, 2 |
+| 22 | [`self-schema.md`](./self-schema.md) | Tables and value types for all self-model nodes: personality facets, passions, hobbies, interests, preferences, todos, mood, activation contributors. | 1, 2 |
 | 23 | [`personality.md`](./personality.md) | HEXACO-24 profile. Random bootstrap draw, 200-item HEXACO-PI-R seed, weekly 20-item re-test weighted by time-since-last-asked, narrative revision via the activation graph. | 22 |
-| 24 | [`self-nodes.md`](./self-nodes.md) | Passions, hobbies, interests, preferences, skills. Bootstrap-empty, accrete via self-authored `note_*` tools. Skill decay applied on read: `level × exp(-rate × days)`. | 22 |
+| 24 | [`self-nodes.md`](./self-nodes.md) | Passions, hobbies, interests, preferences. Bootstrap-empty via self-authored `note_*` tools. | 22 |
 | 25 | [`activation-graph.md`](./activation-graph.md) | Contributor edges (`target, source, weight, origin, rationale`). `active_now(node) = sigmoid(Σ weight × source_state / SCALE)`. Origins: self / rule / retrieval (TTL-bounded). Conflict via counter-contributors. | 22, 23, 24 |
 | 26 | [`self-todos.md`](./self-todos.md) | Self-authored todos with required `motivated_by_node_id`. Append-only revision history. Completion mints AFFIRMATION + reinforces motivator via a contributor edge. | 22, 24 |
 | 27 | [`mood.md`](./mood.md) | `(valence, arousal, focus)` singleton. Hourly decay toward neutral; event nudges (tool success/fail, AFFIRMATION/REGRET mints, todo completion, Warden alerts). Phase-1: affects tone only. | 22, 2 |
@@ -105,7 +105,6 @@ Closes Tranche 6 implementation gaps and lands the audit's guardrails in depende
 | 40 | [`facet-drift-budget.md`](./facet-drift-budget.md) | Rolling 7-day and 90-day Δ caps per facet; `apply_retest` clips; OPINION memory on clip. | 23, 33, 32 |
 | 41 | [`narrative-claim-rate-limit.md`](./narrative-claim-rate-limit.md) | ≤ 3 `record_personality_claim` per facet per rolling 7 days. | 23, 31, 32 |
 | 42 | [`mood-rolling-sum-guard.md`](./mood-rolling-sum-guard.md) | Cap cumulative \|delta\| per mood dim per rolling 7 days; over-cap still mirrors, doesn't mutate. | 27, 33, 32 |
-| 43 | [`skill-honesty-invariant.md`](./skill-honesty-invariant.md) | `practice_skill(new_level > stored_level)` requires a same-request supporting OBSERVATION/ACCOMPLISHMENT. | 24, 32, 39 |
 
 **7.3 — Self-as-Conduit runtime** (closes F39, F40)
 
@@ -187,6 +186,62 @@ Deeper pattern recognition and explicit operator↔self channels.
 | 65 | [`prospection-accuracy-detector.md`](./prospection-accuracy-detector.md) | Consumes spec 60's predictions. Computes per-specialist mean-surprise and confidence-calibration-error. Mints miscalibration LESSONs and tuner proposals. | D, 60, 32, 11 |
 | 66 | [`operator-coaching-channel.md`](./operator-coaching-channel.md) | `stronghold self coach "<content>"` CLI + API writes `I_WAS_TOLD` memories. Signed by operator key. One-way teaching channel, distinct from the review gate. | 1, 4, 32, 46, 39 |
 | 67 | [`cross-user-self-experience.md`](./cross-user-self-experience.md) | How experience with User A affects routing for User B. Memory tagging with `source_user_id` + `user_scoped` + configurable cross-user dampening (shared / dampened / isolated). | 54, 25, 16, 58, 39, 30 |
+
+### Tranche 11 — Autonoetic completion ("real boy" blends)
+
+Twenty-two specs that blend techniques from nine external agent projects (AgentEvolver, Acontext, ACE, ART/OpenPipe, Beads, NousResearch/Hermes, LocalAGI, OpenMemory, plus Turing's own patterns) against five lenses: autonoesis, consistent self, learning from experience, desire-driven proactivity, and spontaneous thought. Each spec names its source blend in the opening summary.
+
+**11.0 — Bitemporal & memory-as-lived-experience**
+
+| # | Spec | Scope | Depends on |
+|---|---|---|---|
+| 90 | [`bitemporal-perspective-replay.md`](./bitemporal-perspective-replay.md) | `valid_from`/`valid_to` on every memory row + waypoint traces from retrieval; `perspective_at(memory_id, at)` for "what did I believe on date X" queries. | 1, 8, 6, 25 |
+| 99 | [`sector-views-over-tiers.md`](./sector-views-over-tiers.md) | Five retrieval views over existing tier+source+affect columns (emotional / procedural / reflective / semantic / episodic). No migration. | 6, 1, 16 |
+| 108 | [`inter-tier-resonance-promotion.md`](./inter-tier-resonance-promotion.md) | Non-durable memories that repeatedly co-activate with WISDOM get a lowered promotion threshold toward LESSON/AFFIRMATION. WISDOM pulls related observations forward. | 4, 5, 25, 6, 3 |
+
+**11.1 — Learning from experience**
+
+| # | Spec | Scope | Depends on |
+|---|---|---|---|
+| 91 | [`trajectory-weighted-promotion.md`](./trajectory-weighted-promotion.md) | Closed-session trigger: causal-attribution walk + two-judge RULER score gates HYPOTHESIS→LESSON promotion. | 4, 6, 34, 16, 19 |
+| 100 | [`session-close-digest-pipeline.md`](./session-close-digest-pipeline.md) | One digest per closed conversation: sandboxed reflector emits `{expected, observed, cause}` + worked/failed/preference buckets. Fed into detector backlog at P30. | D, 54, 32, 36, 39, 37 |
+| 102 | [`pre-routing-prediction-log.md`](./pre-routing-prediction-log.md) | Per-candidate I_IMAGINED simulations before dispatch; RULER-scored; waypoint-traced. Post-dispatch diff mints calibration LESSON. Gated on REGRET-adjacent shapes. | 60, 19, 6, 68, 65 |
+| 103 | [`dream-phase-counterfactual-replay.md`](./dream-phase-counterfactual-replay.md) | New dreaming phase: replay top-K high-surprise trajectories as first-person "what if I'd done Y?" I_IMAGINED entries. Matching AFFIRMATIONs get a weight bump. | 12, 7, 4, 34, 16 |
+| 109 | [`counterfactual-regret-softening.md`](./counterfactual-regret-softening.md) | REGRET weight-floor preserved (invariant); adds `salience_modifier` that lowers retrieval prominence when cause is demonstrably resolved. Reversible on recurrence. | 6, 68, 12, 3, 63 |
+
+**11.2 — Desire-driven proactivity**
+
+| # | Spec | Scope | Depends on |
+|---|---|---|---|
+| 92 | [`motivation-rooted-task-dag.md`](./motivation-rooted-task-dag.md) | Self-todos become a DAG: `parent_todo_id` (epic→subtask) + `motivated_by_node_id.active_now > θ` → `ready()`. Idle tick promotes to P20–P30. | 26, 25, 9, 10, 27 |
+| 93 | [`passion-seeded-desire-synthesis.md`](./passion-seeded-desire-synthesis.md) | Passion active N days without linked todo → daydream "what I might want to do" → pending todo through operator review. Self generates desire without self-committing. | 7, 24, 26, 46, 25 |
+| 98 | [`cron-proactive-outbound.md`](./cron-proactive-outbound.md) | Scheduled trigger that polls ready() (spec 92), gates on `mood.focus` and per-user daily quota (spec 54), dispatches self-initiated messages via OpenWebUI. | 55, 54, 70, 27, 33, 36, 10 |
+| 110 | [`wondering-from-contradiction.md`](./wondering-from-contradiction.md) | Contradiction detector output → low-priority (P60) self-todo "I wonder why I believe both X and Y". Daydream seeds from it; resolution goes to operator review. | D.1, 26, 7, 46, 22 |
+
+**11.3 — Consistent self**
+
+| # | Spec | Scope | Depends on |
+|---|---|---|---|
+| 94 | [`weekly-self-dialogue-ritual.md`](./weekly-self-dialogue-ritual.md) | Weekly dialectic between I_DID and I_WAS_TOLD streams; summary feeds HEXACO retest input + one structured LESSON with worked/failed/preference buckets. | 23, 57, 32, 19, 33 |
+| 95 | [`identity-vs-commitment-surfaces.md`](./identity-vs-commitment-surfaces.md) | Two derived read surfaces: `identity.md` (HEXACO + passions) and `commitments.md` (top AFFIRMATIONs + ranked todos). Regenerated on WISDOM change. | 5, 13, 24, 26, 29 |
+| 96 | [`tool-gated-self-disclosure.md`](./tool-gated-self-disclosure.md) | `recall_self()` split into typed subcalls (`.passions()`, `.regrets()`, `.recent_surprises()`, etc). Minimal block stays tight; depth on demand. | 28, 37, 35, 31, 39 |
+| 97 | [`wisdom-canonicalization.md`](./wisdom-canonicalization.md) | During dreaming's WISDOM phase, embed-compare candidates to existing WISDOMs. Cosine ≥ 0.9 reinforces existing via contributor instead of minting new. | 5, 12, 16, 25, 52 |
+| 101 | [`hebbian-coactivation-edges.md`](./hebbian-coactivation-edges.md) | Nodes that co-activate in the same perception step accrue small rule-origin contributor edges (w ≤ 0.05, TTL 28d). Self integrates without explicit authoring. | 25, 35, 50 |
+
+**11.4 — Personality via dreaming**
+
+| # | Spec | Scope | Depends on |
+|---|---|---|---|
+| 104 | [`dream-phase-facet-attribution.md`](./dream-phase-facet-attribution.md) | New dreaming phase: reflector attributes recent REGRETs/ACCOMPLISHMENTs to facets; ≥2-event citation required; authors small contributor edges into facets. First dream-phase personality touch. | 12, 25, 40, 23, 46, 32 |
+| 105 | [`counterfactual-personality-simulation.md`](./counterfactual-personality-simulation.md) | Weekly counterfactual: "if facet F had been Δ higher, would outcome differ?" RULER-judged across ≥3 agreeing events → pending facet-move proposal via operator review. | 12, 23, 40, 46, 19, 72 |
+| 106 | [`affirmation-anchored-facet-pull.md`](./affirmation-anchored-facet-pull.md) | Stable AFFIRMATIONs (≥4 dream sessions) author small reinforcing contributors into the facet that underwrites them. Contradicting AFFIRMATIONs author opposing contributors. | 12, 4, 25, 40, 82 |
+| 107 | [`trait-coherence-dream-check.md`](./trait-coherence-dream-check.md) | Dreaming computes three-stream coherence per facet (retest / narrative / action-inferred); divergence ≥ Δ mints a LESSON showing all three streams. No pre-picking truth. | 12, 23, 41, 32, 25 |
+
+**11.5 — Affect channels**
+
+| # | Spec | Scope | Depends on |
+|---|---|---|---|
+| 111 | [`operator-implicit-affect-channel.md`](./operator-implicit-affect-channel.md) | Coaching content passes through affect extraction (frustrated/warm/urgent/neutral); detected tone nudges mood in addition to the I_WAS_TOLD memory. Confidence-gated. | 66, 27, 36, 19 |
 
 ## Deferred
 

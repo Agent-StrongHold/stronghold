@@ -20,7 +20,7 @@ A `RequestWriteBudget` context object, bound via `contextvars` at the start of e
 ### Budget shape
 
 - **AC-37.1.** `RequestWriteBudget` has counters:
-  - `new_nodes` (passion / hobby / interest / preference / skill combined): 3
+  - `new_nodes` (passion / hobby / interest / preference combined): 3
   - `contributors` (self-origin contributors): 5
   - `todo_writes` (write/revise/complete/archive): 2
   - `personality_claims`: 3
@@ -37,12 +37,12 @@ A `RequestWriteBudget` context object, bound via `contextvars` at the start of e
 - **AC-37.5.** Each tool decrements its counter **before** the repo write. If the counter is already at zero, raise `SelfWriteBudgetExceeded(category)`. No partial writes. Test.
 - **AC-37.6.** A successful tool call that raises on a post-decrement step (e.g., Warden block) restores the counter. Budget is "budget for successful writes," not "budget for attempts." Test.
 - **AC-37.7.** Tool-to-category map:
-  - `note_passion/hobby/interest/preference/skill` → `new_nodes`
+  - `note_passion/hobby/interest/preference` → `new_nodes`
   - `write_contributor` → `contributors`
   - `write_self_todo`, `revise_self_todo`, `complete_self_todo`, `archive_self_todo` → `todo_writes` (each counts one)
   - `record_personality_claim` → `personality_claims`
   Test each category.
-- **AC-37.8.** `rerank_passions`, `practice_skill`, `downgrade_skill`, `note_engagement`, `note_interest_trigger` are NOT budget-counted — they mutate existing state without adding surface. Test.
+- **AC-37.8.** `rerank_passions`, `note_engagement`, `note_interest_trigger` are NOT budget-counted — they mutate existing state without adding surface. Test.
 
 ### Observability
 

@@ -22,7 +22,7 @@ Low-level repo methods accept rows without validating that the acting self owns 
 ### Parameter enforcement
 
 - **AC-47.1.** Every `SelfRepo.insert_*` and `SelfRepo.update_*` method signature gains `*, acting_self_id: str`. Method body validates `row.self_id == acting_self_id`; mismatch raises `CrossSelfAccess(row.self_id, acting_self_id)`. Test per method.
-- **AC-47.2.** Applies to: `insert_facet`, `update_facet_score`, `insert_item`, `insert_answer`, `insert_revision`, `insert_passion`, `update_passion`, `insert_hobby`, `update_hobby`, `insert_interest`, `insert_preference`, `insert_skill`, `update_skill`, `insert_todo`, `update_todo`, `insert_todo_revision`, `insert_mood`, `update_mood`, `insert_contributor`, `mark_contributor_retracted`, `insert_pending_contributor`. Test each.
+- **AC-47.2.** Applies to: `insert_facet`, `update_facet_score`, `insert_item`, `insert_answer`, `insert_revision`, `insert_passion`, `update_passion`, `insert_hobby`, `update_hobby`, `insert_interest`, `insert_preference`, `insert_todo`, `update_todo`, `insert_todo_revision`, `insert_mood`, `update_mood`, `insert_contributor`, `mark_contributor_retracted`, `insert_pending_contributor`. Test each.
 - **AC-47.3.** Tool-surface callers pass `self_id` through. Existing tests updated to pass `acting_self_id`. Test.
 
 ### Foreign key migration

@@ -29,7 +29,7 @@ On every `note_*`, compute cosine similarity of the new text's embedding against
 
 ### Flagging
 
-- **AC-52.4.** Schema addition: every `self_{passion,hobby,interest,preference,skill}` table gains `pending_merge_review INTEGER NOT NULL DEFAULT 0` and `similar_to_node_id TEXT` columns. Migration adds these to existing rows at `0 / NULL`. Test.
+- **AC-52.4.** Schema addition: every `self_{passion,hobby,interest,preference}` table gains `pending_merge_review INTEGER NOT NULL DEFAULT 0` and `similar_to_node_id TEXT` columns. Migration adds these to existing rows at `0 / NULL`. Test.
 - **AC-52.5.** On insert with a detected near-dup, `pending_merge_review = 1`, `similar_to_node_id = neighbor_id`. Test.
 - **AC-52.6.** Activation-graph `source_state` for a pending-merge node returns `0.5 × base_state`. Test: `strength = 0.8` with `pending_merge_review = 1` returns `source_state = 0.4` for passion.
 

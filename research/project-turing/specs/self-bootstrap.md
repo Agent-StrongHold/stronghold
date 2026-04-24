@@ -56,9 +56,9 @@ A CLI-triggered procedure that takes a fresh `self_id` to a state where `recall_
 
 - **AC-29.15.** After all 200 answers are persisted, insert the singleton `self_mood` row at `(valence=0.0, arousal=0.3, focus=0.5, last_tick_at=now())`. Test.
 - **AC-29.16.** Register the weekly retest Reactor trigger with `first_fire_at = now() + timedelta(days=7)`. Test by inspecting the Reactor's trigger list.
-- **AC-29.17.** Write a LESSON-tier episodic memory marking the completion: `content = "I was bootstrapped on {date} with seed {seed}. I have no passions, hobbies, skills, or preferences yet."`, `source = I_DID`, `intent_at_time = "self bootstrap complete"`. Test.
+- **AC-29.17.** Write a LESSON-tier episodic memory marking the completion: `content = "I was bootstrapped on {date} with seed {seed}. I have no passions, hobbies, or preferences yet."`, `source = I_DID`, `intent_at_time = "self bootstrap complete"`. Test.
 - **AC-29.18.** Delete the `bootstrap_progress` row for this `self_id`. Test.
-- **AC-29.19.** A final verification pass asserts: exactly 24 facet rows; exactly 200 answer rows; exactly 1 mood row; zero passion/hobby/interest/preference/skill rows; zero todo rows; trigger registered. If any assertion fails, log an error but do NOT roll back (the partial state is more useful for forensics than a clean slate). Test the verification pass in both success and induced-failure modes.
+- **AC-29.19.** A final verification pass asserts: exactly 24 facet rows; exactly 200 answer rows; exactly 1 mood row; zero passion/hobby/interest/preference rows; zero todo rows; trigger registered. If any assertion fails, log an error but do NOT roll back (the partial state is more useful for forensics than a clean slate). Test the verification pass in both success and induced-failure modes.
 
 ### Name and operator overrides
 
@@ -164,7 +164,7 @@ def _finalize(self_id, seed):
         self_id=self_id,
         content=(
             f"I was bootstrapped on {now.date().isoformat()} with seed {seed}. "
-            "I have no passions, hobbies, skills, or preferences yet."
+            "I have no passions, hobbies, or preferences yet."
         ),
         source=SourceKind.I_DID,
         intent_at_time="self bootstrap complete",
@@ -184,7 +184,7 @@ def _verify_final_state(self_id):
         problems.append("answer count")
     if not repo.has_mood(self_id):
         problems.append("missing mood")
-    for kind in ("passion", "hobby", "interest", "preference", "skill", "todo"):
+    for kind in ("passion", "hobby", "interest", "preference", "todo"):
         if repo.count(kind, self_id) != 0:
             problems.append(f"non-empty {kind}")
     if not reactor.has_trigger(f"retest:{self_id}"):

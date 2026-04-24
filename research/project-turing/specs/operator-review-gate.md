@@ -22,7 +22,7 @@
 ### Staging table
 
 - **AC-46.1.** `CREATE TABLE self_contributor_pending` with the same columns as `self_activation_contributors` plus `proposed_at TEXT NOT NULL`, `reviewed_at TEXT`, `review_decision TEXT CHECK (review_decision IN ('approve', 'reject', NULL))`, `reviewed_by TEXT`. Test.
-- **AC-46.2.** `write_contributor(origin=self)` with `target_kind IN {personality_facet, passion}` inserts into `self_contributor_pending` instead of `self_activation_contributors`. Target kinds hobby/interest/preference/skill go to the live table (not gated) — preserves the self's daily autonomy for mundane structure. Test per kind.
+- **AC-46.2.** `write_contributor(origin=self)` with `target_kind IN {personality_facet, passion}` inserts into `self_contributor_pending` instead of `self_activation_contributors`. Target kinds hobby/interest/preference go to the live table (not gated) — preserves the self's daily autonomy for mundane structure. Test per kind.
 - **AC-46.3.** Unacked pending rows are invisible to `active_now`. Test.
 
 ### Routing-review table

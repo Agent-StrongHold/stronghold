@@ -361,11 +361,10 @@ Every row binds three things: the spec, the acceptance criterion, and the test f
 | AC-22.1 | All enums defined (Trait, NodeKind, etc.) | test_ac_22_1_enums | DONE |
 | AC-22.2 | CANONICAL_FACETS has 24 entries | test_ac_22_2_24_facets | DONE |
 | AC-22.3 | PersonalityFacet validation | test_ac_22_3_facet_validation | DONE |
-| AC-22.4 | Skill with decay rate | test_ac_22_4_skill_decay | DONE |
-| AC-22.5 | SelfTodo status enum | test_ac_22_5_todo_status | DONE |
-| AC-22.6 | Mood range validation | test_ac_22_6_mood_range | DONE |
-| AC-22.7 | ActivationContributor no self-loop | test_ac_22_7_no_self_loop | DONE |
-| AC-22.8 | All dataclasses frozen where specified | test_ac_22_8_frozen | DONE |
+| AC-22.4 | SelfTodo status enum | test_ac_22_5_todo_status | DONE |
+| AC-22.5 | Mood range validation | test_ac_22_6_mood_range | DONE |
+| AC-22.6 | ActivationContributor no self-loop | test_ac_22_7_no_self_loop | DONE |
+| AC-22.7 | All dataclasses frozen where specified | test_ac_22_8_frozen | DONE |
 
 ### Spec 23: personality.md
 
@@ -382,11 +381,8 @@ Every row binds three things: the spec, the acceptance criterion, and the test f
 
 | AC-ID | Scenario | Test Function | Status |
 |-------|----------|---------------|--------|
-| AC-24.1 | current_level with exponential decay | test_ac_24_1_decay | DONE |
-| AC-24.2 | Default decay rates correct | test_ac_24_2_default_rates | DONE |
-| AC-24.3 | Repo CRUD for all 5 node kinds | test_ac_24_3_crud | DONE |
-| AC-24.4 | note_passion tool | test_ac_24_4_note_passion | PENDING |
-| AC-24.5 | practice_skill tool | test_ac_24_5_practice_skill | PENDING |
+| AC-24.1 | Repo CRUD for all 4 node kinds | test_ac_24_3_crud | DONE |
+| AC-24.2 | note_passion tool | test_ac_24_4_note_passion | PENDING |
 
 ### Spec 25: activation-graph.md
 
@@ -553,26 +549,25 @@ Every row binds three things: the spec, the acceptance criterion, and the test f
 | AC-39.15 | Drift tracking table | test_ac_39_15_drift_table | PENDING |
 | AC-39.16 | ≤3 narrative claims per facet per week | test_ac_39_16_claim_rate | PENDING |
 | AC-39.17 | Rolling 7-day mood nudge sum cap 2.0 | test_ac_39_17_mood_cap | PENDING |
-| AC-39.18 | practice_skill requires supporting memory | test_ac_39_18_skill_honesty | PENDING |
-| AC-39.19 | Contributor writes to facet/passion go pending | test_ac_39_19_pending | PENDING |
-| AC-39.20 | Pending invisible to active_now() | test_ac_39_20_pending_invisible | PENDING |
-| AC-39.21 | Weekly digest lists pending | test_ac_39_21_digest | PENDING |
-| AC-39.22 | Operator ACK migrates to live | test_ac_39_22_ack_migrate | PENDING |
-| AC-39.23 | Decline mints REGRET | test_ac_39_23_decline_regret | PENDING |
-| AC-39.24 | acting_self_id mismatch raises CrossSelfAccess | test_ac_39_24_cross_self_access_detected | DONE |
-| AC-39.25 | FK from every self-table to self_identity | test_ac_39_25_self_identity_must_exist_for_facet_insert | DONE |
-| AC-39.26 | Bootstrap seed collision detection | test_ac_39_26_seed_collision | PENDING |
-| AC-39.27 | --allow-seed-reuse mints LESSON | test_ac_39_27_seed_reuse | PENDING |
-| AC-39.28 | Bootstrap finalize operator HMAC signature | test_ac_39_28_hmac | PENDING |
-| AC-39.29 | SELF_TOOL_REGISTRY importable only via SelfRuntime | test_ac_39_29_import_firewall | PENDING |
-| AC-39.30 | Scheduled GC sweep deletes expired retrieval | test_ac_39_30_gc_sweep | PENDING |
-| AC-39.31 | Opportunistic GC on read | test_ac_39_31_gc_read | PENDING |
-| AC-39.32 | Hard node caps per kind | test_ac_39_32_node_caps | PENDING |
-| AC-39.33 | Eviction produces OBSERVATION | test_ac_39_33_evict_observation | PENDING |
-| AC-39.34 | Near-duplicate cosine ≥ 0.88 flags review | test_ac_39_34_duplicate | PENDING |
-| AC-39.35 | Pending-review muted 0.5× in active_now | test_ac_39_35_mute | PENDING |
-| AC-39.36 | Weekly todo compaction | test_ac_39_36_todo_compact | PENDING |
-| AC-39.37 | Personality answer compaction | test_ac_39_37_answer_compact | PENDING |
+| AC-39.18 | Contributor writes to facet/passion go pending | test_ac_39_18_pending | PENDING |
+| AC-39.19 | Pending invisible to active_now() | test_ac_39_19_pending_invisible | PENDING |
+| AC-39.20 | Weekly digest lists pending | test_ac_39_20_digest | PENDING |
+| AC-39.21 | Operator ACK migrates to live | test_ac_39_21_ack_migrate | PENDING |
+| AC-39.22 | Decline mints REGRET | test_ac_39_22_decline_regret | PENDING |
+| AC-39.23 | acting_self_id mismatch raises CrossSelfAccess | test_ac_39_23_cross_self_access_detected | DONE |
+| AC-39.24 | FK from every self-table to self_identity | test_ac_39_24_self_identity_must_exist_for_facet_insert | DONE |
+| AC-39.25 | Bootstrap seed collision detection | test_ac_39_25_seed_collision | PENDING |
+| AC-39.26 | --allow-seed-reuse mints LESSON | test_ac_39_26_seed_reuse | PENDING |
+| AC-39.27 | Bootstrap finalize operator HMAC signature | test_ac_39_27_hmac | PENDING |
+| AC-39.28 | SELF_TOOL_REGISTRY importable only via SelfRuntime | test_ac_39_28_import_firewall | PENDING |
+| AC-39.29 | Scheduled GC sweep deletes expired retrieval | test_ac_39_29_gc_sweep | PENDING |
+| AC-39.30 | Opportunistic GC on read | test_ac_39_30_gc_read | PENDING |
+| AC-39.31 | Hard node caps per kind | test_ac_39_31_node_caps | PENDING |
+| AC-39.32 | Eviction produces OBSERVATION | test_ac_39_32_evict_observation | PENDING |
+| AC-39.33 | Near-duplicate cosine ≥ 0.88 flags review | test_ac_39_33_duplicate | PENDING |
+| AC-39.34 | Pending-review muted 0.5× in active_now | test_ac_39_34_mute | PENDING |
+| AC-39.35 | Weekly todo compaction | test_ac_39_35_todo_compact | PENDING |
+| AC-39.36 | Personality answer compaction | test_ac_39_36_answer_compact | PENDING |
 
 ---
 
@@ -609,16 +604,15 @@ Every row binds three things: the spec, the acceptance criterion, and the test f
 | AC-69.5 | Retest answers mirror | test_ac_69_5_retest_mirror | PENDING |
 | AC-69.6 | Personality claim mirrors as OPINION | test_ac_69_6_claim_mirror | PENDING |
 | AC-69.7 | note_engagement mirrors | test_ac_69_7_engagement_mirror | PENDING |
-| AC-69.8 | practice_skill mirrors | test_ac_69_8_skill_mirror | PENDING |
-| AC-69.9 | write_contributor mirrors | test_ac_69_9_contributor_mirror | PENDING |
-| AC-69.10 | complete_self_todo mirrors AFFIRMATION | test_ac_69_10_todo_mirror | PENDING |
-| AC-69.11 | nudge_mood mirrors | test_ac_69_11_mood_mirror | PENDING |
-| AC-69.12 | Bootstrap finalize LESSON mirror | test_ac_69_12_finalize_mirror | PENDING |
-| AC-69.13 | Warden block mirrors | test_ac_69_13_warden_block_mirror | PENDING |
-| AC-69.14 | Mirror + write atomic | test_ac_69_14_atomic | PENDING |
-| AC-69.15 | Bridge never mutates existing | test_ac_69_15_insert_only | PENDING |
-| AC-69.16 | Mirrored memories tagged mirror=True | test_ac_69_16_mirror_tag | PENDING |
-| AC-69.17 | Integration: mutation count matches mirror count | test_ac_69_17_integration_count | PENDING |
+| AC-69.8 | write_contributor mirrors | test_ac_69_8_contributor_mirror | PENDING |
+| AC-69.9 | complete_self_todo mirrors AFFIRMATION | test_ac_69_9_todo_mirror | PENDING |
+| AC-69.10 | nudge_mood mirrors | test_ac_69_10_mood_mirror | PENDING |
+| AC-69.11 | Bootstrap finalize LESSON mirror | test_ac_69_11_finalize_mirror | PENDING |
+| AC-69.12 | Warden block mirrors | test_ac_69_12_warden_block_mirror | PENDING |
+| AC-69.13 | Mirror + write atomic | test_ac_69_13_atomic | PENDING |
+| AC-69.14 | Bridge never mutates existing | test_ac_69_14_insert_only | PENDING |
+| AC-69.15 | Mirrored memories tagged mirror=True | test_ac_69_15_mirror_tag | PENDING |
+| AC-69.16 | Integration: mutation count matches mirror count | test_ac_69_16_integration_count | PENDING |
 
 ### Spec 70: self-schedules.md
 
@@ -738,7 +732,6 @@ Every row binds three things: the spec, the acceptance criterion, and the test f
 ### Spec 40: facet-drift-budget.md (14 ACs — all PENDING)
 ### Spec 41: narrative-claim-rate-limit.md (14 ACs — all PENDING)
 ### Spec 42: mood-rolling-sum-guard.md (13 ACs — all PENDING)
-### Spec 43: skill-honesty-invariant.md (13 ACs — all PENDING)
 
 ---
 
@@ -796,6 +789,50 @@ Every row binds three things: the spec, the acceptance criterion, and the test f
 
 ---
 
+## Tranche 11: Autonoetic completion ("real boy" blends)
+
+### 11.0 — Bitemporal & memory-as-lived-experience
+
+### Spec 90: bitemporal-perspective-replay.md (15 ACs — all PENDING)
+### Spec 99: sector-views-over-tiers.md (16 ACs — all PENDING)
+### Spec 108: inter-tier-resonance-promotion.md (18 ACs — all PENDING)
+
+### 11.1 — Learning from experience
+
+### Spec 91: trajectory-weighted-promotion.md (18 ACs — all PENDING)
+### Spec 100: session-close-digest-pipeline.md (16 ACs — all PENDING)
+### Spec 102: pre-routing-prediction-log.md (14 ACs — all PENDING)
+### Spec 103: dream-phase-counterfactual-replay.md (12 ACs — all PENDING)
+### Spec 109: counterfactual-regret-softening.md (16 ACs — all PENDING)
+
+### 11.2 — Desire-driven proactivity
+
+### Spec 92: motivation-rooted-task-dag.md (16 ACs — all PENDING)
+### Spec 93: passion-seeded-desire-synthesis.md (16 ACs — all PENDING)
+### Spec 98: cron-proactive-outbound.md (16 ACs — all PENDING)
+### Spec 110: wondering-from-contradiction.md (17 ACs — all PENDING)
+
+### 11.3 — Consistent self
+
+### Spec 94: weekly-self-dialogue-ritual.md (17 ACs — all PENDING)
+### Spec 95: identity-vs-commitment-surfaces.md (16 ACs — all PENDING)
+### Spec 96: tool-gated-self-disclosure.md (16 ACs — all PENDING)
+### Spec 97: wisdom-canonicalization.md (15 ACs — all PENDING)
+### Spec 101: hebbian-coactivation-edges.md (17 ACs — all PENDING)
+
+### 11.4 — Personality via dreaming
+
+### Spec 104: dream-phase-facet-attribution.md (13 ACs — all PENDING)
+### Spec 105: counterfactual-personality-simulation.md (15 ACs — all PENDING)
+### Spec 106: affirmation-anchored-facet-pull.md (13 ACs — all PENDING)
+### Spec 107: trait-coherence-dream-check.md (15 ACs — all PENDING)
+
+### 11.5 — Affect channels
+
+### Spec 111: operator-implicit-affect-channel.md (18 ACs — all PENDING)
+
+---
+
 ## Summary
 
 | Tranche | Specs | ACs | Done | Pending | Coverage |
@@ -805,19 +842,20 @@ Every row binds three things: the spec, the acceptance criterion, and the test f
 | 3: Detectors | D, D.1 | 5 | 5 | 0 | 100% |
 | 4: Dreaming | 12 | 9 | 9 | 0 | 100% |
 | 5: Runtime | 13–21 | 119 | 86 | 33 | 72% |
-| 6: Self-model | 22–30 | 58 | 31 | 27 | 53% |
+| 6: Self-model | 22–30 | 54 | 28 | 26 | 52% |
 | Autonoetic | 31–34 | 27 | 26 | 1 | 96% |
 | Proactive | 35, 37 | 15 | 15 | 0 | 100% |
-| Guardrails | 39 | 37 | 10 | 27 | 27% |
-| 7.0–7.1 | 68–75 | 106 | 0 | 106 | 0% |
-| 7.2 | 40–43 | 54 | 0 | 54 | 0% |
+| Guardrails | 39 | 36 | 10 | 26 | 28% |
+| 7.0–7.1 | 68–75 | 105 | 0 | 105 | 0% |
+| 7.2 | 40–42 | 41 | 0 | 41 | 0% |
 | 7.3 | 44–45 | 40 | 0 | 40 | 0% |
 | 7.4 | 46–49 | 63 | 0 | 63 | 0% |
 | 7.5 | 50–53 | 61 | 0 | 61 | 0% |
 | 8: Reflection | 57–62 | 131 | 0 | 131 | 0% |
 | 9: Detectors | 63–67 | 95 | 0 | 95 | 0% |
 | 10: Conversations | 54–56 | 62 | 0 | 62 | 0% |
-| **Total** | **67** | **~963** | **~302** | **~661** | **31%** |
+| 11: Autonoetic blends | 90–111 | 345 | 0 | 345 | 0% |
+| **Total** | **88** | **~1289** | **~299** | **~990** | **23%** |
 
 ---
 
