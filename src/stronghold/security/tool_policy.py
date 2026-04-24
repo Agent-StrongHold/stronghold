@@ -6,15 +6,24 @@ ADR-K8S-019: two policy gates evaluated at runtime:
 
 Policy data loaded from CSV file with runtime updates possible.
 Decisions are logged for audit.
+
+S1.2: CasbinToolPolicy also implements the PreToolCallHook protocol, so it can
+be dropped into ToolDispatcher's hook chain as-is.
 """
 
 from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import Protocol, runtime_checkable
+from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
 import casbin  # type: ignore[import-untyped]
+
+from stronghold.protocols.tool_hooks import AllowVerdict, DenyVerdict
+
+if TYPE_CHECKING:
+    from stronghold.protocols.tool_hooks import PreToolCallVerdict
+    from stronghold.types.auth import AuthContext
 
 logger = logging.getLogger("stronghold.security.tool_policy")
 
@@ -43,12 +52,31 @@ class CasbinToolPolicy:
 
     Uses a PERM model with request (sub, org, obj, act) and
     policy entries with explicit allow/deny effect.
+
+    Implements the PreToolCallHook protocol (S1.2) via `check()` + `name`.
     """
+
+    name: str = "casbin_tool_policy"
 
     def __init__(self, model_path: str, policy_path: str) -> None:
         self._model_path = model_path
         self._policy_path = policy_path
         self._enforcer = casbin.Enforcer(model_path, policy_path)
+
+    async def check(
+        self,
+        tool_name: str,
+        arguments: dict[str, Any],  # noqa: ARG002  (arguments not used by RBAC)
+        auth: AuthContext,
+    ) -> PreToolCallVerdict:
+        """PreToolCallHook adapter — wraps check_tool_call() into a verdict."""
+        allowed = self.check_tool_call(auth.user_id, auth.org_id, tool_name)
+        if allowed:
+            return AllowVerdict()
+        return DenyVerdict(
+            reason=f"RBAC denies {auth.user_id}@{auth.org_id} -> {tool_name}",
+            hook_name=self.name,
+        )
 
     def check_tool_call(
         self,

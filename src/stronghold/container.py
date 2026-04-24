@@ -76,6 +76,7 @@ class Container:
     tool_dispatcher: ToolDispatcher
     playbook_registry: InMemoryPlaybookRegistry = field(default_factory=InMemoryPlaybookRegistry)
     tool_policy: ToolPolicyProtocol | None = None
+    checkpoint_store: Any = None  # CheckpointStore protocol (S1.3)
     tool_catalog: Any = None
     skill_catalog: Any = None
     resource_catalog: Any = None
