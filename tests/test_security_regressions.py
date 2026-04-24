@@ -234,6 +234,7 @@ class TestCacheEdgeCases:
         # Read with max_messages=0 — should return empty list, not all messages
         history = await store.get_history("o/t/u:s", max_messages=0)
         # If max=0 falls back to default, that's a bug
+        assert history == []
         await client.aclose()
 
     async def test_sec006_session_store_poisoned_json_does_not_crash(self) -> None:

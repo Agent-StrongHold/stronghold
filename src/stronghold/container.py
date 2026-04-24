@@ -33,6 +33,7 @@ from stronghold.security.warden.detector import Warden
 from stronghold.sessions.store import InMemorySessionStore
 from stronghold.tools.executor import ToolDispatcher
 from stronghold.tools.registry import InMemoryToolRegistry
+from stronghold.tracing.noop import NoopTracingBackend
 from stronghold.tracing.phoenix_backend import PhoenixTracingBackend
 from stronghold.types.auth import PermissionTable
 from stronghold.types.errors import ConfigError
@@ -42,6 +43,7 @@ if TYPE_CHECKING:
     from stronghold.protocols.memory import AuditLog, LearningStore, OutcomeStore, SessionStore
     from stronghold.protocols.prompts import PromptManager
     from stronghold.protocols.quota import QuotaTracker
+    from stronghold.protocols.tracing import TracingBackend
     from stronghold.types.config import StrongholdConfig
 
 logger = logging.getLogger("stronghold.container")
@@ -66,7 +68,7 @@ class Container:
     warden: Warden
     gate: Gate
     sentinel: Sentinel
-    tracer: PhoenixTracingBackend
+    tracer: TracingBackend
     context_builder: ContextBuilder
     intent_registry: IntentRegistry
     llm: LiteLLMClient
@@ -134,7 +136,7 @@ def _wire_auth(
     from stronghold.security.auth_composite import CompositeAuthProvider  # noqa: PLC0415
     from stronghold.security.auth_demo_cookie import DemoCookieAuthProvider  # noqa: PLC0415
 
-    static_auth = StaticKeyAuthProvider(api_key=config.router_api_key, read_only=False)
+    static_auth = StaticKeyAuthProvider(api_key=config.router_api_key)
     demo_cookie_auth = DemoCookieAuthProvider(
         api_key=config.router_api_key,
         cookie_name=config.auth.session_cookie_name,
@@ -224,8 +226,8 @@ async def create_container(config: StrongholdConfig) -> Container:
         )
         raise ConfigError(msg)
 
-    if not config.auth.jwt_secret:
-        config.auth.jwt_secret = config.router_api_key
+    if not config.jwt_secret:
+        config.jwt_secret = config.router_api_key
 
     # ── Auth ──
     auth_provider, permission_table = _wire_auth(config)
@@ -316,8 +318,10 @@ async def create_container(config: StrongholdConfig) -> Container:
         permission_table=permission_table,
         audit_log=audit_log,
     )
-    phoenix_endpoint = config.phoenix_endpoint or "http://phoenix:6006"
-    tracer = PhoenixTracingBackend(endpoint=phoenix_endpoint)
+    if config.phoenix_endpoint:
+        tracer: TracingBackend = PhoenixTracingBackend(endpoint=config.phoenix_endpoint)
+    else:
+        tracer: TracingBackend = NoopTracingBackend()
     context_builder = ContextBuilder()
     intent_registry = IntentRegistry()
 
