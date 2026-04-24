@@ -12,6 +12,7 @@ from .self_model import (
     SelfTodo,
     SelfTodoRevision,
     TodoStatus,
+    guess_node_kind,
 )
 from .self_repo import SelfRepo
 
@@ -111,7 +112,7 @@ def complete_self_todo(
                 node_id=new_id("contrib"),
                 self_id=self_id,
                 target_node_id=t.motivated_by_node_id,
-                target_kind=_kind_of(t.motivated_by_node_id),
+                target_kind=guess_node_kind(t.motivated_by_node_id),
                 source_id=affirmation_memory_id,
                 source_kind="memory",
                 weight=0.3,
@@ -122,9 +123,7 @@ def complete_self_todo(
     return t
 
 
-def archive_self_todo(
-    repo: SelfRepo, self_id: str, todo_id: str, reason: str
-) -> SelfTodo:
+def archive_self_todo(repo: SelfRepo, self_id: str, todo_id: str, reason: str) -> SelfTodo:
     t = repo.get_todo(todo_id)
     if t.self_id != self_id:
         raise PermissionError("cross-self archive forbidden")
@@ -153,19 +152,3 @@ def _motivator_exists(repo: SelfRepo, self_id: str, node_id: str) -> bool:
     if node_id.startswith("skill"):
         return any(s.node_id == node_id for s in repo.list_skills(self_id))
     return False
-
-
-def _kind_of(node_id: str) -> NodeKind:
-    if node_id.startswith("facet:"):
-        return NodeKind.PERSONALITY_FACET
-    if node_id.startswith("passion"):
-        return NodeKind.PASSION
-    if node_id.startswith("hobby"):
-        return NodeKind.HOBBY
-    if node_id.startswith("interest"):
-        return NodeKind.INTEREST
-    if node_id.startswith("pref"):
-        return NodeKind.PREFERENCE
-    if node_id.startswith("skill"):
-        return NodeKind.SKILL
-    return NodeKind.PERSONALITY_FACET

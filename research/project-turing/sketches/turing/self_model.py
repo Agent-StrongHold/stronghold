@@ -129,9 +129,7 @@ class PersonalityFacet:
         if self.facet_id not in FACET_TO_TRAIT:
             raise ValueError(f"unknown facet_id: {self.facet_id}")
         if FACET_TO_TRAIT[self.facet_id] != self.trait:
-            raise ValueError(
-                f"facet {self.facet_id} does not belong to trait {self.trait}"
-            )
+            raise ValueError(f"facet {self.facet_id} does not belong to trait {self.trait}")
         if not self.self_id:
             raise ValueError("self_id is required")
 
@@ -350,6 +348,20 @@ class ActivationContributor:
         if not -1.0 <= self.weight <= 1.0:
             raise ValueError(f"contributor weight out of range: {self.weight}")
         if (self.origin == ContributorOrigin.RETRIEVAL) != (self.expires_at is not None):
-            raise ValueError(
-                "retrieval contributors must set expires_at; others must not"
-            )
+            raise ValueError("retrieval contributors must set expires_at; others must not")
+
+
+def guess_node_kind(node_id: str) -> NodeKind:
+    if node_id.startswith("facet:"):
+        return NodeKind.PERSONALITY_FACET
+    if node_id.startswith("passion"):
+        return NodeKind.PASSION
+    if node_id.startswith("hobby"):
+        return NodeKind.HOBBY
+    if node_id.startswith("interest"):
+        return NodeKind.INTEREST
+    if node_id.startswith("pref"):
+        return NodeKind.PREFERENCE
+    if node_id.startswith("skill"):
+        return NodeKind.SKILL
+    return NodeKind.PERSONALITY_FACET

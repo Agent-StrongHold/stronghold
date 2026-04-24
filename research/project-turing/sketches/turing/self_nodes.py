@@ -21,6 +21,7 @@ from .self_model import (
     PreferenceKind,
     Skill,
     SkillKind,
+    guess_node_kind,
 )
 from .self_repo import SelfRepo
 
@@ -37,9 +38,7 @@ def note_passion(
     new_id: Callable[[str], str],
     contributes_to: list[tuple[str, float]] | None = None,
 ) -> Passion:
-    _reject_dupe_text(
-        repo.list_passions(self_id), lambda p: p.text, text, kind="passion"
-    )
+    _reject_dupe_text(repo.list_passions(self_id), lambda p: p.text, text, kind="passion")
     rank = repo.max_passion_rank(self_id) + 1
     p = Passion(
         node_id=new_id("passion"),
@@ -62,9 +61,7 @@ def note_hobby(
     new_id: Callable[[str], str],
     contributes_to: list[tuple[str, float]] | None = None,
 ) -> Hobby:
-    _reject_dupe_text(
-        repo.list_hobbies(self_id), lambda h: h.name, name, kind="hobby"
-    )
+    _reject_dupe_text(repo.list_hobbies(self_id), lambda h: h.name, name, kind="hobby")
     h = Hobby(
         node_id=new_id("hobby"),
         self_id=self_id,
@@ -87,9 +84,7 @@ def note_interest(
     new_id: Callable[[str], str],
     contributes_to: list[tuple[str, float]] | None = None,
 ) -> Interest:
-    _reject_dupe_text(
-        repo.list_interests(self_id), lambda i: i.topic, topic, kind="interest"
-    )
+    _reject_dupe_text(repo.list_interests(self_id), lambda i: i.topic, topic, kind="interest")
     i = Interest(
         node_id=new_id("interest"),
         self_id=self_id,
@@ -115,8 +110,7 @@ def note_preference(
     contributes_to: list[tuple[str, float]] | None = None,
 ) -> Preference:
     # Uniqueness enforced by DB on (self_id, kind, target); catch for a friendlier error.
-    existing = [p for p in repo.list_preferences(self_id)
-                if p.kind == kind and p.target == target]
+    existing = [p for p in repo.list_preferences(self_id) if p.kind == kind and p.target == target]
     if existing:
         raise ValueError(f"duplicate preference: ({kind}, {target})")
     p = Preference(
@@ -142,7 +136,9 @@ def note_skill(
     decay_rate_per_day: float | None = None,
     contributes_to: list[tuple[str, float]] | None = None,
 ) -> Skill:
-    existing = [s for s in repo.list_skills(self_id) if s.name.strip().lower() == name.strip().lower()]
+    existing = [
+        s for s in repo.list_skills(self_id) if s.name.strip().lower() == name.strip().lower()
+    ]
     if existing:
         raise ValueError(f"duplicate skill: {name}")
     s = Skill(
@@ -152,9 +148,7 @@ def note_skill(
         kind=kind,
         stored_level=level,
         decay_rate_per_day=(
-            decay_rate_per_day
-            if decay_rate_per_day is not None
-            else DEFAULT_DECAY_RATES[kind]
+            decay_rate_per_day if decay_rate_per_day is not None else DEFAULT_DECAY_RATES[kind]
         ),
         last_practiced_at=_now(),
     )
@@ -257,7 +251,7 @@ def _wire(
                 target_node_id=target,
                 target_kind=NodeKind.PERSONALITY_FACET
                 if target.startswith("facet:")
-                else _guess_kind(target),
+                else guess_node_kind(target),
                 source_id=source_node_id,
                 source_kind=source_kind.value,
                 weight=weight,
@@ -265,19 +259,3 @@ def _wire(
                 rationale=f"{source_kind.value} contributes",
             )
         )
-
-
-def _guess_kind(node_id: str) -> NodeKind:
-    if node_id.startswith("facet:"):
-        return NodeKind.PERSONALITY_FACET
-    if node_id.startswith("passion"):
-        return NodeKind.PASSION
-    if node_id.startswith("hobby"):
-        return NodeKind.HOBBY
-    if node_id.startswith("interest"):
-        return NodeKind.INTEREST
-    if node_id.startswith("pref"):
-        return NodeKind.PREFERENCE
-    if node_id.startswith("skill"):
-        return NodeKind.SKILL
-    return NodeKind.PERSONALITY_FACET

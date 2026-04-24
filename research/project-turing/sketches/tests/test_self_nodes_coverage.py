@@ -34,8 +34,8 @@ from turing.self_model import (
     Skill,
     SkillKind,
 )
+from turing.self_model import guess_node_kind
 from turing.self_nodes import (
-    _guess_kind,
     _reject_dupe_text,
     _wire,
     downgrade_skill,
@@ -137,7 +137,7 @@ class TestGuessKind:
         ],
     )
     def test_all_prefixes(self, prefix, expected) -> None:
-        assert _guess_kind(prefix) == expected
+        assert guess_node_kind(prefix) == expected
 
 
 class TestRejectDupeText:

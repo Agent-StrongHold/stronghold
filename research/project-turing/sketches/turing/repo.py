@@ -13,6 +13,13 @@ from dataclasses import replace
 from datetime import UTC, datetime
 from pathlib import Path
 
+from .protocols import (
+    ImmutableViolation,
+    ProvenanceViolation,
+    RepoError,
+    WisdomDeferred,
+    WisdomInvariantViolation,
+)
 from .tiers import WEIGHT_BOUNDS, clamp_weight
 from .types import DURABLE_TIERS, EpisodicMemory, MemoryTier, SourceKind
 
@@ -20,27 +27,6 @@ from .types import DURABLE_TIERS, EpisodicMemory, MemoryTier, SourceKind
 _NON_DURABLE_TIERS: frozenset[MemoryTier] = frozenset(MemoryTier) - DURABLE_TIERS
 
 _VALID_TABLES: frozenset[str] = frozenset({"durable_memory", "episodic_memory"})
-
-
-class RepoError(RuntimeError):
-    pass
-
-
-class ImmutableViolation(RepoError):
-    pass
-
-
-class ProvenanceViolation(RepoError):
-    pass
-
-
-class WisdomDeferred(RepoError):
-    """Legacy: retained so existing imports don't break. No longer raised by
-    the default insert path now that dreaming.md is active."""
-
-
-class WisdomInvariantViolation(RepoError):
-    pass
 
 
 class Repo:

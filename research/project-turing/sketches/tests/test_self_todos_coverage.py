@@ -1,7 +1,7 @@
 """Coverage gap filler for turing/self_todos.py.
 
 Spec: AC-26 cross-self guards, motivator existence checks for
-hobby/interest/preference/skill node prefixes, _kind_of mapping for all
+hobby/interest/preference/skill node prefixes, guess_node_kind mapping for all
 prefixes, revise text-too-long guard, and complete without
 affirmation_memory_id (no contributor written).
 
@@ -12,7 +12,7 @@ Acceptance criteria:
 - complete_self_todo without affirmation_memory_id writes no contributor
 - archive_self_todo rejects cross-self archive
 - complete_self_todo rejects cross-self completion
-- _kind_of returns correct NodeKind for every prefix
+- guess_node_kind returns correct NodeKind for every prefix
 - _motivator_exists returns True for hobby/interest/preference/skill prefixes
 """
 
@@ -35,11 +35,11 @@ from turing.self_model import (
     SkillKind,
     TodoStatus,
 )
+from turing.self_model import guess_node_kind
 from turing.self_repo import SelfRepo
 from turing.self_todos import (
     TodoNotActive,
     TodoTextTooLong,
-    _kind_of,
     archive_self_todo,
     complete_self_todo,
     revise_self_todo,
@@ -227,29 +227,29 @@ def test_archive_cross_self_raises(srepo, self_id, new_id) -> None:
         archive_self_todo(srepo, "other-self-id", t.node_id, "reason")
 
 
-def test_kind_of_facet() -> None:
-    assert _kind_of("facet:foo") == NodeKind.PERSONALITY_FACET
+def test_guess_node_kind_facet() -> None:
+    assert guess_node_kind("facet:foo") == NodeKind.PERSONALITY_FACET
 
 
-def test_kind_of_passion() -> None:
-    assert _kind_of("passion:1") == NodeKind.PASSION
+def test_guess_node_kind_passion() -> None:
+    assert guess_node_kind("passion:1") == NodeKind.PASSION
 
 
-def test_kind_of_hobby() -> None:
-    assert _kind_of("hobby:1") == NodeKind.HOBBY
+def test_guess_node_kind_hobby() -> None:
+    assert guess_node_kind("hobby:1") == NodeKind.HOBBY
 
 
-def test_kind_of_interest() -> None:
-    assert _kind_of("interest:1") == NodeKind.INTEREST
+def test_guess_node_kind_interest() -> None:
+    assert guess_node_kind("interest:1") == NodeKind.INTEREST
 
 
-def test_kind_of_preference() -> None:
-    assert _kind_of("pref:1") == NodeKind.PREFERENCE
+def test_guess_node_kind_preference() -> None:
+    assert guess_node_kind("pref:1") == NodeKind.PREFERENCE
 
 
-def test_kind_of_skill() -> None:
-    assert _kind_of("skill:1") == NodeKind.SKILL
+def test_guess_node_kind_skill() -> None:
+    assert guess_node_kind("skill:1") == NodeKind.SKILL
 
 
-def test_kind_of_unknown_defaults_to_facet() -> None:
-    assert _kind_of("something:else") == NodeKind.PERSONALITY_FACET
+def test_guess_node_kind_unknown_defaults_to_facet() -> None:
+    assert guess_node_kind("something:else") == NodeKind.PERSONALITY_FACET
