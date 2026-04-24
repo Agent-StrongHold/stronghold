@@ -29,7 +29,8 @@ from turing.self_repo import SelfRepo
 @pytest.fixture
 def srepo() -> SelfRepo:
     r = Repo(None)
-    return SelfRepo(r.conn)
+    yield SelfRepo(r.conn)
+    r.close()
 
 
 @pytest.fixture
@@ -37,9 +38,14 @@ def self_id(srepo: SelfRepo) -> str:
     return bootstrap_self_id(srepo.conn)
 
 
-def _seed_mood(srepo: SelfRepo, self_id: str,
-               valence: float = 0.0, arousal: float = 0.3, focus: float = 0.5,
-               when: datetime | None = None) -> Mood:
+def _seed_mood(
+    srepo: SelfRepo,
+    self_id: str,
+    valence: float = 0.0,
+    arousal: float = 0.3,
+    focus: float = 0.5,
+    when: datetime | None = None,
+) -> Mood:
     return srepo.insert_mood(
         Mood(
             self_id=self_id,
@@ -175,8 +181,10 @@ def test_ac_27_10_each_standard_event_shifts_expected_dim(
     # declared first in the tuple list actually moved.
     expected_delta = next(d for dim, d in EVENT_NUDGES[event] if dim == expected_dim)
     assert getattr(after, expected_dim) == pytest.approx(
-        max(-1.0 if expected_dim == "valence" else 0.0,
-            min(1.0, getattr(before, expected_dim) + expected_delta))
+        max(
+            -1.0 if expected_dim == "valence" else 0.0,
+            min(1.0, getattr(before, expected_dim) + expected_delta),
+        )
     )
 
 

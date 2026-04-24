@@ -17,7 +17,9 @@ from turing.self_identity import bootstrap_self_id  # noqa: E402
 
 @pytest.fixture
 def repo() -> Repo:
-    return Repo(None)
+    r = Repo(None)
+    yield r
+    r.close()
 
 
 @pytest.fixture

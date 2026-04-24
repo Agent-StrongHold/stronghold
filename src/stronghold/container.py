@@ -316,10 +316,11 @@ async def create_container(config: StrongholdConfig) -> Container:
         permission_table=permission_table,
         audit_log=audit_log,
     )
+    tracer: TracingBackend
     if config.phoenix_endpoint:
-        tracer: TracingBackend = PhoenixTracingBackend(endpoint=config.phoenix_endpoint)
+        tracer = PhoenixTracingBackend(endpoint=config.phoenix_endpoint)
     else:
-        tracer: TracingBackend = NoopTracingBackend()
+        tracer = NoopTracingBackend()
     context_builder = ContextBuilder()
     intent_registry = IntentRegistry()
 
@@ -465,7 +466,7 @@ async def create_container(config: StrongholdConfig) -> Container:
 
     learning_promoter = LearningPromoter(
         learning_store,
-        threshold=5,
+        threshold=config.learnings.promotion_threshold,
         approval_gate=approval_gate,
     )
 

@@ -22,7 +22,8 @@ from datetime import UTC, datetime
 @pytest.fixture
 def srepo() -> SelfRepo:
     r = Repo(None)
-    return SelfRepo(r.conn)
+    yield SelfRepo(r.conn)
+    r.close()
 
 
 @pytest.fixture
@@ -145,9 +146,7 @@ def test_ac_26_14_completion_writes_contributor_when_memory_id_provided(
 ) -> None:
     t = write_self_todo(srepo, self_id, "x", motivator, new_id)
     before = len(srepo.active_contributors_for(motivator, at=datetime.now(UTC)))
-    complete_self_todo(
-        srepo, self_id, t.node_id, "done", new_id, affirmation_memory_id="mem:42"
-    )
+    complete_self_todo(srepo, self_id, t.node_id, "done", new_id, affirmation_memory_id="mem:42")
     after = srepo.active_contributors_for(motivator, at=datetime.now(UTC))
     assert len(after) == before + 1
     new = [c for c in after if c.source_id == "mem:42"][0]
@@ -174,9 +173,7 @@ def test_ac_26_16_archive_completed_raises(srepo, self_id, new_id, motivator) ->
 # --------- AC-26.18..19 queries -------------------------------------------
 
 
-def test_ac_26_18_list_active_orders_by_created_at(
-    srepo, self_id, new_id, motivator
-) -> None:
+def test_ac_26_18_list_active_orders_by_created_at(srepo, self_id, new_id, motivator) -> None:
     t1 = write_self_todo(srepo, self_id, "first", motivator, new_id)
     t2 = write_self_todo(srepo, self_id, "second", motivator, new_id)
     t3 = write_self_todo(srepo, self_id, "third", motivator, new_id)
@@ -195,9 +192,7 @@ def test_ac_26_19_list_for_motivator(srepo, self_id, new_id, motivator) -> None:
 # --------- AC-26.22 lock/race (serial simulation) -------------------------
 
 
-def test_ac_26_22_complete_after_revise_still_works(
-    srepo, self_id, new_id, motivator
-) -> None:
+def test_ac_26_22_complete_after_revise_still_works(srepo, self_id, new_id, motivator) -> None:
     t = write_self_todo(srepo, self_id, "original", motivator, new_id)
     revise_self_todo(srepo, self_id, t.node_id, "updated", "reason", new_id)
     complete_self_todo(srepo, self_id, t.node_id, "done", new_id)

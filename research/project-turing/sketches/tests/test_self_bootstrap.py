@@ -49,7 +49,8 @@ def _new_id_factory():
 @pytest.fixture
 def srepo() -> SelfRepo:
     r = Repo(None)
-    return SelfRepo(r.conn)
+    yield SelfRepo(r.conn)
+    r.close()
 
 
 @pytest.fixture
@@ -121,23 +122,29 @@ def test_ac_29_10_draw_deterministic_under_seed(srepo) -> None:
     bank = _make_item_bank()
     sid1 = bootstrap_self_id(srepo.conn)
     run_bootstrap(
-        repo=srepo, self_id=sid1, seed=123, ask=_deterministic_ask,
-        item_bank=bank, new_id=_new_id_factory(),
+        repo=srepo,
+        self_id=sid1,
+        seed=123,
+        ask=_deterministic_ask,
+        item_bank=bank,
+        new_id=_new_id_factory(),
     )
-    profile1 = {
-        f.facet_id: f.score for f in srepo.list_facets(sid1)
-    }
+    profile1 = {f.facet_id: f.score for f in srepo.list_facets(sid1)}
 
-    srepo2 = SelfRepo(Repo(None).conn)
+    _r2 = Repo(None)
+    srepo2 = SelfRepo(_r2.conn)
     sid2 = bootstrap_self_id(srepo2.conn)
     run_bootstrap(
-        repo=srepo2, self_id=sid2, seed=123, ask=_deterministic_ask,
-        item_bank=_make_item_bank(), new_id=_new_id_factory(),
+        repo=srepo2,
+        self_id=sid2,
+        seed=123,
+        ask=_deterministic_ask,
+        item_bank=_make_item_bank(),
+        new_id=_new_id_factory(),
     )
-    profile2 = {
-        f.facet_id: f.score for f in srepo2.list_facets(sid2)
-    }
+    profile2 = {f.facet_id: f.score for f in srepo2.list_facets(sid2)}
     assert profile1 == profile2
+    _r2.close()
 
 
 # --------- AC-29.11 retry on bad LLM answer -----------------------------
@@ -155,8 +162,12 @@ def test_ac_29_11_retry_then_succeed(srepo, self_id) -> None:
         return (4, "ok")
 
     run_bootstrap(
-        repo=srepo, self_id=self_id, seed=0, ask=flaky,
-        item_bank=bank, new_id=_new_id_factory(),
+        repo=srepo,
+        self_id=self_id,
+        seed=0,
+        ask=flaky,
+        item_bank=bank,
+        new_id=_new_id_factory(),
     )
     assert srepo.count_answers(self_id) == 200
 
@@ -171,8 +182,12 @@ def test_ac_29_11_fourth_failure_aborts(srepo, self_id) -> None:
 
     with pytest.raises(BootstrapRuntimeError):
         run_bootstrap(
-            repo=srepo, self_id=self_id, seed=0, ask=always_bad,
-            item_bank=bank, new_id=_new_id_factory(),
+            repo=srepo,
+            self_id=self_id,
+            seed=0,
+            ask=always_bad,
+            item_bank=bank,
+            new_id=_new_id_factory(),
         )
 
 
@@ -189,15 +204,24 @@ def test_ac_29_13_resume_continues_from_checkpoint(srepo, self_id) -> None:
 
     with pytest.raises(BootstrapRuntimeError):
         run_bootstrap(
-            repo=srepo, self_id=self_id, seed=0, ask=halt_at_87,
-            item_bank=bank, new_id=_new_id_factory(),
+            repo=srepo,
+            self_id=self_id,
+            seed=0,
+            ask=halt_at_87,
+            item_bank=bank,
+            new_id=_new_id_factory(),
         )
     # Progress should be 87.
     assert srepo.get_bootstrap_progress(self_id) == 87
     # Resume with a good ask; expect 200 answers.
     run_bootstrap(
-        repo=srepo, self_id=self_id, seed=0, ask=_deterministic_ask,
-        item_bank=bank, new_id=_new_id_factory(), resume=True,
+        repo=srepo,
+        self_id=self_id,
+        seed=0,
+        ask=_deterministic_ask,
+        item_bank=bank,
+        new_id=_new_id_factory(),
+        resume=True,
     )
     assert srepo.count_answers(self_id) == 200
 
@@ -208,8 +232,12 @@ def test_ac_29_13_resume_continues_from_checkpoint(srepo, self_id) -> None:
 def test_ac_29_15_finalize_sets_neutral_mood(srepo, self_id) -> None:
     bank = _make_item_bank()
     run_bootstrap(
-        repo=srepo, self_id=self_id, seed=0, ask=_deterministic_ask,
-        item_bank=bank, new_id=_new_id_factory(),
+        repo=srepo,
+        self_id=self_id,
+        seed=0,
+        ask=_deterministic_ask,
+        item_bank=bank,
+        new_id=_new_id_factory(),
     )
     m = srepo.get_mood(self_id)
     assert (m.valence, m.arousal, m.focus) == (0.0, 0.3, 0.5)
@@ -218,8 +246,12 @@ def test_ac_29_15_finalize_sets_neutral_mood(srepo, self_id) -> None:
 def test_ac_29_18_bootstrap_progress_cleared(srepo, self_id) -> None:
     bank = _make_item_bank()
     run_bootstrap(
-        repo=srepo, self_id=self_id, seed=0, ask=_deterministic_ask,
-        item_bank=bank, new_id=_new_id_factory(),
+        repo=srepo,
+        self_id=self_id,
+        seed=0,
+        ask=_deterministic_ask,
+        item_bank=bank,
+        new_id=_new_id_factory(),
     )
     assert srepo.get_bootstrap_progress(self_id) is None
 
@@ -227,8 +259,12 @@ def test_ac_29_18_bootstrap_progress_cleared(srepo, self_id) -> None:
 def test_ac_29_19_final_facet_and_answer_counts(srepo, self_id) -> None:
     bank = _make_item_bank()
     run_bootstrap(
-        repo=srepo, self_id=self_id, seed=0, ask=_deterministic_ask,
-        item_bank=bank, new_id=_new_id_factory(),
+        repo=srepo,
+        self_id=self_id,
+        seed=0,
+        ask=_deterministic_ask,
+        item_bank=bank,
+        new_id=_new_id_factory(),
     )
     assert srepo.count_facets(self_id) == 24
     assert srepo.count_answers(self_id) == 200
@@ -241,8 +277,13 @@ def test_ac_29_21_facet_bias_override_shifts_mean(srepo, self_id) -> None:
     bank = _make_item_bank()
     overrides = {"facet:openness.inquisitiveness": 5.0}
     run_bootstrap(
-        repo=srepo, self_id=self_id, seed=77, ask=_deterministic_ask,
-        item_bank=bank, new_id=_new_id_factory(), overrides=overrides,
+        repo=srepo,
+        self_id=self_id,
+        seed=77,
+        ask=_deterministic_ask,
+        item_bank=bank,
+        new_id=_new_id_factory(),
+        overrides=overrides,
     )
     score = srepo.get_facet_score(self_id, "inquisitiveness")
     # A draw centered at μ=5.0, σ=0.8, clamped to [1,5], will be ≥ 4.0 with

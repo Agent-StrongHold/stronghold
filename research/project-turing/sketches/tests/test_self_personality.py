@@ -34,7 +34,8 @@ from turing.self_repo import SelfRepo
 @pytest.fixture
 def srepo() -> SelfRepo:
     r = Repo(None)
-    return SelfRepo(r.conn)
+    yield SelfRepo(r.conn)
+    r.close()
 
 
 @pytest.fixture
@@ -128,9 +129,7 @@ def test_ac_23_6_reverse_scored_inverts_answer() -> None:
                 reverse_scored=True,
             )
         ]
-        deltas = compute_facet_deltas(
-            sampled, [raw], {"inquisitiveness": float(expected)}
-        )
+        deltas = compute_facet_deltas(sampled, [raw], {"inquisitiveness": float(expected)})
         # Delta should be zero because retest mean == current.
         assert deltas["inquisitiveness"][0] == pytest.approx(expected)
         assert deltas["inquisitiveness"][1] == pytest.approx(0.0)
@@ -172,7 +171,10 @@ def test_ac_23_12_retest_sample_facet_diversity(srepo, self_id) -> None:
     items = _seed_items(srepo, self_id)
     rng = random.Random(3)
     sample = sample_retest_items(
-        items=items, last_asked={}, rng=rng, now=datetime.now(UTC),
+        items=items,
+        last_asked={},
+        rng=rng,
+        now=datetime.now(UTC),
     )
     distinct_facets = {s.keyed_facet for s in sample}
     assert len(distinct_facets) >= FACET_DIVERSITY_FLOOR
@@ -187,7 +189,10 @@ def test_ac_23_12_recency_weighted_never_asked_dominates(srepo, self_id) -> None
     very_recent = {nid: datetime.now(UTC) for nid in just_asked_ids}
     rng = random.Random(5)
     sample = sample_retest_items(
-        items=items, last_asked=very_recent, rng=rng, now=datetime.now(UTC),
+        items=items,
+        last_asked=very_recent,
+        rng=rng,
+        now=datetime.now(UTC),
     )
     # The never-asked pool covers >=12 facets (all except first_facet), so the
     # weighted sample's diversity check passes on the first attempt. Expect
@@ -211,9 +216,7 @@ def test_ac_23_15_touched_facets_get_mean(srepo, self_id) -> None:
         )
         for i in range(1, 5)
     ]
-    deltas = compute_facet_deltas(
-        items, [1, 2, 3, 4], {"inquisitiveness": 3.0}
-    )
+    deltas = compute_facet_deltas(items, [1, 2, 3, 4], {"inquisitiveness": 3.0})
     # Mean retest = 2.5. Delta = 0.25 * (2.5 - 3.0) = -0.125.
     assert deltas["inquisitiveness"][0] == pytest.approx(2.5)
     assert deltas["inquisitiveness"][1] == pytest.approx(-0.125)
@@ -264,6 +267,7 @@ def test_ac_23_14_invalid_answer_aborts_before_mutation(srepo, self_id, new_id) 
         if bad_ask.n == 5:
             return (9, "out of range")
         return (3, "meh")
+
     bad_ask.n = 0
 
     score_before = srepo.get_facet_score(self_id, "inquisitiveness")
@@ -311,6 +315,7 @@ def test_ac_23_16_apply_retest_moves_score_by_25_pct(srepo, self_id, new_id) -> 
     # For each touched facet, compute expected delta: mean(scored) where
     # scored = 6-5 = 1 for reverse-scored and 5 otherwise.
     from collections import defaultdict
+
     by_facet: dict[str, list[int]] = defaultdict(list)
     for it in sampled:
         by_facet[it.keyed_facet].append(1 if it.reverse_scored else 5)
