@@ -33,6 +33,7 @@ logger = logging.getLogger("turing.runtime.chat")
 
 
 CHAT_RESPONSE_TIMEOUT_S: float = 30.0
+MAX_REQUEST_BODY_BYTES: int = 1 << 20  # 1 MiB
 
 
 class ChatBridge:
@@ -75,7 +76,7 @@ def make_chat_handler(
     journal_dir: str | None = None,
 ) -> type[BaseHTTPRequestHandler]:
     class Handler(BaseHTTPRequestHandler):
-        def do_POST(self) -> None:                                       # noqa: N802
+        def do_POST(self) -> None:  # noqa: N802
             # OpenAI-compatible: POST /v1/chat/completions
             # so OpenWebUI (or anything else speaking the OpenAI API) can
             # add Project Turing as a model and chat through it normally.
@@ -88,6 +89,9 @@ def make_chat_handler(
 
         def _read_json(self) -> dict[str, Any] | None:
             length = int(self.headers.get("Content-Length") or 0)
+            if length > MAX_REQUEST_BODY_BYTES:
+                self._respond(413, {"error": "request body too large"})
+                return None
             try:
                 return json.loads(self.rfile.read(length).decode("utf-8") or "{}")
             except json.JSONDecodeError:
@@ -129,9 +133,7 @@ def make_chat_handler(
             if not message:
                 self._respond(400, {"error": "missing 'message'"})
                 return
-            result = self._dispatch_and_wait(
-                latest_user_message=message, history=[]
-            )
+            result = self._dispatch_and_wait(latest_user_message=message, history=[])
             if result is None:
                 self._respond(504, {"error": "timeout"})
                 return
@@ -168,21 +170,17 @@ def make_chat_handler(
             if history and history[-1]["role"] == "user":
                 history = history[:-1]
 
-            result = self._dispatch_and_wait(
-                latest_user_message=latest, history=history
-            )
+            result = self._dispatch_and_wait(latest_user_message=latest, history=history)
             if result is None:
                 self._respond(504, {"error": "timeout"})
                 return
             message_id, reply = result
             self._respond(
                 200,
-                _openai_chat_completion_response(
-                    request_id=message_id, reply=reply
-                ),
+                _openai_chat_completion_response(request_id=message_id, reply=reply),
             )
 
-        def do_GET(self) -> None:                                        # noqa: N802
+        def do_GET(self) -> None:  # noqa: N802
             if self.path.rstrip("/") == "/v1/models":
                 self._respond(
                     200,
@@ -234,7 +232,7 @@ def make_chat_handler(
                 return
             self._respond(404, {"error": "not found"})
 
-        def log_message(self, fmt: str, *args: object) -> None:          # noqa: A002
+        def log_message(self, fmt: str, *args: object) -> None:  # noqa: A002
             logger.debug("chat: " + fmt, *args)
 
         def _respond(self, status: int, body: dict[str, Any]) -> None:
@@ -276,9 +274,7 @@ def start_chat_server(
         journal_dir=journal_dir,
     )
     server = ThreadingHTTPServer((host, port), handler_cls)
-    thread = threading.Thread(
-        target=server.serve_forever, name="turing-chat", daemon=True
-    )
+    thread = threading.Thread(target=server.serve_forever, name="turing-chat", daemon=True)
     thread.start()
     logger.info("chat server on http://%s:%d/", host, port)
 

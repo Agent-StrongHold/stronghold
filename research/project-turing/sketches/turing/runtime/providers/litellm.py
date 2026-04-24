@@ -52,9 +52,7 @@ class LiteLLMProvider:
         self._client = client or httpx.Client(timeout=30.0)
 
         self._window_started_at: datetime = datetime.now(UTC)
-        self._window_duration: timedelta = timedelta(
-            seconds=pool_config.window_duration_seconds
-        )
+        self._window_duration: timedelta = timedelta(seconds=pool_config.window_duration_seconds)
         self._tokens_allowed: int = pool_config.tokens_allowed
         self._tokens_used: int = 0
 
@@ -73,9 +71,7 @@ class LiteLLMProvider:
         try:
             response = self._client.post(url, headers=headers, json=body)
         except httpx.RequestError as exc:
-            raise ProviderUnavailable(
-                f"litellm[{self._model}] request error: {exc}"
-            ) from exc
+            raise ProviderUnavailable(f"litellm[{self._model}] request error: {exc}") from exc
 
         if response.status_code == 429:
             raise RateLimited(f"litellm[{self._model}] returned 429")
@@ -83,25 +79,22 @@ class LiteLLMProvider:
             try:
                 retry = self._client.post(url, headers=headers, json=body)
             except httpx.RequestError as exc:
-                raise ProviderUnavailable(
-                    f"litellm[{self._model}] retry error: {exc}"
-                ) from exc
+                raise ProviderUnavailable(f"litellm[{self._model}] retry error: {exc}") from exc
             if not retry.is_success:
                 raise ProviderUnavailable(
-                    f"litellm[{self._model}] {retry.status_code}: {retry.text[:200]}"
+                    f"litellm[{self._model}] {retry.status_code}: <response body sanitized>"
                 )
             response = retry
         if not response.is_success:
             raise ProviderUnavailable(
-                f"litellm[{self._model}] {response.status_code}: {response.text[:200]}"
+                f"litellm[{self._model}] {response.status_code}: <response body sanitized>"
             )
 
         data = response.json()
         text = _extract_text(data)
         usage = data.get("usage") or {}
         tokens_used = (
-            int(usage.get("total_tokens", 0))
-            or (len(prompt) + len(text)) // 4        # fallback estimate
+            int(usage.get("total_tokens", 0)) or (len(prompt) + len(text)) // 4  # fallback estimate
         )
         self._tokens_used += tokens_used
         return text
@@ -126,23 +119,18 @@ class LiteLLMProvider:
         try:
             response = self._client.post(url, headers=headers, json=body)
         except httpx.RequestError as exc:
-            raise ProviderUnavailable(
-                f"litellm[{self._model}] embed error: {exc}"
-            ) from exc
+            raise ProviderUnavailable(f"litellm[{self._model}] embed error: {exc}") from exc
         if response.status_code == 429:
             raise RateLimited(f"litellm[{self._model}] embed 429")
         if not response.is_success:
             raise ProviderUnavailable(
-                f"litellm[{self._model}] embed {response.status_code}: "
-                f"{response.text[:200]}"
+                f"litellm[{self._model}] embed {response.status_code}: <response body sanitized>"
             )
         data = response.json()
         # OpenAI-compat shape: {"data": [{"embedding": [...], ...}], "usage": ...}
         items = data.get("data") or []
         if not items or "embedding" not in items[0]:
-            raise ProviderUnavailable(
-                f"litellm[{self._model}] embed returned no embedding"
-            )
+            raise ProviderUnavailable(f"litellm[{self._model}] embed returned no embedding")
         embedding = items[0]["embedding"]
         usage = data.get("usage") or {}
         tokens_used = int(usage.get("total_tokens", 0)) or (len(text) // 4)

@@ -89,29 +89,27 @@ class RealReactor:
         try:
             next_at_ns = time.monotonic_ns()
             while not self._stop.is_set():
-                self.tick_count += 1
-                for handler in list(self._handlers):
-                    try:
-                        handler(self.tick_count)
-                    except Exception:
-                        logger.exception(
-                            "handler raised during tick %d", self.tick_count
-                        )
-
+                self._run_tick()
                 next_at_ns += self._period_ns
                 now_ns = time.monotonic_ns()
                 remaining_ns = next_at_ns - now_ns
                 if remaining_ns > 0:
                     time.sleep(remaining_ns / 1_000_000_000)
                 else:
-                    # Behind schedule. Record drift, don't sleep.
                     self._record_drift(-remaining_ns)
-                    # Reset next_at so drift doesn't compound forever.
                     if -remaining_ns > self._period_ns * 10:
                         next_at_ns = time.monotonic_ns()
         finally:
             self._running = False
             self._executor.shutdown(wait=True, cancel_futures=False)
+
+    def _run_tick(self) -> None:
+        self.tick_count += 1
+        for handler in list(self._handlers):
+            try:
+                handler(self.tick_count)
+            except Exception:
+                logger.exception("handler raised during tick %d", self.tick_count)
 
     def stop(self) -> None:
         self._stop.set()
@@ -123,20 +121,27 @@ class RealReactor:
         if len(self._drift_ns) > self._drift_samples:
             self._drift_ns = self._drift_ns[-self._drift_samples :]
 
+    def _drift_p99_ms(self) -> float:
+        if not self._drift_ns:
+            return 0.0
+        sorted_drift = sorted(self._drift_ns)
+        idx = min(len(sorted_drift) - 1, int(len(sorted_drift) * 0.99))
+        return sorted_drift[idx] / 1_000_000
+
     def get_status(self) -> ReactorStatus:
-        drift_p99_ms = 0.0
-        if self._drift_ns:
-            sorted_drift = sorted(self._drift_ns)
-            idx = min(len(sorted_drift) - 1, int(len(sorted_drift) * 0.99))
-            drift_p99_ms = sorted_drift[idx] / 1_000_000
-        # ThreadPoolExecutor doesn't expose queue depth cleanly; introspect.
-        queued = self._executor._work_queue.qsize()  # type: ignore[attr-defined]
-        active = max(0, len(self._executor._threads) - queued)  # best-effort
+        queued = self._executor_queue_depth()
+        active = max(0, len(self._executor._threads) - queued)
         return ReactorStatus(
             tick_count=self.tick_count,
             tick_rate_hz=self._tick_rate_hz,
-            drift_ms_p99=drift_p99_ms,
+            drift_ms_p99=self._drift_p99_ms(),
             executor_active=active,
             executor_queued=queued,
             running=self._running,
         )
+
+    def _executor_queue_depth(self) -> int:
+        try:
+            return self._executor._work_queue.qsize()
+        except AttributeError:
+            return 0
