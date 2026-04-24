@@ -276,7 +276,7 @@ class TestBuildAndRunChatIntegration:
         finally:
             t.join(timeout=8.0)
 
-    def test_get_root_serves_html(self, tmp_path) -> None:
+    def test_get_root_serves_html_landing_page(self, tmp_path) -> None:
         import threading
 
         db = tmp_path / "test.db"
@@ -312,7 +312,7 @@ class TestBuildAndRunChatIntegration:
         finally:
             t.join(timeout=8.0)
 
-    def test_get_unknown_returns_404(self, tmp_path) -> None:
+    def test_get_unknown_path_returns_404(self, tmp_path) -> None:
         import threading
 
         db = tmp_path / "test.db"
