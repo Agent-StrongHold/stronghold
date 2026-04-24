@@ -140,3 +140,95 @@ class TestMakeImagineEdgeCases:
         result = imagine(seed, [], "pool1")
         assert len(result) == 1
         assert "test-provider" in result[0][1]
+
+
+class TestRunArgsOverrides:
+    def test_all_none_returns_empty(self) -> None:
+        from turing.runtime.main import RunArgs
+
+        args = RunArgs()
+        assert args.to_overrides() == {}
+
+    def test_tick_rate_maps_to_hz(self) -> None:
+        from turing.runtime.main import RunArgs
+
+        overrides = RunArgs(tick_rate=10).to_overrides()
+        assert overrides["tick_rate_hz"] == 10
+
+    def test_db_maps_to_db_path(self) -> None:
+        from turing.runtime.main import RunArgs
+
+        overrides = RunArgs(db="/tmp/test.db").to_overrides()
+        assert overrides["db_path"] == "/tmp/test.db"
+
+    def test_litellm_url_disables_fake(self) -> None:
+        from turing.runtime.main import RunArgs
+
+        overrides = RunArgs(litellm_base_url="http://llm:4000").to_overrides()
+        assert overrides["litellm_base_url"] == "http://llm:4000"
+        assert overrides["use_fake_provider"] is False
+
+    def test_litellm_key_maps(self) -> None:
+        from turing.runtime.main import RunArgs
+
+        overrides = RunArgs(litellm_virtual_key="sk-abc").to_overrides()
+        assert overrides["litellm_virtual_key"] == "sk-abc"
+
+    def test_pools_config_maps(self) -> None:
+        from turing.runtime.main import RunArgs
+
+        overrides = RunArgs(pools_config="/p/pools.yaml").to_overrides()
+        assert overrides["pools_config_path"] == "/p/pools.yaml"
+
+    def test_scenario_maps(self) -> None:
+        from turing.runtime.main import RunArgs
+
+        overrides = RunArgs(scenario="baseline").to_overrides()
+        assert overrides["scenario"] == "baseline"
+
+    def test_rss_feeds_splits_commas(self) -> None:
+        from turing.runtime.main import RunArgs
+
+        overrides = RunArgs(rss_feeds="a, b ,c").to_overrides()
+        assert overrides["rss_feeds"] == ("a", "b", "c")
+
+    def test_full_coverage(self) -> None:
+        from turing.runtime.main import RunArgs
+
+        args = RunArgs(
+            tick_rate=5,
+            db="test.db",
+            journal_dir="/j",
+            log_level="DEBUG",
+            log_format="json",
+            use_fake_provider=True,
+            litellm_base_url="http://x",
+            litellm_virtual_key="sk-x",
+            pools_config="/p.yaml",
+            scenario="s",
+            metrics_port=9090,
+            metrics_bind="0.0.0.0",
+            chat_port=8080,
+            chat_bind="0.0.0.0",
+            obsidian_vault="/vault",
+            rss_feeds="feed1,feed2",
+            base_prompt="/prompt.md",
+        )
+        o = args.to_overrides()
+        assert o["tick_rate_hz"] == 5
+        assert o["db_path"] == "test.db"
+        assert o["journal_dir"] == "/j"
+        assert o["log_level"] == "DEBUG"
+        assert o["log_format"] == "json"
+        assert o["use_fake_provider"] is False  # litellm_base_url overrides
+        assert o["litellm_base_url"] == "http://x"
+        assert o["litellm_virtual_key"] == "sk-x"
+        assert o["pools_config_path"] == "/p.yaml"
+        assert o["scenario"] == "s"
+        assert o["metrics_port"] == 9090
+        assert o["metrics_bind"] == "0.0.0.0"
+        assert o["chat_port"] == 8080
+        assert o["chat_bind"] == "0.0.0.0"
+        assert o["obsidian_vault_dir"] == "/vault"
+        assert o["rss_feeds"] == ("feed1", "feed2")
+        assert o["base_prompt_path"] == "/prompt.md"

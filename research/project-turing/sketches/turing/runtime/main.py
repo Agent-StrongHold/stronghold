@@ -12,6 +12,7 @@ import logging
 import signal
 import sys
 import uuid
+from dataclasses import dataclass
 from typing import Any
 
 from ..daydream import DaydreamProducer
@@ -132,9 +133,7 @@ def _think_about_rss_item(
             min_similarity=0.05,
         )
         if hits:
-            related_text = "\n".join(
-                f"- [{m.tier.value}] {m.content}" for m, _ in hits
-            )
+            related_text = "\n".join(f"- [{m.tier.value}] {m.content}" for m, _ in hits)
 
     prompt = (
         "You are Project Turing, reading an item from a subscribed feed.\n"
@@ -167,7 +166,7 @@ def _think_about_rss_item(
         tier=MemoryTier.OBSERVATION,
         source=SourceKind.I_DID,
         content=parsed["summary"][:500],
-        weight=WEIGHT_BOUNDS[MemoryTier.OBSERVATION][0],     # floor
+        weight=WEIGHT_BOUNDS[MemoryTier.OBSERVATION][0],  # floor
         intent_at_time=f"process-rss-{feed_url}",
         context={"feed_url": feed_url, "link": link, "title": title},
     )
@@ -189,17 +188,11 @@ def _think_about_rss_item(
         repo.insert(op)
 
     # 3. Mint AFFIRMATION if actionable AND very interesting.
-    if (
-        interest >= 0.8
-        and bool(parsed.get("actionable"))
-        and parsed.get("proposed_action")
-    ):
+    if interest >= 0.8 and bool(parsed.get("actionable")) and parsed.get("proposed_action"):
         handle_affirmation(
             repo,
             self_id,
-            content=(
-                f"commit (from {feed_url}): {parsed['proposed_action'][:300]}"
-            ),
+            content=(f"commit (from {feed_url}): {parsed['proposed_action'][:300]}"),
         )
 
 
@@ -324,7 +317,7 @@ def _build_chat_prompt(
 
     if history:
         lines.append("## Conversation so far")
-        for turn in history[-6:]:                 # last 6 turns
+        for turn in history[-6:]:  # last 6 turns
             role = turn.get("role", "user")
             content = turn.get("content", "")
             lines.append(f"{role}: {content}")
@@ -399,81 +392,148 @@ def _make_imagine_for_provider(provider: Provider) -> Any:
     return imagine
 
 
-def build_and_run(argv: list[str] | None = None) -> int:
+@dataclass
+class RunArgs:
+    tick_rate: int | None = None
+    db: str | None = None
+    journal_dir: str | None = None
+    log_level: str | None = None
+    log_format: str | None = None
+    use_fake_provider: bool = False
+    litellm_base_url: str | None = None
+    litellm_virtual_key: str | None = None
+    pools_config: str | None = None
+    scenario: str | None = None
+    duration: int | None = None
+    metrics_port: int | None = None
+    metrics_bind: str | None = None
+    chat_port: int | None = None
+    chat_bind: str | None = None
+    obsidian_vault: str | None = None
+    rss_feeds: str | None = None
+    base_prompt: str | None = None
+    smoke_test: bool = False
+
+    def to_overrides(self) -> dict[str, Any]:
+        overrides: dict[str, Any] = {}
+        if self.tick_rate is not None:
+            overrides["tick_rate_hz"] = self.tick_rate
+        if self.db is not None:
+            overrides["db_path"] = self.db
+        if self.journal_dir is not None:
+            overrides["journal_dir"] = self.journal_dir
+        if self.log_level is not None:
+            overrides["log_level"] = self.log_level
+        if self.log_format is not None:
+            overrides["log_format"] = self.log_format
+        if self.use_fake_provider:
+            overrides["use_fake_provider"] = True
+        if self.litellm_base_url is not None:
+            overrides["litellm_base_url"] = self.litellm_base_url
+            overrides["use_fake_provider"] = False
+        if self.litellm_virtual_key is not None:
+            overrides["litellm_virtual_key"] = self.litellm_virtual_key
+        if self.pools_config is not None:
+            overrides["pools_config_path"] = self.pools_config
+        if self.scenario is not None:
+            overrides["scenario"] = self.scenario
+        if self.metrics_port is not None:
+            overrides["metrics_port"] = self.metrics_port
+        if self.metrics_bind is not None:
+            overrides["metrics_bind"] = self.metrics_bind
+        if self.chat_port is not None:
+            overrides["chat_port"] = self.chat_port
+        if self.chat_bind is not None:
+            overrides["chat_bind"] = self.chat_bind
+        if self.obsidian_vault is not None:
+            overrides["obsidian_vault_dir"] = self.obsidian_vault
+        if self.rss_feeds is not None:
+            overrides["rss_feeds"] = tuple(
+                f.strip() for f in self.rss_feeds.split(",") if f.strip()
+            )
+        if self.base_prompt is not None:
+            overrides["base_prompt_path"] = self.base_prompt
+        return overrides
+
+
+def _parse_argv(argv: list[str] | None = None) -> RunArgs:
     parser = argparse.ArgumentParser(prog="turing-runtime")
     parser.add_argument("--tick-rate", type=int)
     parser.add_argument("--db", type=str)
     parser.add_argument("--journal-dir", type=str, help="enable journal output at this directory")
     parser.add_argument("--log-level", type=str, choices=["DEBUG", "INFO", "WARNING", "ERROR"])
     parser.add_argument("--log-format", type=str, choices=["plain", "json"])
-    parser.add_argument("--use-fake-provider", action="store_true",
-                        help="run with the FakeProvider (no LiteLLM needed)")
+    parser.add_argument(
+        "--use-fake-provider",
+        action="store_true",
+        help="run with the FakeProvider (no LiteLLM needed)",
+    )
     parser.add_argument("--litellm-base-url", type=str)
     parser.add_argument("--litellm-virtual-key", type=str)
     parser.add_argument("--pools-config", type=str, help="path to pools YAML")
     parser.add_argument("--scenario", type=str)
-    parser.add_argument("--duration", type=int, help="seconds to run before auto-stop (default: forever)")
+    parser.add_argument(
+        "--duration", type=int, help="seconds to run before auto-stop (default: forever)"
+    )
     parser.add_argument("--metrics-port", type=int, help="enable Prometheus endpoint on this port")
-    parser.add_argument("--metrics-bind", type=str, default=None,
-                        help="bind interface for the metrics endpoint (default 127.0.0.1)")
+    parser.add_argument(
+        "--metrics-bind",
+        type=str,
+        default=None,
+        help="bind interface for the metrics endpoint (default 127.0.0.1)",
+    )
     parser.add_argument("--chat-port", type=int, help="enable chat HTTP server on this port")
-    parser.add_argument("--chat-bind", type=str, default=None,
-                        help="bind interface for the chat server (default 127.0.0.1)")
-    parser.add_argument("--obsidian-vault", type=str,
-                        help="enable Obsidian vault writes at this directory")
-    parser.add_argument("--rss-feeds", type=str,
-                        help="comma-separated RSS/Atom feed URLs to subscribe to")
-    parser.add_argument("--base-prompt", type=str,
-                        help="path to the operator-controlled base prompt markdown")
-    parser.add_argument("--smoke-test", action="store_true",
-                        help="run a brief acceptance smoke and exit 0/1")
-    args = parser.parse_args(argv)
+    parser.add_argument(
+        "--chat-bind",
+        type=str,
+        default=None,
+        help="bind interface for the chat server (default 127.0.0.1)",
+    )
+    parser.add_argument(
+        "--obsidian-vault", type=str, help="enable Obsidian vault writes at this directory"
+    )
+    parser.add_argument(
+        "--rss-feeds", type=str, help="comma-separated RSS/Atom feed URLs to subscribe to"
+    )
+    parser.add_argument(
+        "--base-prompt", type=str, help="path to the operator-controlled base prompt markdown"
+    )
+    parser.add_argument(
+        "--smoke-test", action="store_true", help="run a brief acceptance smoke and exit 0/1"
+    )
+    parsed = parser.parse_args(argv)
+    return RunArgs(
+        tick_rate=parsed.tick_rate,
+        db=parsed.db,
+        journal_dir=parsed.journal_dir,
+        log_level=parsed.log_level,
+        log_format=parsed.log_format,
+        use_fake_provider=parsed.use_fake_provider,
+        litellm_base_url=parsed.litellm_base_url,
+        litellm_virtual_key=parsed.litellm_virtual_key,
+        pools_config=parsed.pools_config,
+        scenario=parsed.scenario,
+        duration=parsed.duration,
+        metrics_port=parsed.metrics_port,
+        metrics_bind=parsed.metrics_bind,
+        chat_port=parsed.chat_port,
+        chat_bind=parsed.chat_bind,
+        obsidian_vault=parsed.obsidian_vault,
+        rss_feeds=parsed.rss_feeds,
+        base_prompt=parsed.base_prompt,
+        smoke_test=parsed.smoke_test,
+    )
+
+
+def build_and_run(argv: list[str] | None = None) -> int:
+    args = _parse_argv(argv)
 
     if args.smoke_test:
         from .smoke import run_smoke
 
         return run_smoke()
 
-    overrides: dict[str, Any] = {}
-    if args.tick_rate is not None:
-        overrides["tick_rate_hz"] = args.tick_rate
-    if args.db is not None:
-        overrides["db_path"] = args.db
-    if args.journal_dir is not None:
-        overrides["journal_dir"] = args.journal_dir
-    if args.log_level is not None:
-        overrides["log_level"] = args.log_level
-    if args.log_format is not None:
-        overrides["log_format"] = args.log_format
-    if args.use_fake_provider:
-        overrides["use_fake_provider"] = True
-    if args.litellm_base_url is not None:
-        overrides["litellm_base_url"] = args.litellm_base_url
-        overrides["use_fake_provider"] = False
-    if args.litellm_virtual_key is not None:
-        overrides["litellm_virtual_key"] = args.litellm_virtual_key
-    if args.pools_config is not None:
-        overrides["pools_config_path"] = args.pools_config
-    if args.scenario is not None:
-        overrides["scenario"] = args.scenario
-    if args.metrics_port is not None:
-        overrides["metrics_port"] = args.metrics_port
-    if args.metrics_bind is not None:
-        overrides["metrics_bind"] = args.metrics_bind
-    if args.chat_port is not None:
-        overrides["chat_port"] = args.chat_port
-    if args.chat_bind is not None:
-        overrides["chat_bind"] = args.chat_bind
-    if args.obsidian_vault is not None:
-        overrides["obsidian_vault_dir"] = args.obsidian_vault
-    if args.rss_feeds is not None:
-        overrides["rss_feeds"] = tuple(
-            f.strip() for f in args.rss_feeds.split(",") if f.strip()
-        )
-    if args.base_prompt is not None:
-        overrides["base_prompt_path"] = args.base_prompt
-
-    cfg = load_config_from_env(overrides=overrides)
+    cfg = load_config_from_env(overrides=args.to_overrides())
     setup_logging(level=cfg.log_level, fmt=cfg.log_format)
 
     pool_label = "fake" if cfg.use_fake_provider else f"litellm({cfg.pools_config_path})"
@@ -594,9 +654,7 @@ def build_and_run(argv: list[str] | None = None) -> int:
         # Dispatch handler for rss_item: thinks about the item, writes a
         # weak summary always, promotes to OPINION if interesting, mints
         # AFFIRMATION if actionable + very interesting.
-        rss_chat_provider = _select_chat_provider(
-            providers, quality_weights, pool_roles
-        )
+        rss_chat_provider = _select_chat_provider(providers, quality_weights, pool_roles)
 
         def _on_dispatch_rss_item(item: BacklogItem, chosen_pool: str) -> None:
             payload = item.payload or {}
@@ -689,9 +747,7 @@ def build_and_run(argv: list[str] | None = None) -> int:
                 collector.set_labeled("turing_pressure", (pool,), value)
                 window = quota_tracker.window(pool)
                 if window is not None:
-                    collector.set_labeled(
-                        "turing_quota_headroom", (pool,), window.headroom
-                    )
+                    collector.set_labeled("turing_quota_headroom", (pool,), window.headroom)
             # Durable counts: cheap enough every tick, but only refresh
             # every 10th tick to avoid DB thrash.
             if tick % 10 == 0:
@@ -700,14 +756,10 @@ def build_and_run(argv: list[str] | None = None) -> int:
                         "SELECT COUNT(*) FROM durable_memory WHERE tier = ?",
                         (tier,),
                     ).fetchone()[0]
-                    collector.set_labeled(
-                        "turing_durable_memories_total", (tier,), n
-                    )
+                    collector.set_labeled("turing_durable_memories_total", (tier,), n)
 
         reactor.register(_refresh_metrics)
-        stop_metrics = start_metrics_server(
-            collector, port=cfg.metrics_port, host=cfg.metrics_bind
-        )
+        stop_metrics = start_metrics_server(collector, port=cfg.metrics_port, host=cfg.metrics_bind)
 
     def _handle_signal(signum: int, _frame: Any) -> None:
         logger.info("signal %d received; stopping reactor", signum)

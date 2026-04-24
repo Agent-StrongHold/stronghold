@@ -15,6 +15,7 @@ See specs/daydreaming.md. This module exposes two things:
 
 from __future__ import annotations
 
+import enum
 import logging
 from concurrent.futures import Future
 from dataclasses import dataclass
@@ -24,6 +25,13 @@ from uuid import uuid4
 
 
 logger = logging.getLogger("turing.daydream")
+
+
+class _Phase(enum.Enum):
+    IDLE = "idle"
+    CANDIDATE_QUEUED = "candidate_queued"
+    IMAGINING = "imagining"
+
 
 from .motivation import (
     DAYDREAM_FIRE_FLOOR,
@@ -169,6 +177,14 @@ class DaydreamProducer:
         motivation.register_dispatch("daydream_candidate", self._on_dispatch)
         reactor.register(self.on_tick)
 
+    @property
+    def phase(self) -> _Phase:
+        if self._active_candidate_id is not None:
+            return _Phase.CANDIDATE_QUEUED
+        if self._pending:
+            return _Phase.IMAGINING
+        return _Phase.IDLE
+
     # ---- Reactor loop
 
     def on_tick(self, tick: int) -> None:
@@ -177,9 +193,18 @@ class DaydreamProducer:
         if p <= 0.0:
             self._evict_if_present()
             return
-        if self._active_candidate_id is not None:
+        if self.phase == _Phase.CANDIDATE_QUEUED:
+            return
+        if self.phase == _Phase.IMAGINING:
             return
         self._active_candidate_id = self._motivation.insert(self._build_candidate())
+        logger.debug(
+            "pool=%s submitted candidate %s phase=%s->%s",
+            self._pool_name,
+            self._active_candidate_id,
+            _Phase.IDLE.value,
+            _Phase.CANDIDATE_QUEUED.value,
+        )
 
     # ---- Candidate construction
 
@@ -224,15 +249,30 @@ class DaydreamProducer:
 
     def _evict_if_present(self) -> None:
         if self._active_candidate_id is not None:
-            self._motivation.evict(self._active_candidate_id)
+            cid = self._active_candidate_id
+            self._motivation.evict(cid)
             self._active_candidate_id = None
+            logger.debug(
+                "pool=%s evicted candidate %s phase=%s->%s",
+                self._pool_name,
+                cid,
+                _Phase.CANDIDATE_QUEUED.value,
+                self.phase.value,
+            )
 
     # ---- Dispatch execution
 
     def _on_dispatch(self, item: BacklogItem, chosen_pool: str) -> None:
         payload: DaydreamPayload = item.payload
         if payload.producer is not self:
-            return  # not ours; shouldn't happen under single-producer per pool
+            return
+        logger.debug(
+            "pool=%s dispatching candidate %s phase=%s->%s",
+            self._pool_name,
+            item.item_id,
+            _Phase.CANDIDATE_QUEUED.value,
+            _Phase.IMAGINING.value,
+        )
         self._active_candidate_id = None
 
         seed = self._select_seed()

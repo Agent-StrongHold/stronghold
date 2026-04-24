@@ -157,3 +157,40 @@ class TestDynamicPriority:
         result = producer._dynamic_priority({"test": PRESSURE_MAX})
         assert result >= priority_base(21)
         repo.close()
+
+
+class TestDaydreamPhase:
+    def test_initial_phase_is_idle(self) -> None:
+        from turing.daydream import _Phase
+
+        reactor = FakeReactor()
+        motivation = Motivation(reactor)
+        repo = Repo(None)
+        producer = DaydreamProducer(
+            pool_name="p",
+            self_id="self",
+            motivation=motivation,
+            reactor=reactor,
+            repo=repo,
+        )
+        assert producer.phase == _Phase.IDLE
+        repo.close()
+
+    def test_phase_transitions_to_candidate_queued(self) -> None:
+        from turing.daydream import _Phase
+        from turing.motivation import Motivation
+
+        reactor = FakeReactor()
+        motivation = Motivation(reactor)
+        repo = Repo(None)
+        producer = DaydreamProducer(
+            pool_name="p",
+            self_id="self",
+            motivation=motivation,
+            reactor=reactor,
+            repo=repo,
+        )
+        motivation.set_pressure("p", 50.0)
+        reactor.tick(0)
+        assert producer.phase in (_Phase.CANDIDATE_QUEUED, _Phase.IDLE)
+        repo.close()
