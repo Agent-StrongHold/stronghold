@@ -20,6 +20,7 @@ The console is six surfaces total: **Chat**, **Notebook**, **Blog**, **Dossier**
 | 1185 | [`turing-skills-lab.yaml`](turing-skills-lab.yaml) | Skills Lab | Thin console API over the existing Forge + SkillRegistry: list/request/review/promote/demote/burn. |
 | 1186 | [`turing-self-talk-loop.yaml`](turing-self-talk-loop.yaml) | Notebook (proactive) | Reactor-driven background loop: periodic "anything to say to myself?" tick + Reactor-event triggers + strategy self-initiation. Warden-scanned, rate-limited, not chat-gated. Depends on 1178. |
 | 1187 | [`turing-frontend-port.yaml`](turing-frontend-port.yaml) | (all six) | Frontend port: Phosphor/Noir design system + app shell + six stub surface pages + installable WordPress + Obsidian themes. Renames Memory → Synapse and Profile → Dossier at port time. No backend endpoints wired — stub data only; each backend spec swaps its stub for a live call. |
+| 1188 | [`turing-blog-authoring.yaml`](turing-blog-authoring.yaml) | Blog | Rich post authoring layered on 1179: media pipeline (hero + inline images + SVG) with alt-text enforcement, Phosphor/Noir markdown dialect (callouts, figures, pullquotes, inline SVG, memory citations), five post templates (field report, letter-to-self, dossier entry, notebook excerpt, ASCII-art piece), preflight validation that gates publish. |
 
 ## What is NOT in these specs
 
@@ -56,10 +57,11 @@ Per CLAUDE.md §Build Rules, every spec above is constrained by:
 1. **PR 1 (this one)** — plan + specs only. Locks architecture. No code.
 2. **PR 2 — spec 1187 Frontend port.** Port the Phosphor/Noir HTMLs/CSS/JSX + remove the castle-themed Turing surfaces. Six stub pages render against JSON fixtures shaped like each backend spec's response. Ships the two installable themes (WordPress, Obsidian) verbatim from the design bundle.
 3. **PR 3 — spec 1178 ObsidianStore** — foundation; nothing else works without it.
-4. **PRs 4–6 (parallelisable)** — 1179 WordPress · 1182 Chat streaming · 1184 Dossier.
-5. **PR 7 — spec 1183 Notebook live vault** (after 1178).
-6. **PR 8 — spec 1186 Self-talk loop** (after 1178).
-7. **PRs 9–10 (parallelisable)** — 1181 Synapse CRUD · 1185 Skills Lab.
-8. **PR 11 — spec 1180 Memory consolidator** (last — needs real vault data to be meaningful).
+4. **PRs 4–6 (parallelisable)** — 1179 WordPress transport · 1182 Chat streaming · 1184 Dossier.
+5. **PR 7 — spec 1188 Blog authoring** (after 1179; rich posts, media pipeline, markdown dialect, five templates, preflight validation, memory citations).
+6. **PR 8 — spec 1183 Notebook live vault** (after 1178).
+7. **PR 9 — spec 1186 Self-talk loop** (after 1178).
+8. **PRs 10–11 (parallelisable)** — 1181 Synapse CRUD · 1185 Skills Lab.
+9. **PR 12 — spec 1180 Memory consolidator** (last — needs real vault data to be meaningful).
 
 Each PR lands green (pytest + ruff + mypy --strict + bandit).

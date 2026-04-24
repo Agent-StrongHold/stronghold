@@ -20,7 +20,7 @@ Everything is **handler POV** — the operator console, not the agent's perspect
 |---|---------|-------|-------|
 | 1 | **Chat** | `/dashboard/chat` | Spec 1182 — SSE streaming, typewriter reveal, inline memory citations, daily initiation budget, Turing-initiated thread marker |
 | 2 | **Notebook** | `/dashboard/notebook` | Spec 1183 — live vault API over the Obsidian store; file tree, editor, backlinks, graph view; six canonical sections (daily / scratchpad / outbox / art / self-todo / passions) |
-| 3 | **Blog** | `/dashboard/blog` (handler preview) + installed WordPress theme (public) | Spec 1179 — handler preview component + installable `phosphor-noir` FSE block theme shipped into `wp-content/themes/` for Turing's public blog |
+| 3 | **Blog** | `/dashboard/blog` (handler preview) + installed WordPress theme (public) | Spec 1179 (transport) + spec 1188 (rich authoring: media pipeline, Phosphor/Noir markdown dialect with captions + callouts + inline SVG + memory citations, five post templates, preflight validation) + installable `phosphor-noir` FSE block theme shipped into `wp-content/themes/` for the public-facing site |
 | 4 | **Dossier** | `/dashboard/dossier` | Spec 1184 — bio + versioned autobiography + 5-facet personality dials (read-only by default per audit F9/F10) + operator settings + read-only vitals |
 | 5 | **Synapse** | `/dashboard/synapse` | Spec 1181 — 7-tier DB inspector; tier nav, row list, row detail/edit, promote/demote/expire/burn, audit-flag surfaces (F1/F4/F13/F18) |
 | 6 | **Skills Lab** | `/dashboard/skills-lab` | Spec 1185 — thin console over Forge + SkillRegistry; list, request, review, promote (skull → T3 → T2 → T1), demote, burn |
@@ -94,10 +94,11 @@ The internal `src/stronghold/memory/` and `src/stronghold/memory/episodic/` pack
 1. **PR 1 (this PR)** — Plan + specs only. Locks architecture. No code. *(Adds `docs/ui-plan.md` + spec 1187.)*
 2. **PR 2 — Spec 1187 Frontend port.** Phosphor/Noir shell, six stub surfaces, two installable themes, castle-dashboard removal.
 3. **PR 3 — Spec 1178 ObsidianStore.** Foundation.
-4. **PRs 4–6 (parallelisable)** — 1179 WordPress · 1182 Chat streaming · 1184 Dossier.
-5. **PR 7 — Spec 1183 Notebook live vault.** After 1178.
-6. **PR 8 — Spec 1186 Self-talk loop.** After 1178.
-7. **PRs 9–10 (parallelisable)** — 1181 Synapse CRUD · 1185 Skills Lab.
-8. **PR 11 — Spec 1180 Memory consolidator.** Last.
+4. **PRs 4–6 (parallelisable)** — 1179 WordPress transport · 1182 Chat streaming · 1184 Dossier.
+5. **PR 7 — Spec 1188 Blog authoring.** After 1179. Rich posts, media pipeline, markdown dialect, five templates, preflight validation.
+6. **PR 8 — Spec 1183 Notebook live vault.** After 1178.
+7. **PR 9 — Spec 1186 Self-talk loop.** After 1178.
+8. **PRs 10–11 (parallelisable)** — 1181 Synapse CRUD · 1185 Skills Lab.
+9. **PR 12 — Spec 1180 Memory consolidator.** Last.
 
 Each PR lands green (pytest + ruff + mypy --strict + bandit).
