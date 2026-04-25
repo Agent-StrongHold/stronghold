@@ -52,7 +52,7 @@
 - ToolDispatcher: timeout, HTTP endpoint fallback, SSRF protection
 - ToolPlugin protocol
 - 6 API route groups (chat, skills, sessions, admin, traces, dashboard)
-- 6 castle-themed dashboard pages (Great Hall, Knights, Armory, Watchtower, Treasury, Scrolls)
+- 6 castle-themed dashboard pages (Great Hall, Knights, Armory, Watchtower, Treasury, Scrolls) — **being replaced**, see [`specs/TURING-CONSOLE-README.md`](specs/TURING-CONSOLE-README.md). Non-UI Phase 4 items (tool registry, dispatcher, protocol, API route groups) stay; the dashboard pages themselves are superseded by the six-surface Turing console and will be removed in the frontend-port PR.
 - All dashboards XSS-free (DOM API, not innerHTML)
 
 ### Security Hardening ✅ (2 rounds)
@@ -256,6 +256,19 @@ bypass all application-level security controls.
 - [ ] **Function calling relay** — OpenWebUI tools → Stronghold tool registry → Sentinel
 - [ ] **Model list sync** — /v1/models proxied through so OpenWebUI sees governed models
 - [ ] Docs: deployment guide (OpenWebUI + Stronghold side-by-side)
+
+#### UI work below
+
+All dashboard / UI items in the following sections — **Agent Creator UI**, **Skills Creator UI**, **Great Hall UX**, **WebUI Form Enhancement**, the "Dashboard: …" bullets in Prompt Management, the "Feedback UI" row later in this doc, and `/dashboard/reviews.html` — are now **owned by the Turing field console plan** at [`specs/TURING-CONSOLE-README.md`](specs/TURING-CONSOLE-README.md). Specific items retarget as follows:
+
+- "Agent Creator UI" → subsumed by the Dossier surface + Skills Lab (spec 1184 + 1185); there is no user-facing "create arbitrary agent" flow in the Turing console — there is one agent, Turing, and the Skills Lab creates new skills/tools for them.
+- "Skills Creator UI" → spec 1185 (Skills Lab).
+- "Great Hall UX" (streaming text, mission history sidebar, etc.) → Chat surface (spec 1182).
+- "WebUI Form Enhancement" → Chat surface + Dossier settings.
+- "Diff viewer / prompt versions" → can move into the Dossier autobiography history view (versioned markdown, spec 1184) or stay as its own thing; non-UI parts of Prompt Management (git-backed store, approval workflow, GitHub webhook) stay on this backlog.
+- "Feedback UI" + "/dashboard/reviews.html inbox" → Chat surface + a later-spec review surface if needed; the row stays as a reminder but is scoped by the UI plan.
+
+Non-UI items (API endpoints, webhook triggers, git-backed prompt store, n8n webhook handlers, etc.) are **unaffected** and stay exactly as written.
 
 #### Agent Creator UI (HIGH)
 - [ ] **POST /v1/stronghold/agents** — create agent from config (name, strategy, tools, soul prompt)

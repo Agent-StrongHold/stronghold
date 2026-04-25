@@ -157,6 +157,12 @@ sessions:
   max_messages: 20
   ttl_seconds: 86400
 
+# Learning-store knobs. Defaults shown — uncomment to override.
+# learnings:
+#   rca_enabled: true           # false disables the RCAExtractor entirely
+#   rca_model: ""               # e.g. "gpt-4o-mini"; "" = use default routing
+#   promotion_threshold: 5      # hit_count at which a learning is promoted
+
 # ── Infrastructure ──
 # Production: K8s + Helm. Docker Compose is local dev only.
 database_url: ""  # postgresql://user:pass@postgres:5432/stronghold

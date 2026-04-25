@@ -676,7 +676,7 @@ stronghold/
 - [ ] Memory impact scoring (injected memory → outcome → weight adjustment)
 - [ ] Cross-user generalization (individual learnings → validated system facts)
 - [ ] Ebbinghaus forgetting curve for episodic memory
-- [ ] Stronghold native UI (replace Arize + LiteLLM dashboards, add prompt editor)
+- [ ] Stronghold native UI — **superseded by [`specs/TURING-CONSOLE-README.md`](specs/TURING-CONSOLE-README.md)**. The "Stronghold native UI" deliverable in this roadmap row is now realised as the six-surface Turing field console (Chat · Notebook · Blog · Dossier · Synapse · Skills Lab); scoping, naming, and PR sequencing live in the plan + specs. This row stays as the roadmap-level pointer; details do not duplicate here.
 - [ ] RASO Phase 3: The guide learns how to pick routes — meta-optimization of the optimization process itself
 
 ---

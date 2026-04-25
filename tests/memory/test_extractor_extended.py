@@ -429,3 +429,121 @@ class TestRCAExtractor:
         learning = await extractor.extract_rca("test", tool_history)
         assert learning is not None
         assert learning.scope == MemoryScope.AGENT
+
+
+# ---------------------------------------------------------------------------
+# Spec A: structured RCA taxonomy + prevention field on Learning
+# ---------------------------------------------------------------------------
+
+
+class TestRCAStructuredOutput:
+    """RCA categorization + prevention fields populate from LLM output."""
+
+    async def test_category_and_prevention_parsed(self) -> None:
+        llm = FakeLLMClient()
+        llm.set_simple_response(
+            "CATEGORY: tool_contract_mismatch\n"
+            "ROOT CAUSE: Wrong parameter name\n"
+            "PREVENTION: Validate against schema"
+        )
+        extractor = RCAExtractor(llm_client=llm, rca_model="m")
+        history = [
+            {"tool_name": "t", "arguments": {}, "result": "Error: x", "round": 0},
+        ]
+        learning = await extractor.extract_rca("do the thing", history)
+        assert learning is not None
+        assert learning.rca_category == "tool_contract_mismatch"
+        assert learning.rca_prevention == "Validate against schema"
+
+    async def test_prompt_enumerates_full_taxonomy(self) -> None:
+        """The prompt must list every allowed category so the LLM can pick one."""
+        llm = FakeLLMClient()
+        llm.set_simple_response("CATEGORY: unknown\nROOT CAUSE: x\nPREVENTION: y")
+        extractor = RCAExtractor(llm_client=llm, rca_model="m")
+        history = [
+            {"tool_name": "t", "arguments": {}, "result": "Error: x", "round": 0},
+        ]
+        await extractor.extract_rca("q", history)
+        prompt = llm.calls[0]["messages"][0]["content"]
+        for category in (
+            "missing_precondition",
+            "tool_contract_mismatch",
+            "permission_gap",
+            "rate_limit",
+            "input_validation",
+            "ambiguous_intent",
+            "unknown",
+        ):
+            assert category in prompt, f"{category} missing from RCA prompt"
+
+    async def test_malformed_output_falls_back_to_unknown(self) -> None:
+        """Invariant: malformed_is_unknown — unrecognized format yields 'unknown'."""
+        llm = FakeLLMClient()
+        llm.set_simple_response("Some free-form text that doesn't follow the schema at all")
+        extractor = RCAExtractor(llm_client=llm, rca_model="m")
+        history = [
+            {"tool_name": "t", "arguments": {}, "result": "Error: x", "round": 0},
+        ]
+        learning = await extractor.extract_rca("q", history)
+        assert learning is not None
+        assert learning.rca_category == "unknown"
+        assert learning.rca_prevention == ""
+        # Full text preserved in the learning body for human review
+        assert "Some free-form text" in learning.learning
+
+    async def test_invalid_category_becomes_unknown(self) -> None:
+        """Invariant: taxonomy_closed — categories outside the enum map to 'unknown'."""
+        llm = FakeLLMClient()
+        llm.set_simple_response(
+            "CATEGORY: unicorn_error\nROOT CAUSE: Mythical\nPREVENTION: Avoid unicorns"
+        )
+        extractor = RCAExtractor(llm_client=llm, rca_model="m")
+        history = [
+            {"tool_name": "t", "arguments": {}, "result": "Error: x", "round": 0},
+        ]
+        learning = await extractor.extract_rca("q", history)
+        assert learning is not None
+        assert learning.rca_category == "unknown"
+        # Prevention is still captured even when the category is rejected
+        assert learning.rca_prevention == "Avoid unicorns"
+
+    async def test_category_is_case_insensitive(self) -> None:
+        llm = FakeLLMClient()
+        llm.set_simple_response(
+            "CATEGORY: Rate_Limit\nROOT CAUSE: 429 received\nPREVENTION: Exponential backoff"
+        )
+        extractor = RCAExtractor(llm_client=llm, rca_model="m")
+        history = [
+            {"tool_name": "t", "arguments": {}, "result": "Error: 429", "round": 0},
+        ]
+        learning = await extractor.extract_rca("q", history)
+        assert learning is not None
+        assert learning.rca_category == "rate_limit"
+
+    async def test_missing_category_line_becomes_unknown(self) -> None:
+        """Old-format LLM output (no CATEGORY line) still yields a learning, category='unknown'."""
+        llm = FakeLLMClient()
+        llm.set_simple_response(
+            "ROOT CAUSE: entity not found\nPREVENTION: Look up entity IDs before calling"
+        )
+        extractor = RCAExtractor(llm_client=llm, rca_model="m")
+        history = [
+            {"tool_name": "ha_control", "arguments": {}, "result": "Error: 404", "round": 0},
+        ]
+        learning = await extractor.extract_rca("turn on fan", history)
+        assert learning is not None
+        assert learning.rca_category == "unknown"
+        # Prevention still parsed when present
+        assert learning.rca_prevention == "Look up entity IDs before calling"
+
+    def test_tool_correction_learning_has_no_rca_fields(self) -> None:
+        """Invariant: backward_compatible_learning — non-RCA learnings untouched."""
+        extractor = ToolCorrectionExtractor()
+        history: list[dict[str, Any]] = [
+            {"tool_name": "t", "arguments": {"x": 1}, "result": "Error: fail", "round": 0},
+            {"tool_name": "t", "arguments": {"x": 2}, "result": "OK", "round": 1},
+        ]
+        learnings = extractor.extract_corrections("do something", history)
+        assert len(learnings) == 1
+        assert learnings[0].rca_category is None
+        assert learnings[0].rca_prevention == ""

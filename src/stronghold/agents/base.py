@@ -108,8 +108,26 @@ _TOOL_SCHEMAS: dict[str, dict[str, object]] = {
 }
 
 
-def _build_tool_schema(name: str) -> dict[str, object]:
-    """Build an OpenAI-compatible tool definition for a named tool."""
+def _build_tool_schema(name: str, *, registry: Any = None) -> dict[str, object]:
+    """Build an OpenAI-compatible tool definition for a named tool.
+
+    Resolution order:
+      1. Live tool registry (the source of truth for executor + parameters)
+      2. Inline `_TOOL_SCHEMAS` table (legacy: quality-gate convenience tools)
+      3. Stub with empty params (last-resort fallback so the LLM still sees the tool)
+    """
+    if registry is not None:
+        defn = registry.get(name)
+        if defn is not None:
+            return {
+                "type": "function",
+                "function": {
+                    "name": defn.name,
+                    "description": defn.description,
+                    "parameters": defn.parameters,
+                },
+            }
+
     schema = _TOOL_SCHEMAS.get(name)
     if schema:
         return {
@@ -163,6 +181,7 @@ class Agent:
         coin_ledger: Any = None,
         tracer: TracingBackend | None = None,
         tool_executor: Any = None,
+        tool_registry: Any = None,
     ) -> None:
         self.identity = identity
         self._strategy = strategy
@@ -180,6 +199,7 @@ class Agent:
         self._quota_tracker = quota_tracker
         self._coin_ledger = coin_ledger
         self._tool_executor = tool_executor
+        self._tool_registry = tool_registry
         self._tracer = tracer
 
     async def handle(
@@ -250,30 +270,10 @@ class Agent:
                     messages = [*history, *messages]
 
         # 4. Build context (soul + learnings + episodic) — traced
-        # Query learning counts for tracing (what was available to inject)
-        injected_learning_count = 0
-        promoted_learning_count = 0
-        if self._learning_store and self.identity.memory_config.get("learnings"):
-            promoted = await self._learning_store.get_promoted(org_id=auth.org_id)
-            promoted_learning_count = len(promoted)
-            if user_text:
-                relevant = await self._learning_store.find_relevant(
-                    user_text,
-                    agent_id=self.identity.name,
-                    org_id=auth.org_id,
-                )
-                injected_learning_count = len(relevant)
-
         if trace:
             with trace.span("prompt.build") as ps:
-                ps.set_input(
-                    {
-                        "message_count": len(messages),
-                        "learnings_available": injected_learning_count,
-                        "promoted_learnings": promoted_learning_count,
-                    }
-                )
-                context_messages = await self._context_builder.build(
+                ps.set_input({"message_count": len(messages)})
+                context_messages, injected_learning_ids = await self._context_builder.build(
                     messages,
                     self.identity,
                     prompt_manager=self._prompt_manager,
@@ -285,12 +285,11 @@ class Agent:
                 ps.set_output(
                     {
                         "context_message_count": len(context_messages),
-                        "learnings_injected": injected_learning_count,
-                        "promoted_injected": promoted_learning_count,
+                        "learnings_injected": len(injected_learning_ids),
                     }
                 )
         else:
-            context_messages = await self._context_builder.build(
+            context_messages, injected_learning_ids = await self._context_builder.build(
                 messages,
                 self.identity,
                 prompt_manager=self._prompt_manager,
@@ -303,7 +302,10 @@ class Agent:
         # 5. Build tool definitions from identity.tools
         tool_defs: list[dict[str, Any]] | None = None
         if self.identity.tools:
-            tool_defs = [_build_tool_schema(name) for name in self.identity.tools]
+            tool_defs = [
+                _build_tool_schema(name, registry=self._tool_registry)
+                for name in self.identity.tools
+            ]
 
         # 6. Run strategy (use model_override from router, or identity default)
         model = model_override or self.identity.model
@@ -337,7 +339,7 @@ class Agent:
                         {
                             "done": result.done,
                             "tool_rounds": len(result.tool_history) if result.tool_history else 0,
-                            "response_length": len(result.response),
+                            "response_length": len(result.response or ""),
                         }
                     )
             else:
@@ -440,7 +442,7 @@ class Agent:
                     await self._learning_store.store(learning)
 
         # 9. Post-turn: auto-promotion check + skill mutation
-        if self._learning_promoter and injected_learning_count > 0:
+        if self._learning_promoter and injected_learning_ids:
             await self._learning_promoter.check_and_promote(org_id=auth.org_id)
 
         # 10. Session save
@@ -496,6 +498,14 @@ class Agent:
             )
             await self._outcome_store.record(outcome)
 
+        # Feedback loop: record whether each injected learning preceded success
+        if injected_learning_ids and self._learning_store:
+            await self._learning_store.mark_outcome(
+                injected_learning_ids,
+                success=not tool_had_failures,
+                org_id=auth.org_id,
+            )
+
         # 12. Finalize trace
         if trace:
             tool_success_count = 0
@@ -513,14 +523,13 @@ class Agent:
                 {
                     "agent": self.identity.name,
                     "model": model,
-                    "response_length": str(len(result.response)),
+                    "response_length": str(len(result.response or "")),
                     "tool_calls_total": str(len(result.tool_history) if result.tool_history else 0),
                     "tool_calls_success": str(tool_success_count),
                     "tool_calls_failed": str(tool_fail_count),
                     "tools_used": ",".join(dict.fromkeys(tools_used)),
                     "session_history_injected": str(session_history_count),
-                    "learnings_injected": str(injected_learning_count),
-                    "promoted_injected": str(promoted_learning_count),
+                    "learnings_injected": str(len(injected_learning_ids)),
                 }
             )
             trace.end()

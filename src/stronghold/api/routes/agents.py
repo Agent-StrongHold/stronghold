@@ -385,7 +385,7 @@ async def import_agent_from_url(request: Request) -> JSONResponse:
     """
     import ipaddress as _ipaddress  # noqa: PLC0415
     import socket as _socket  # noqa: PLC0415
-    from urllib.parse import urlparse  # noqa: PLC0415
+    from urllib.parse import parse_qsl, urlencode, urlparse  # noqa: PLC0415
 
     import httpx  # noqa: PLC0415
 
@@ -397,11 +397,53 @@ async def import_agent_from_url(request: Request) -> JSONResponse:
     if not url:
         raise HTTPException(status_code=400, detail="url is required")
 
-    # SSRF protection: HTTPS only, no private IPs
+    # SSRF protection: HTTPS only, allowlisted hosts only, no private IPs
     parsed = urlparse(url)
     if parsed.scheme != "https":
         raise HTTPException(status_code=400, detail="Only HTTPS URLs are allowed")
-    host = parsed.hostname or ""
+    if parsed.username or parsed.password:
+        raise HTTPException(status_code=400, detail="Userinfo in URL is not allowed")
+    if parsed.port not in (None, 443):
+        raise HTTPException(status_code=400, detail="Only default HTTPS port is allowed")
+    if parsed.fragment:
+        raise HTTPException(status_code=400, detail="URL fragments are not allowed")
+    host = (parsed.hostname or "").lower()
+    if not host:
+        raise HTTPException(status_code=400, detail="URL must include a hostname")
+    if not parsed.path.startswith("/"):
+        raise HTTPException(status_code=400, detail="URL path must be absolute")
+
+    # Restrict outbound fetches to approved Git hosting domains.
+    # This prevents user-controlled arbitrary destinations (full SSRF).
+    allowed_hosts = {
+        "github.com",
+        "codeload.github.com",
+        "raw.githubusercontent.com",
+        "objects.githubusercontent.com",
+    }
+    if host not in allowed_hosts:
+        raise HTTPException(status_code=400, detail="Host is not allowed for import")
+
+    # Additional SSRF hardening: only allow known-safe URL path shapes per host.
+    # This prevents arbitrary endpoint access even on allowlisted hosts.
+    path = parsed.path or "/"
+    if host == "github.com":
+        # Expected archive/release zip paths from repository pages.
+        if "/archive/" not in path and "/releases/download/" not in path:
+            raise HTTPException(status_code=400, detail="Unsupported GitHub URL path")
+    elif host == "codeload.github.com":
+        # codeload zip endpoint shape: /{owner}/{repo}/zip/{ref}
+        parts = [p for p in path.split("/") if p]
+        if len(parts) < 4 or parts[2] != "zip":
+            raise HTTPException(status_code=400, detail="Unsupported codeload URL path")
+    elif host == "raw.githubusercontent.com":
+        # Raw content host must point to a .zip artifact.
+        if not path.lower().endswith(".zip"):
+            raise HTTPException(status_code=400, detail="raw.githubusercontent.com URL must end with .zip")
+    elif host == "objects.githubusercontent.com":
+        # GitHub objects host is used for release artifacts; require .zip.
+        if not path.lower().endswith(".zip"):
+            raise HTTPException(status_code=400, detail="objects.githubusercontent.com URL must end with .zip")
 
     # Resolve hostname and check all resolved IPs against private/reserved ranges.
     # Covers IPv4 RFC1918, loopback, link-local (169.254.x.x), IPv6 mapped
@@ -412,13 +454,19 @@ async def import_agent_from_url(request: Request) -> JSONResponse:
             ip = _ipaddress.ip_address(info[4][0])
             if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved:
                 raise HTTPException(status_code=400, detail="URL resolves to private/reserved IP")
-    except _socket.gaierror:
-        pass  # Let httpx handle DNS errors
+    except _socket.gaierror as e:
+        raise HTTPException(status_code=400, detail=f"Hostname resolution failed: {e}") from e
+
+    # Reconstruct URL from validated parsed components.
+    # Keep only canonical HTTPS URL parts after validation.
+    safe_url = f"https://{host}{parsed.path}"
+    if parsed.query:
+        safe_url += f"?{urlencode(parse_qsl(parsed.query, keep_blank_values=True), doseq=True)}"
 
     # Fetch the zip
     try:
         async with httpx.AsyncClient(timeout=30.0, follow_redirects=False) as client:
-            resp = await client.get(url)
+            resp = await client.get(safe_url)
             if resp.status_code != 200:  # noqa: PLR2004
                 raise HTTPException(
                     status_code=502,

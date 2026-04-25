@@ -32,6 +32,15 @@ class LearningStore(Protocol):
         """Increment hit_count for used learnings."""
         ...
 
+    async def mark_outcome(
+        self, learning_ids: list[int], success: bool, *, org_id: str = ""
+    ) -> None:
+        """Record whether each injected learning was followed by a successful request.
+
+        If org_id is non-empty, ids belonging to a different org are silently skipped.
+        """
+        ...
+
     async def check_auto_promotions(
         self, threshold: int = 5, *, org_id: str = ""
     ) -> list[Learning]:

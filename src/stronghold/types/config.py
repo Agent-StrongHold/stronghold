@@ -42,6 +42,14 @@ class SessionsConfig(BaseModel):
     ttl_seconds: int = 86400
 
 
+class LearningsConfig(BaseModel):
+    """Learning-store knobs: RCA gating + promotion threshold."""
+
+    rca_enabled: bool = True
+    rca_model: str = ""
+    promotion_threshold: int = 5
+
+
 class SecurityConfig(BaseModel):
     """Security configuration."""
 
@@ -103,6 +111,7 @@ class StrongholdConfig(BaseModel):
     task_types: dict[str, TaskTypeConfig] = Field(default_factory=dict)
     routing: RoutingConfig = Field(default_factory=RoutingConfig)
     sessions: SessionsConfig = Field(default_factory=SessionsConfig)
+    learnings: LearningsConfig = Field(default_factory=LearningsConfig)
     security: SecurityConfig = Field(default_factory=SecurityConfig)
     cors: CORSConfig = Field(default_factory=CORSConfig)
     rate_limit: RateLimitConfig = Field(default_factory=RateLimitConfig)
