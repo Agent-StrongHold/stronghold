@@ -52,6 +52,10 @@ class RuntimeConfig:
     # this in every chat prompt.
     base_prompt_path: str | None = None
 
+    # Stronghold integration — delegate work to the agent governance platform.
+    stronghold_base_url: str | None = None
+    stronghold_api_key: str | None = None
+
     # Voice section — the self-owned text block Turing writes to describe
     # how it sounds. Starts empty by default; populated over time by the
     # voice-section-maintenance loop.
@@ -151,14 +155,22 @@ def load_config_from_env(
         cfg_kwargs["chat_bind"] = env["TURING_CHAT_BIND"]
     if "TURING_BASE_PROMPT_PATH" in env:
         cfg_kwargs["base_prompt_path"] = env["TURING_BASE_PROMPT_PATH"]
+    if "STRONGHOLD_BASE_URL" in env:
+        cfg_kwargs["stronghold_base_url"] = env["STRONGHOLD_BASE_URL"]
+    if "STRONGHOLD_API_KEY" in env:
+        cfg_kwargs["stronghold_api_key"] = env["STRONGHOLD_API_KEY"]
     if "TURING_VOICE_SECTION_PATH" in env:
         cfg_kwargs["voice_section_path"] = env["TURING_VOICE_SECTION_PATH"]
     if "TURING_VOICE_SELF_EDIT_ENABLED" in env:
         cfg_kwargs["voice_self_edit_enabled"] = _parse_bool(env["TURING_VOICE_SELF_EDIT_ENABLED"])
     if "TURING_VOICE_SECTION_MAX_CHARS" in env:
-        cfg_kwargs["voice_section_max_chars"] = _parse_int(env["TURING_VOICE_SECTION_MAX_CHARS"], 600)
+        cfg_kwargs["voice_section_max_chars"] = _parse_int(
+            env["TURING_VOICE_SECTION_MAX_CHARS"], 600
+        )
     if "TURING_VOICE_MAINTENANCE_TICKS" in env:
-        cfg_kwargs["voice_maintenance_ticks"] = _parse_int(env["TURING_VOICE_MAINTENANCE_TICKS"], 50_000)
+        cfg_kwargs["voice_maintenance_ticks"] = _parse_int(
+            env["TURING_VOICE_MAINTENANCE_TICKS"], 50_000
+        )
     if "TURING_SELF_LABEL" in env:
         cfg_kwargs["self_label"] = env["TURING_SELF_LABEL"]
     if "TURING_SKIP_EMBEDDING_REBUILD" in env:

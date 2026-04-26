@@ -8,6 +8,7 @@ RealReactor tick loop.
 from __future__ import annotations
 
 import argparse
+import json
 import logging
 import signal
 import sys
@@ -46,8 +47,10 @@ from .quota import FreeTierQuotaTracker
 from .reactor import RealReactor
 from .rss_fetcher import RSSFetcher
 from .tools.base import ToolRegistry
+from .tools.code_reader import CodeReader
 from .tools.obsidian import ObsidianWriter
 from .tools.rss import RSSReader
+from .tools.stronghold_client import StrongholdClient
 from .tools.wordpress import WordPressWriter
 from .workload import WorkloadDriver, load_scenario
 from .conversation_summary import ConversationSummaryCache
@@ -157,6 +160,28 @@ def _think_about_rss_item(
     feed_url = getattr(feed_item, "feed_url", "")
     summary = getattr(feed_item, "summary", "") or ""
     link = getattr(feed_item, "link", "")
+    stable_item_id = getattr(feed_item, "item_id", None)
+
+    # Guard against reprocessing after container restart (seen_ids is in-memory).
+    # Use the stable item_id stored in context JSON to check the DB.
+    if stable_item_id:
+        import json as _json
+
+        for mem in repo.find(
+            self_id=self_id,
+            tier=MemoryTier.OBSERVATION,
+            intent_at_time=f"process-rss-{feed_url}",
+        ):
+            try:
+                ctx = (
+                    _json.loads(mem.context)
+                    if isinstance(mem.context, str)
+                    else (mem.context or {})
+                )
+                if ctx.get("item_id") == stable_item_id:
+                    return  # already processed; skip
+            except Exception:
+                pass
 
     # Pull in related memory as context for the reflection.
     related_text = ""
@@ -205,7 +230,7 @@ def _think_about_rss_item(
         content=parsed["summary"][:500],
         weight=WEIGHT_BOUNDS[MemoryTier.OBSERVATION][0],  # floor
         intent_at_time=f"process-rss-{feed_url}",
-        context={"feed_url": feed_url, "link": link, "title": title},
+        context={"feed_url": feed_url, "link": link, "title": title, "item_id": stable_item_id},
     )
     repo.insert(obs)
 
@@ -445,6 +470,14 @@ _TIER_LABELS: dict[str, str] = {
     "hypothesis": "imagined futures",
 }
 
+_TOOL_DESCRIPTIONS: dict[str, str] = {
+    "obsidian_writer": "obsidian_writer: write notes to my vault (journal, drafts, letters). Use fenced block ```journal```, ```notebook```, ```draft```, or ```letter``` in your reply.",
+    "wordpress_writer": "wordpress_writer: publish blog posts. Use fenced block ```blog``` in your reply.",
+    "rss_reader": "rss_reader: I read RSS feeds automatically and form opinions about them.",
+    "code_reader": "code_reader: READ my own source code. Use ```code-reader path=<path>``` or ```code-reader list``` to browse.",
+    "stronghold_client": "stronghold_client: delegate work to Stronghold (Quartermaster, Mason, Archie, etc). Use ```stronghold action=<endpoint>``` to submit tasks.",
+}
+
 
 def _trigger_phrase(user_msg: str, memory_content: str, tier_value: str) -> str:
     """Render a memory as 'the user said X and that made me remember Y from my Z'."""
@@ -471,6 +504,7 @@ def _build_chat_prompt(
     conversation_summary: str | None = None,
     introspective_context: dict[str, str] | None = None,
     chat_user: str | None = None,
+    tool_names: list[str] | None = None,
 ) -> str:
     """Compose a chat prompt.
 
@@ -524,6 +558,16 @@ def _build_chat_prompt(
                     "",
                 ]
             )
+
+    # ---- Tools available ----------------------------------------------------
+    if tool_names:
+        lines.append("## Tools I can use")
+        tool_descriptions = []
+        for tn in tool_names:
+            desc = _TOOL_DESCRIPTIONS.get(tn, f"{tn}: (no description)")
+            tool_descriptions.append(f"- {desc}")
+        lines.extend(tool_descriptions)
+        lines.append("")
 
     # ---- Parallel memory retrievals ----------------------------------------
     has_index = index is not None and index.size() > 0
@@ -598,6 +642,7 @@ def _build_chat_prompt(
 
     def _fetch_rss_recent() -> list:
         from datetime import UTC, datetime, timedelta
+
         cutoff = datetime.now(UTC) - timedelta(hours=48)
         items = list(
             repo.find(
@@ -613,6 +658,7 @@ def _build_chat_prompt(
     def _fetch_chat_recent() -> list:
         """Last N chat-capture memories, no similarity gate — for cross-session recall."""
         from datetime import UTC, datetime, timedelta
+
         cutoff = datetime.now(UTC) - timedelta(days=7)
         items = list(
             repo.find(
@@ -731,6 +777,7 @@ def _build_chat_prompt(
             feed_label = ""
             try:
                 import json as _json
+
                 ctx = _json.loads(m.context) if isinstance(m.context, str) else (m.context or {})
                 title = ctx.get("title", "")
                 feed_url = m.intent_at_time.replace("process-rss-", "")
@@ -741,7 +788,9 @@ def _build_chat_prompt(
         lines.append("")
     else:
         lines.append("## Things I've read recently")
-        lines.append("(No feed items processed yet — feeds are subscribed but the first poll has not fired.)")
+        lines.append(
+            "(No feed items processed yet — feeds are subscribed but the first poll has not fired.)"
+        )
         lines.append("")
 
     # ---- Pre-reply introspective scaffold -----------------------------------
@@ -1133,6 +1182,18 @@ def build_and_run(argv: list[str] | None = None) -> int:
         )
         tool_registry.register(wordpress_writer)
         logger.info("wordpress writer enabled at %s", cfg.wordpress_site_url)
+
+    tool_registry.register(CodeReader())
+    logger.info("code reader registered (sandboxed to /app/sketches/turing)")
+
+    if cfg.stronghold_base_url and cfg.stronghold_api_key:
+        stronghold_client = StrongholdClient(
+            base_url=cfg.stronghold_base_url,
+            api_key=cfg.stronghold_api_key,
+        )
+        tool_registry.register(stronghold_client)
+        logger.info("stronghold client registered at %s", cfg.stronghold_base_url)
+
     if cfg.rss_feeds:
         rss_reader = RSSReader(feeds=cfg.rss_feeds)
         tool_registry.register(rss_reader)
@@ -1315,6 +1376,7 @@ def build_and_run(argv: list[str] | None = None) -> int:
                     conversation_summary=conv_summary,
                     introspective_context=live_ic,
                     chat_user=chat_user,
+                    tool_names=tool_registry.names(),
                 )
                 reply = chat_provider.complete(prompt, max_tokens=800)
             except Exception:
@@ -1358,55 +1420,91 @@ def build_and_run(argv: list[str] | None = None) -> int:
 
         # ---- Sentinel block handler -----------------------------------------
         # Called after each chat reply to dispatch fenced-block actions.
-        _obsidian_tool: Any = tool_registry.get("obsidian_writer") if cfg.obsidian_vault_dir else None
-        _wordpress_tool: Any = tool_registry.get("wordpress_writer") if cfg.wordpress_site_url else None
+        _obsidian_tool: Any = (
+            tool_registry.get("obsidian_writer") if cfg.obsidian_vault_dir else None
+        )
+        _wordpress_tool: Any = (
+            tool_registry.get("wordpress_writer") if cfg.wordpress_site_url else None
+        )
+        _code_reader_tool: Any = tool_registry.get("code_reader")
+        _stronghold_tool: Any = tool_registry.get("stronghold_client")
 
         def _on_sentinel(kind: str, content: str) -> None:
             import threading as _threading
             import uuid as _uuid
+            from datetime import UTC, datetime as _datetime
 
-            def _run() -> None:
-                from datetime import UTC, datetime as _datetime
-                _now = _datetime.now(UTC)
-                try:
-                    if kind == "voice":
-                        voice_section.set(self_id, content, _now)
-                        logger.info("voice section updated via chat sentinel")
+            _now = _datetime.now(UTC)
 
-                    elif kind == "remember":
-                        working_memory.add(self_id, content, priority=0.7)
-                        logger.info("working memory entry added via chat sentinel")
+            # DB writes are fast; run synchronously so they are never lost on shutdown.
+            try:
+                if kind == "voice":
+                    voice_section.set(self_id, content, _now)
+                    logger.info("voice section updated via chat sentinel")
+                    return
 
-                    elif kind == "opinion":
-                        repo.insert(EpisodicMemory(
-                            memory_id=str(_uuid.uuid4()), self_id=self_id,
-                            content=content[:500], tier=MemoryTier.OPINION,
-                            source=SourceKind.I_DID, weight=0.4,
+                elif kind == "remember":
+                    working_memory.add(self_id, content, priority=0.7)
+                    logger.info("working memory entry added via chat sentinel")
+                    return
+
+                elif kind == "opinion":
+                    repo.insert(
+                        EpisodicMemory(
+                            memory_id=str(_uuid.uuid4()),
+                            self_id=self_id,
+                            content=content[:500],
+                            tier=MemoryTier.OPINION,
+                            source=SourceKind.I_DID,
+                            weight=0.4,
                             intent_at_time="sentinel-opinion",
-                        ))
-                        logger.info("OPINION memory written via chat sentinel")
+                        )
+                    )
+                    logger.info("OPINION memory written via chat sentinel")
+                    return
 
-                    elif kind == "hypothesis":
-                        repo.insert(EpisodicMemory(
-                            memory_id=str(_uuid.uuid4()), self_id=self_id,
-                            content=content[:500], tier=MemoryTier.HYPOTHESIS,
-                            source=SourceKind.I_IMAGINED, weight=0.3,
+                elif kind == "hypothesis":
+                    repo.insert(
+                        EpisodicMemory(
+                            memory_id=str(_uuid.uuid4()),
+                            self_id=self_id,
+                            content=content[:500],
+                            tier=MemoryTier.HYPOTHESIS,
+                            source=SourceKind.I_IMAGINED,
+                            weight=0.3,
                             intent_at_time="sentinel-hypothesis",
-                        ))
-                        logger.info("HYPOTHESIS memory written via chat sentinel")
+                        )
+                    )
+                    logger.info("HYPOTHESIS memory written via chat sentinel")
+                    return
 
-                    elif kind == "goal":
-                        repo.insert(EpisodicMemory(
-                            memory_id=str(_uuid.uuid4()), self_id=self_id,
-                            content=content[:500], tier=MemoryTier.OBSERVATION,
-                            source=SourceKind.I_DID, weight=0.6,
+                elif kind == "goal":
+                    repo.insert(
+                        EpisodicMemory(
+                            memory_id=str(_uuid.uuid4()),
+                            self_id=self_id,
+                            content=content[:500],
+                            tier=MemoryTier.OBSERVATION,
+                            source=SourceKind.I_DID,
+                            weight=0.6,
                             intent_at_time="sentinel-goal",
-                        ))
-                        logger.info("goal observation written via chat sentinel")
+                        )
+                    )
+                    logger.info("goal observation written via chat sentinel")
+                    return
 
-                    elif kind in ("journal", "notebook", "draft", "letter"):
+            except Exception:
+                logger.exception("sentinel db write failed: kind=%s", kind)
+                return
+
+            # Slow I/O (filesystem, HTTP) — non-daemon so SIGINT doesn't kill mid-write.
+            def _slow_io() -> None:
+                try:
+                    if kind in ("journal", "notebook", "draft", "letter"):
                         if _obsidian_tool is None:
-                            logger.warning("obsidian writer not available for sentinel kind=%s", kind)
+                            logger.warning(
+                                "obsidian writer not available for sentinel kind=%s", kind
+                            )
                             return
                         subdir_map = {
                             "journal": "Journal",
@@ -1415,18 +1513,15 @@ def build_and_run(argv: list[str] | None = None) -> int:
                             "letter": "Letters",
                         }
                         first_line = content.split("\n")[0][:80].strip() or kind
-                        # Fresh writer per call — avoids mutating the shared tool.
                         _writer = ObsidianWriter(
-                            vault_dir=cfg.obsidian_vault_dir,
-                            subdir=subdir_map[kind],
+                            vault_dir=cfg.obsidian_vault_dir, subdir=subdir_map[kind]
                         )
                         _writer.invoke(
-                            title=first_line,
-                            content=content,
-                            kind=kind,
-                            tags=["sentinel", kind],
+                            title=first_line, content=content, kind=kind, tags=["sentinel", kind]
                         )
-                        logger.info("obsidian write via sentinel: kind=%s title=%s", kind, first_line)
+                        logger.info(
+                            "obsidian write via sentinel: kind=%s title=%s", kind, first_line
+                        )
 
                     elif kind == "blog":
                         if _wordpress_tool is None:
@@ -1436,10 +1531,58 @@ def build_and_run(argv: list[str] | None = None) -> int:
                         _wordpress_tool.invoke(title=first_line, content=content, status="draft")
                         logger.info("blog draft created via sentinel: %s", first_line)
 
-                except Exception:
-                    logger.exception("sentinel action failed: kind=%s", kind)
+                    elif kind == "code-reader":
+                        if _code_reader_tool is None:
+                            logger.warning("code reader not available")
+                            return
+                        path = content.strip()
+                        action = "list" if path in ("", ".", "ls") else "read"
+                        result = _code_reader_tool.invoke(path=path, action=action)
+                        repo.insert(
+                            EpisodicMemory(
+                                memory_id=str(_uuid.uuid4()),
+                                self_id=self_id,
+                                content=f"Code self-inspection ({path}): {json.dumps(result)[:400]}",
+                                tier=MemoryTier.OBSERVATION,
+                                source=SourceKind.I_DID,
+                                weight=0.2,
+                                intent_at_time="code-reader-sentinel",
+                            )
+                        )
+                        logger.info("code reader sentinel: path=%s action=%s", path, action)
 
-            _threading.Thread(target=_run, name=f"sentinel-{kind}", daemon=True).start()
+                    elif kind == "stronghold":
+                        if _stronghold_tool is None:
+                            logger.warning("stronghold client not available")
+                            return
+                        parts = content.strip().split(maxsplit=1)
+                        endpoint = parts[0] if parts else "/v1/chat/completions"
+                        body_text = parts[1] if len(parts) > 1 else "{}"
+                        try:
+                            payload = json.loads(body_text)
+                        except Exception:
+                            payload = {
+                                "model": "auto",
+                                "messages": [{"role": "user", "content": body_text}],
+                            }
+                        result = _stronghold_tool.invoke(endpoint=endpoint, payload=payload)
+                        repo.insert(
+                            EpisodicMemory(
+                                memory_id=str(_uuid.uuid4()),
+                                self_id=self_id,
+                                content=f"Stronghold delegation ({endpoint}): {json.dumps(result)[:400]}",
+                                tier=MemoryTier.OBSERVATION,
+                                source=SourceKind.I_DID,
+                                weight=0.3,
+                                intent_at_time="stronghold-sentinel",
+                            )
+                        )
+                        logger.info("stronghold sentinel: endpoint=%s", endpoint)
+
+                except Exception:
+                    logger.exception("sentinel io write failed: kind=%s", kind)
+
+            _threading.Thread(target=_slow_io, name=f"sentinel-{kind}", daemon=False).start()
 
         stop_chat = start_chat_server(
             motivation=motivation,
