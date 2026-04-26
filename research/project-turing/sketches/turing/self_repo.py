@@ -1112,3 +1112,107 @@ class SelfRepo:
             (skill_id,),
         ).fetchone()
         return int(row[0])
+
+    def delete_expired_retrieval_contributors(self, now) -> int:
+        with self._lock:
+            cur = self._conn.execute(
+                "DELETE FROM self_activation_contributors "
+                "WHERE origin = 'retrieval' AND expires_at IS NOT NULL AND expires_at < ?",
+                (now.isoformat(),),
+            )
+            self._conn.commit()
+            return cur.rowcount
+
+    def delete_expired_retrieval_contributors_for_target(self, target_node_id: str, now) -> int:
+        with self._lock:
+            cur = self._conn.execute(
+                "DELETE FROM self_activation_contributors "
+                "WHERE origin = 'retrieval' AND target_node_id = ? "
+                "AND expires_at IS NOT NULL AND expires_at < ?",
+                (target_node_id, now.isoformat()),
+            )
+            self._conn.commit()
+            return cur.rowcount
+
+    def count_active_retrieval_contributors(self, target_node_id: str, now) -> int:
+        row = self._conn.execute(
+            "SELECT COUNT(*) FROM self_activation_contributors "
+            "WHERE target_node_id = ? AND origin = 'retrieval' "
+            "AND retracted_at IS NULL AND (expires_at IS NULL OR expires_at >= ?)",
+            (target_node_id, now.isoformat()),
+        ).fetchone()
+        return int(row[0])
+
+    def list_revisions_since(self, self_id: str, since):
+        rows = self._conn.execute(
+            "SELECT node_id, self_id, revision_num, deltas_by_facet, revised_at "
+            "FROM self_personality_revisions "
+            "WHERE self_id = ? AND revised_at >= ? ORDER BY revised_at",
+            (self_id, since.isoformat() if hasattr(since, "isoformat") else since),
+        ).fetchall()
+        from .self_model import PersonalityRevision
+
+        result = []
+        for r in rows:
+            import json
+
+            deltas = json.loads(r[3]) if r[3] else {}
+            result.append(
+                PersonalityRevision(
+                    node_id=r[0],
+                    self_id=r[1],
+                    revision_num=r[2],
+                    deltas_by_facet=deltas,
+                    revised_at=r[4],
+                )
+            )
+        return result
+
+    def list_todo_ids_with_revisions(self, self_id: str, min_revisions: int = 11) -> list[str]:
+        rows = self._conn.execute(
+            "SELECT todo_id FROM self_todo_revisions WHERE self_id = ? "
+            "GROUP BY todo_id HAVING COUNT(*) >= ?",
+            (self_id, min_revisions),
+        ).fetchall()
+        return [r[0] for r in rows]
+
+    def compact_todo_revision(self, node_id: str, now) -> None:
+        with self._lock:
+            self._conn.execute(
+                "UPDATE self_todo_revisions SET text_before = '[compacted]', "
+                "text_after = '[compacted]' WHERE node_id = ?",
+                (node_id,),
+            )
+            self._conn.commit()
+
+    def list_recent_revision_ids(self, self_id: str, limit: int = 12) -> list[str]:
+        rows = self._conn.execute(
+            "SELECT node_id FROM self_personality_revisions "
+            "WHERE self_id = ? ORDER BY revised_at DESC LIMIT ?",
+            (self_id, limit),
+        ).fetchall()
+        return [r[0] for r in rows]
+
+    def list_answers_for_compaction(self, self_id: str, exclude_revision_ids: list[str]) -> list:
+        if not exclude_revision_ids:
+            placeholders = "1=0"
+            params: list = [self_id]
+        else:
+            placeholders = ",".join(["?"] * len(exclude_revision_ids))
+            params = [self_id] + exclude_revision_ids
+        rows = self._conn.execute(
+            f"SELECT node_id FROM self_personality_answers "
+            f"WHERE self_id = ? AND revision_id IS NOT NULL "
+            f"AND revision_id NOT IN ({placeholders})",
+            params,
+        ).fetchall()
+        return [type("Ans", (), {"node_id": r[0]})() for r in rows]
+
+    def compact_personality_answer(self, node_id: str, now) -> None:
+        with self._lock:
+            self._conn.execute(
+                "UPDATE self_personality_answers SET justification_text = '[compacted]' "
+                "WHERE node_id = ?",
+                (node_id,),
+            )
+            self._conn.commit()
