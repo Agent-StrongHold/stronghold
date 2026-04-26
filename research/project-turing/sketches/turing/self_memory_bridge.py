@@ -69,6 +69,8 @@ def _augment_context(self_id: str, ctx: dict | None) -> dict:
     ptc = _perception_tool_call_id_var.get()
     if ptc is not None:
         out["perception_tool_call_id"] = ptc
+    if "request_hash" not in out and "provenance" not in out:
+        out["provenance"] = "out_of_band"
     return out
 
 
