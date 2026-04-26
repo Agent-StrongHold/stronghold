@@ -155,9 +155,12 @@ services:
       - OPENAI_API_KEY=${LITELLM_MASTER_KEY}
       # Pipelines connection (Stronghold-governed agents)
       - PIPELINES_URLS=http://pipelines:9099
-      # Disable OpenWebUI's built-in auth for dev (uses Stronghold auth)
-      - WEBUI_AUTH=false
+      # Enable auth so Turing can distinguish users
+      - WEBUI_AUTH=true
       - ENABLE_SIGNUP=true
+      - WEBUI_SECRET_KEY=${WEBUI_SECRET_KEY:-turing-webui-secret-2026}
+      # Pass user identity to backend models
+      - ENABLE_DIRECT_CONNECTIONS=true
     depends_on:
       - pipelines
       - litellm

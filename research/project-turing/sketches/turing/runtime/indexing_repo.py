@@ -11,6 +11,7 @@ or hearsay content. Callers that want those can call
 from __future__ import annotations
 
 import logging
+import time
 
 from ..repo import Repo
 from ..types import EpisodicMemory, SourceKind
@@ -55,6 +56,9 @@ class IndexingRepo(Repo):
             },
         )
 
+    _REBUILD_BATCH_SIZE = 50
+    _REBUILD_PAUSE_SECONDS = 2.0
+
     def rebuild_index_from_repo(self, self_id: str) -> int:
         """Re-embed every I_DID memory for a self_id. Called on startup so
         restarts don't need a separate vector store on disk."""
@@ -66,5 +70,7 @@ class IndexingRepo(Repo):
         ):
             self.index_memory(memory)
             count += 1
+            if count % self._REBUILD_BATCH_SIZE == 0:
+                time.sleep(self._REBUILD_PAUSE_SECONDS)
         logger.info("rebuilt embedding index with %d entries", count)
         return count

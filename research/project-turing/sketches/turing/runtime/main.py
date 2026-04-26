@@ -634,7 +634,7 @@ def _build_chat_prompt(
         )
 
     def _fetch_session() -> list[tuple]:
-        if not has_session:
+        if not has_session or conversation_id is None:
             return []
         return retrieve_session_context(
             session_index, conversation_id, query=message, top_k=5, min_similarity=0.25
@@ -1568,6 +1568,7 @@ def build_and_run(argv: list[str] | None = None) -> int:
                             "letter": "Letters",
                         }
                         first_line = content.split("\n")[0][:80].strip() or kind
+                        assert cfg.obsidian_vault_dir is not None
                         _writer = ObsidianWriter(
                             vault_dir=cfg.obsidian_vault_dir, subdir=subdir_map[kind]
                         )
