@@ -2,10 +2,12 @@ from .curiosity_producer import CuriosityProducer
 from .emotional_producer import EmotionalResponseProducer
 from .blog_producer import BlogProducer
 from .hobby_producer import HobbyEngagementProducer
+from .self_reflection_producer import SelfReflectionProducer
 
 __all__ = [
     "CuriosityProducer",
     "EmotionalResponseProducer",
     "BlogProducer",
     "HobbyEngagementProducer",
+    "SelfReflectionProducer",
 ]

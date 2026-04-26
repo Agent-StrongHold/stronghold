@@ -411,7 +411,7 @@ class SelfRepo:
 
     def insert_interest(self, i: Interest) -> Interest:
         self._conn.execute(
-            """INSERT INTO self_interests
+            """INSERT OR IGNORE INTO self_interests
                (node_id, self_id, topic, description, last_noticed_at,
                 created_at, updated_at)
                VALUES (?, ?, ?, ?, ?, ?, ?)""",
@@ -851,3 +851,93 @@ class SelfRepo:
             (self_id,),
         )
         self._conn.commit()
+
+    # ------------------------------------------------ code snapshots ---------
+
+    def upsert_code_snapshot(
+        self,
+        *,
+        snapshot_id: str,
+        self_id: str,
+        file_path: str,
+        content_hash: str,
+        content: str,
+        line_count: int,
+        reflection: str,
+        reflection_embedding: bytes | None = None,
+        content_embedding: bytes | None = None,
+        metadata_json: str | None = None,
+    ) -> None:
+        now = _iso(datetime.now(UTC))
+        existing = self._conn.execute(
+            "SELECT snapshot_id FROM code_snapshots "
+            "WHERE self_id = ? AND file_path = ? AND content_hash = ?",
+            (self_id, file_path, content_hash),
+        ).fetchone()
+        if existing is not None:
+            self._conn.execute(
+                """UPDATE code_snapshots
+                   SET reflection = ?, reflection_embedding = ?,
+                       content_embedding = ?, metadata_json = ?,
+                       updated_at = ?
+                   WHERE snapshot_id = ?""",
+                (
+                    reflection,
+                    reflection_embedding,
+                    content_embedding,
+                    metadata_json,
+                    now,
+                    existing[0],
+                ),
+            )
+        else:
+            self._conn.execute(
+                """INSERT INTO code_snapshots
+                   (snapshot_id, self_id, file_path, content_hash, content,
+                    line_count, reflection, reflection_embedding,
+                    content_embedding, metadata_json, created_at, updated_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (
+                    snapshot_id,
+                    self_id,
+                    file_path,
+                    content_hash,
+                    content,
+                    line_count,
+                    reflection,
+                    reflection_embedding,
+                    content_embedding,
+                    metadata_json,
+                    now,
+                    now,
+                ),
+            )
+        self._conn.commit()
+
+    def list_code_snapshots(self, self_id: str, limit: int = 20) -> list[dict]:
+        rows = self._conn.execute(
+            "SELECT snapshot_id, file_path, content_hash, line_count, "
+            "reflection, created_at, updated_at "
+            "FROM code_snapshots WHERE self_id = ? "
+            "ORDER BY updated_at DESC LIMIT ?",
+            (self_id, limit),
+        ).fetchall()
+        return [
+            {
+                "snapshot_id": r[0],
+                "file_path": r[1],
+                "content_hash": r[2],
+                "line_count": r[3],
+                "reflection": r[4],
+                "created_at": r[5],
+                "updated_at": r[6],
+            }
+            for r in rows
+        ]
+
+    def has_code_snapshot(self, self_id: str, file_path: str, content_hash: str) -> bool:
+        row = self._conn.execute(
+            "SELECT 1 FROM code_snapshots WHERE self_id = ? AND file_path = ? AND content_hash = ?",
+            (self_id, file_path, content_hash),
+        ).fetchone()
+        return row is not None

@@ -30,7 +30,7 @@ logger = logging.getLogger("turing.runtime.tools.rss")
 @dataclass(frozen=True)
 class FeedItem:
     feed_url: str
-    item_id: str        # stable across polls (guid / id / link or hashed link+title)
+    item_id: str  # stable across polls (guid / id / link or hashed link+title)
     title: str
     summary: str
     link: str
@@ -94,7 +94,10 @@ class RSSReader:
         if not response.is_success:
             logger.warning("rss %s returned %d", state.url, response.status_code)
             return []
-        root = ET.fromstring(response.text)
+        raw = response.text
+        if raw and raw[0] == "\ufeff":
+            raw = raw[1:]
+        root = ET.fromstring(raw)
         if root.tag.endswith("rss"):
             items = list(_parse_rss(state.url, root))
         elif root.tag.endswith("feed"):
@@ -144,9 +147,7 @@ def _parse_atom(feed_url: str, root: ET.Element) -> list[FeedItem]:
         link_el = entry.find(f"{_ATOM_NS}link")
         link = link_el.attrib.get("href", "") if link_el is not None else ""
         title = _text_atom(entry, "title")
-        summary = (
-            _text_atom(entry, "summary") or _text_atom(entry, "content") or ""
-        )
+        summary = _text_atom(entry, "summary") or _text_atom(entry, "content") or ""
         pub_text = _text_atom(entry, "updated") or _text_atom(entry, "published")
         item_id = eid or link or _hash_id(title, link)
         out.append(

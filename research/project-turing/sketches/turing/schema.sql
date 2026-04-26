@@ -439,3 +439,33 @@ CREATE INDEX IF NOT EXISTS idx_reward_events_self
 
 CREATE INDEX IF NOT EXISTS idx_reward_events_item
     ON reward_events (item_id, event_type);
+
+
+-- -------------------------------------------------------------- code self-awareness --
+--
+-- Autonomous code reflection system. The agent periodically reads its own
+-- source code, reflects on it, and stores snapshots for future retrieval.
+-- Dual embedding: one for the LLM reflection, one for the raw code content.
+
+
+CREATE TABLE IF NOT EXISTS code_snapshots (
+    snapshot_id         TEXT PRIMARY KEY,
+    self_id             TEXT NOT NULL,
+    file_path           TEXT NOT NULL,
+    content_hash        TEXT NOT NULL,
+    content             TEXT NOT NULL,
+    line_count          INTEGER NOT NULL,
+    reflection          TEXT NOT NULL,
+    reflection_embedding BLOB,
+    content_embedding   BLOB,
+    metadata_json       TEXT,
+    created_at          TEXT NOT NULL,
+    updated_at          TEXT NOT NULL,
+    UNIQUE (self_id, file_path, content_hash)
+);
+
+CREATE INDEX IF NOT EXISTS idx_code_snapshots_self
+    ON code_snapshots (self_id, file_path, created_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_code_snapshots_hash
+    ON code_snapshots (content_hash);
