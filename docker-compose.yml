@@ -142,10 +142,13 @@ services:
   openwebui:
     image: ghcr.io/open-webui/open-webui:main
     restart: unless-stopped
+    security_opt:
+      - apparmor:unconfined
     ports:
       - "3000:8080"
     volumes:
       - openwebui-data:/app/backend/data
+      - ./openwebui-custom.css:/app/build/static/custom.css:ro
     environment:
       # Direct LiteLLM connection (ungoverned models)
       - OPENAI_API_BASE_URL=http://litellm:4000
