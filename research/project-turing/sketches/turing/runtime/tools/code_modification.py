@@ -25,13 +25,13 @@ from urllib.error import URLError
 from .base import Tool, ToolMode
 
 
-logger = logging.getLogger("turing.runtime.tools.stronghold_client")
+logger = logging.getLogger("turing.runtime.tools.code_modification")
 
 _DEFAULT_TIMEOUT = 60
 
 
 class StrongholdClient:
-    name = "stronghold_client"
+    name = "code_modification"
     mode = ToolMode.WRITE
 
     def __init__(

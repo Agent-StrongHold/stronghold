@@ -81,11 +81,13 @@ SENTINEL_KINDS = frozenset(
         "opinion",
         "goal",
         "hypothesis",
+        "read-code",
+        "request-change",
     }
 )
 
 _SENTINEL_RE = re.compile(
-    r"```(" + "|".join(SENTINEL_KINDS) + r")\n(.*?)```",
+    r"```(" + "|".join(SENTINEL_KINDS) + r") *\n(.*?)\n```",
     re.DOTALL | re.IGNORECASE,
 )
 

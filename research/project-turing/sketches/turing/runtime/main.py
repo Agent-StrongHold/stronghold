@@ -50,7 +50,7 @@ from .tools.base import ToolRegistry
 from .tools.code_reader import CodeReader
 from .tools.obsidian import ObsidianWriter
 from .tools.rss import RSSReader
-from .tools.stronghold_client import StrongholdClient
+from .tools.code_modification import StrongholdClient
 from .tools.wordpress import WordPressWriter
 from .workload import WorkloadDriver, load_scenario
 from .conversation_summary import ConversationSummaryCache
@@ -474,8 +474,8 @@ _TOOL_DESCRIPTIONS: dict[str, str] = {
     "obsidian_writer": "obsidian_writer: write notes to my vault (journal, drafts, letters). Use fenced block ```journal```, ```notebook```, ```draft```, or ```letter``` in your reply.",
     "wordpress_writer": "wordpress_writer: publish blog posts. Use fenced block ```blog``` in your reply.",
     "rss_reader": "rss_reader: I read RSS feeds automatically and form opinions about them.",
-    "code_reader": "code_reader: READ my own source code. Use ```code-reader path=<path>``` or ```code-reader list``` to browse.",
-    "stronghold_client": "stronghold_client: delegate work to Stronghold (Quartermaster, Mason, Archie, etc). Use ```stronghold action=<endpoint>``` to submit tasks.",
+    "code_reader": "code_reader: READ my own source code. Use fenced block ```read-code``` with a file path to browse or read files.",
+    "code_modification": "code_modification: REQUEST a change to my own source code. Use fenced block ```request-change``` with a description of what to change.",
 }
 
 
@@ -1192,7 +1192,7 @@ def build_and_run(argv: list[str] | None = None) -> int:
             api_key=cfg.stronghold_api_key,
         )
         tool_registry.register(stronghold_client)
-        logger.info("stronghold client registered at %s", cfg.stronghold_base_url)
+        logger.info("code modification tool registered at %s", cfg.stronghold_base_url)
 
     if cfg.rss_feeds:
         rss_reader = RSSReader(feeds=cfg.rss_feeds)
@@ -1427,7 +1427,7 @@ def build_and_run(argv: list[str] | None = None) -> int:
             tool_registry.get("wordpress_writer") if cfg.wordpress_site_url else None
         )
         _code_reader_tool: Any = tool_registry.get("code_reader")
-        _stronghold_tool: Any = tool_registry.get("stronghold_client")
+        _code_mod_tool: Any = tool_registry.get("code_modification")
 
         def _on_sentinel(kind: str, content: str) -> None:
             import threading as _threading
@@ -1531,7 +1531,7 @@ def build_and_run(argv: list[str] | None = None) -> int:
                         _wordpress_tool.invoke(title=first_line, content=content, status="draft")
                         logger.info("blog draft created via sentinel: %s", first_line)
 
-                    elif kind == "code-reader":
+                    elif kind == "read-code":
                         if _code_reader_tool is None:
                             logger.warning("code reader not available")
                             return
@@ -1551,9 +1551,9 @@ def build_and_run(argv: list[str] | None = None) -> int:
                         )
                         logger.info("code reader sentinel: path=%s action=%s", path, action)
 
-                    elif kind == "stronghold":
-                        if _stronghold_tool is None:
-                            logger.warning("stronghold client not available")
+                    elif kind == "request-change":
+                        if _code_mod_tool is None:
+                            logger.warning("code modification tool not available")
                             return
                         parts = content.strip().split(maxsplit=1)
                         endpoint = parts[0] if parts else "/v1/chat/completions"
@@ -1565,19 +1565,19 @@ def build_and_run(argv: list[str] | None = None) -> int:
                                 "model": "auto",
                                 "messages": [{"role": "user", "content": body_text}],
                             }
-                        result = _stronghold_tool.invoke(endpoint=endpoint, payload=payload)
+                        result = _code_mod_tool.invoke(endpoint=endpoint, payload=payload)
                         repo.insert(
                             EpisodicMemory(
                                 memory_id=str(_uuid.uuid4()),
                                 self_id=self_id,
-                                content=f"Stronghold delegation ({endpoint}): {json.dumps(result)[:400]}",
+                                content=f"Code change request ({endpoint}): {json.dumps(result)[:400]}",
                                 tier=MemoryTier.OBSERVATION,
                                 source=SourceKind.I_DID,
                                 weight=0.3,
-                                intent_at_time="stronghold-sentinel",
+                                intent_at_time="request-change-sentinel",
                             )
                         )
-                        logger.info("stronghold sentinel: endpoint=%s", endpoint)
+                        logger.info("request-change sentinel: endpoint=%s", endpoint)
 
                 except Exception:
                     logger.exception("sentinel io write failed: kind=%s", kind)
