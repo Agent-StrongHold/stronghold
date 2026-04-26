@@ -62,10 +62,10 @@ def revise_self_todo(
     reason: str,
     new_id: Callable[[str], str],
 ) -> SelfTodo:
-    _require_ready(repo, self_id)
     t = repo.get_todo(todo_id)
     if t.self_id != self_id:
         raise PermissionError("cross-self revise forbidden")
+    _require_ready(repo, self_id)
     if t.status != TodoStatus.ACTIVE:
         raise TodoNotActive(todo_id)
     if len(new_text) > 500:
@@ -97,12 +97,12 @@ def complete_self_todo(
     new_id: Callable[[str], str],
     affirmation_memory_id: str | None = None,
 ) -> SelfTodo:
-    _require_ready(repo, self_id)
-    if not outcome_text.strip():
-        raise ValueError("outcome_text is required on completion")
     t = repo.get_todo(todo_id)
     if t.self_id != self_id:
         raise PermissionError("cross-self complete forbidden")
+    _require_ready(repo, self_id)
+    if not outcome_text.strip():
+        raise ValueError("outcome_text is required on completion")
     if t.status != TodoStatus.ACTIVE:
         raise TodoNotActive(todo_id)
     t.status = TodoStatus.COMPLETED
@@ -128,10 +128,10 @@ def complete_self_todo(
 
 
 def archive_self_todo(repo: SelfRepo, self_id: str, todo_id: str, reason: str) -> SelfTodo:
-    _require_ready(repo, self_id)
     t = repo.get_todo(todo_id)
     if t.self_id != self_id:
         raise PermissionError("cross-self archive forbidden")
+    _require_ready(repo, self_id)
     if t.status == TodoStatus.COMPLETED:
         raise TodoNotActive(f"cannot archive completed todo {todo_id}")
     t.status = TodoStatus.ARCHIVED

@@ -223,6 +223,9 @@ def test_ac_71_2_write_self_todo_raises_before_bootstrap(srepo, self_id, new_id)
 def test_ac_71_2_revise_self_todo_raises_before_bootstrap(srepo, self_id, new_id) -> None:
     from turing.self_todos import revise_self_todo
 
+    srepo.insert_todo(
+        SelfTodo(node_id="todo:1", self_id=self_id, text="T", motivated_by_node_id="passion:1")
+    )
     with pytest.raises(SelfNotReady):
         revise_self_todo(
             srepo, self_id, todo_id="todo:1", new_text="Updated", reason="change", new_id=new_id
@@ -232,6 +235,9 @@ def test_ac_71_2_revise_self_todo_raises_before_bootstrap(srepo, self_id, new_id
 def test_ac_71_2_complete_self_todo_raises_before_bootstrap(srepo, self_id, new_id) -> None:
     from turing.self_todos import complete_self_todo
 
+    srepo.insert_todo(
+        SelfTodo(node_id="todo:1", self_id=self_id, text="T", motivated_by_node_id="passion:1")
+    )
     with pytest.raises(SelfNotReady):
         complete_self_todo(srepo, self_id, todo_id="todo:1", outcome_text="Done", new_id=new_id)
 
@@ -239,6 +245,9 @@ def test_ac_71_2_complete_self_todo_raises_before_bootstrap(srepo, self_id, new_
 def test_ac_71_2_archive_self_todo_raises_before_bootstrap(srepo, self_id) -> None:
     from turing.self_todos import archive_self_todo
 
+    srepo.insert_todo(
+        SelfTodo(node_id="todo:1", self_id=self_id, text="T", motivated_by_node_id="passion:1")
+    )
     with pytest.raises(SelfNotReady):
         archive_self_todo(srepo, self_id, todo_id="todo:1", reason="stale")
 
@@ -246,6 +255,17 @@ def test_ac_71_2_archive_self_todo_raises_before_bootstrap(srepo, self_id) -> No
 def test_ac_71_2_practice_skill_raises_before_bootstrap(srepo, self_id) -> None:
     from turing.self_nodes import practice_skill
 
+    srepo.insert_skill(
+        Skill(
+            node_id="skill:x",
+            self_id=self_id,
+            name="test",
+            kind=SkillKind.INTELLECTUAL,
+            stored_level=0.5,
+            decay_rate_per_day=0.001,
+            last_practiced_at=datetime.now(UTC),
+        )
+    )
     with pytest.raises(SelfNotReady):
         practice_skill(srepo, self_id, skill_id="skill:x", new_level=0.9)
 
@@ -253,6 +273,17 @@ def test_ac_71_2_practice_skill_raises_before_bootstrap(srepo, self_id) -> None:
 def test_ac_71_2_downgrade_skill_raises_before_bootstrap(srepo, self_id) -> None:
     from turing.self_nodes import downgrade_skill
 
+    srepo.insert_skill(
+        Skill(
+            node_id="skill:x",
+            self_id=self_id,
+            name="test",
+            kind=SkillKind.INTELLECTUAL,
+            stored_level=0.5,
+            decay_rate_per_day=0.001,
+            last_practiced_at=datetime.now(UTC),
+        )
+    )
     with pytest.raises(SelfNotReady):
         downgrade_skill(srepo, self_id, skill_id="skill:x", new_level=0.2, reason="honest")
 

@@ -169,10 +169,10 @@ def practice_skill(
     new_level: float | None = None,
     notes: str = "",
 ) -> Skill:
-    _require_ready(repo, self_id)
     s = repo.get_skill(skill_id)
     if s.self_id != self_id:
         raise PermissionError("cross-self practice forbidden")
+    _require_ready(repo, self_id)
     if new_level is not None:
         if new_level < s.stored_level:
             raise ValueError("practice_skill cannot lower stored_level; use downgrade_skill")
@@ -191,10 +191,10 @@ def downgrade_skill(
     new_level: float,
     reason: str,
 ) -> Skill:
-    _require_ready(repo, self_id)
     s = repo.get_skill(skill_id)
     if s.self_id != self_id:
         raise PermissionError("cross-self downgrade forbidden")
+    _require_ready(repo, self_id)
     if not 0.0 <= new_level <= 1.0:
         raise ValueError("new_level out of range")
     if not reason.strip():
