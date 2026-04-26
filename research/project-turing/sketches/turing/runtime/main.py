@@ -1253,6 +1253,7 @@ def build_and_run(argv: list[str] | None = None) -> int:
     if personality_summary:
         from ..producers import (
             BlogProducer,
+            ConceptInventor,
             CuriosityProducer,
             EmotionalResponseProducer,
             HobbyEngagementProducer,
@@ -1332,8 +1333,17 @@ def build_and_run(argv: list[str] | None = None) -> int:
             embedding_index=embedding_index,
             embedding_provider=embedding_provider,
         )
+        ConceptInventor(
+            motivation=motivation,
+            reactor=reactor,
+            repo=repo,
+            self_repo=_srepo,
+            self_id=self_id,
+            facet_scores=_facet_map,
+            provider=_cheapest,
+        )
         logger.info(
-            "autonomous producers registered (curiosity, anxiety, blog, hobby, self-reflection)"
+            "autonomous producers registered (curiosity, anxiety, blog, hobby, self-reflection, concepts)"
         )
     else:
         logger.info("no personality profile — autonomous producers not registered")

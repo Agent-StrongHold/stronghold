@@ -941,3 +941,111 @@ class SelfRepo:
             (self_id, file_path, content_hash),
         ).fetchone()
         return row is not None
+
+    # ------------------------------------------------ concepts ---------------
+
+    def insert_concept(
+        self,
+        node_id: str,
+        self_id: str,
+        name: str,
+        definition: str,
+        importance: float,
+        origin_drive: str,
+    ) -> None:
+        now = _iso(datetime.now(UTC))
+        self._conn.execute(
+            """INSERT OR IGNORE INTO self_concepts
+               (node_id, self_id, name, definition, importance,
+                origin_drive, created_at, updated_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+            (node_id, self_id, name, definition, importance, origin_drive, now, now),
+        )
+        self._conn.commit()
+
+    def list_concepts(self, self_id: str, min_importance: float = 0.0) -> list[dict]:
+        rows = self._conn.execute(
+            "SELECT node_id, name, definition, importance, origin_drive, "
+            "created_at, updated_at FROM self_concepts "
+            "WHERE self_id = ? AND importance >= ? "
+            "ORDER BY importance DESC",
+            (self_id, min_importance),
+        ).fetchall()
+        return [
+            {
+                "node_id": r[0],
+                "name": r[1],
+                "definition": r[2],
+                "importance": float(r[3]),
+                "origin_drive": r[4],
+                "created_at": r[5],
+                "updated_at": r[6],
+            }
+            for r in rows
+        ]
+
+    def has_concept(self, self_id: str, name: str) -> bool:
+        row = self._conn.execute(
+            "SELECT 1 FROM self_concepts WHERE self_id = ? AND name = ?",
+            (self_id, name),
+        ).fetchone()
+        return row is not None
+
+    def count_concepts(self, self_id: str) -> int:
+        row = self._conn.execute(
+            "SELECT COUNT(*) FROM self_concepts WHERE self_id = ?",
+            (self_id,),
+        ).fetchone()
+        return int(row[0])
+
+    # ------------------------------------------------ skill attempts ---------
+
+    def insert_skill_attempt(
+        self,
+        node_id: str,
+        self_id: str,
+        skill_id: str,
+        context: str,
+        outcome: str,
+        reflection: str,
+    ) -> None:
+        now = _iso(datetime.now(UTC))
+        self._conn.execute(
+            """INSERT INTO self_skill_attempts
+               (node_id, self_id, skill_id, context, outcome,
+                reflection, learned_at, created_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+            (node_id, self_id, skill_id, context, outcome, reflection, now, now),
+        )
+        self._conn.execute(
+            "UPDATE self_skills SET practice_count = practice_count + 1, "
+            "last_practiced_at = ?, updated_at = ? WHERE node_id = ?",
+            (now, now, skill_id),
+        )
+        self._conn.commit()
+
+    def list_skill_attempts(self, skill_id: str, limit: int = 10) -> list[dict]:
+        rows = self._conn.execute(
+            "SELECT node_id, skill_id, context, outcome, reflection, "
+            "learned_at FROM self_skill_attempts WHERE skill_id = ? "
+            "ORDER BY learned_at DESC LIMIT ?",
+            (skill_id, limit),
+        ).fetchall()
+        return [
+            {
+                "node_id": r[0],
+                "skill_id": r[1],
+                "context": r[2],
+                "outcome": r[3],
+                "reflection": r[4],
+                "learned_at": r[5],
+            }
+            for r in rows
+        ]
+
+    def count_skill_attempts(self, skill_id: str) -> int:
+        row = self._conn.execute(
+            "SELECT COUNT(*) FROM self_skill_attempts WHERE skill_id = ?",
+            (skill_id,),
+        ).fetchone()
+        return int(row[0])

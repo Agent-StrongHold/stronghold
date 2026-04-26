@@ -469,3 +469,41 @@ CREATE INDEX IF NOT EXISTS idx_code_snapshots_self
 
 CREATE INDEX IF NOT EXISTS idx_code_snapshots_hash
     ON code_snapshots (content_hash);
+
+
+-- -------------------------------------------------------------- concepts + skills --
+--
+-- Spec 35: self-directed concepts, skills, and goals. The agent invents
+-- concepts, builds skills to pursue them, practices via SkillExecutor,
+-- and refines through SkillRefiner.
+
+
+CREATE TABLE IF NOT EXISTS self_concepts (
+    node_id         TEXT PRIMARY KEY,
+    self_id         TEXT NOT NULL,
+    name            TEXT NOT NULL,
+    definition      TEXT NOT NULL,
+    importance      REAL NOT NULL CHECK (importance BETWEEN 0.0 AND 1.0),
+    origin_drive    TEXT NOT NULL,
+    created_at      TEXT NOT NULL,
+    updated_at      TEXT NOT NULL,
+    UNIQUE (self_id, name)
+);
+
+CREATE INDEX IF NOT EXISTS idx_self_concepts_self
+    ON self_concepts (self_id, importance DESC);
+
+
+CREATE TABLE IF NOT EXISTS self_skill_attempts (
+    node_id         TEXT PRIMARY KEY,
+    self_id         TEXT NOT NULL,
+    skill_id        TEXT NOT NULL,
+    context         TEXT NOT NULL,
+    outcome         TEXT NOT NULL CHECK (outcome IN ('success', 'partial', 'fail')),
+    reflection      TEXT NOT NULL,
+    learned_at      TEXT NOT NULL,
+    created_at      TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_skill_attempts_skill
+    ON self_skill_attempts (skill_id, learned_at DESC);
