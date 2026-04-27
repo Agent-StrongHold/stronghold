@@ -363,3 +363,43 @@ class CompositeResult:
     outputs: dict[str, Any]
     step_results: tuple[StepResult, ...]
     partial: bool = False
+
+
+# --- HTTP binding (Emissary external surface) ----------------------------
+
+
+@dataclass(frozen=True)
+class IncomingToken:
+    """A bearer token successfully validated by ``TokenValidator``.
+
+    ``audience`` is what the caller asserted; ``scopes`` is the granted set.
+    """
+
+    raw: str
+    subject: str
+    audience: str
+    scopes: frozenset[str]
+    expires_at: datetime
+
+
+class TokenValidationError(Exception):
+    """Base for token-validation failures at the HTTP edge."""
+
+
+class TokenAudienceMismatchError(TokenValidationError):
+    """Token's ``aud`` does not match the resource's canonical URI."""
+
+
+class TokenExpiredError(TokenValidationError):
+    """Token's ``exp`` has passed."""
+
+
+class InsufficientScopeError(TokenValidationError):
+    """Token's scopes don't cover the operation; carries required + provided."""
+
+    def __init__(self, required: frozenset[str], provided: frozenset[str]) -> None:
+        super().__init__(
+            f"required scopes {sorted(required)}, provided {sorted(provided)}",
+        )
+        self.required = required
+        self.provided = provided
