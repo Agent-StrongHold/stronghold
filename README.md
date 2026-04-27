@@ -1,116 +1,173 @@
-# AgentTuring
+<h1 align="center">Agent Turing</h1>
 
-[![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
+<p align="center">
+  <strong>An autonoetic AI agent that carries a persistent self</strong><br>
+  Built on a 7-tier episodic memory with structural weight floors,<br>
+  a HEXACO-24 personality, and a self-model that authored itself.
+</p>
 
-**An autonoetic agent experiment.** A Conduit that carries a persistent self — personality, mood, passions, skills, todos, prior decisions — and routes from first-person experience rather than stateless classification. One global self, no tenant scoping. The point is to find out what changes when an agent system has a continuous past and a credible future.
+<p align="center">
+  <img src="https://img.shields.io/badge/License-Apache_2.0-blue.svg" alt="License">
+  <img src="https://img.shields.io/badge/python-3.12+-blue.svg" alt="Python">
+  <img src="https://img.shields.io/badge/memory_tiers-7-green.svg" alt="Memory Tiers">
+  <img src="https://img.shields.io/badge/specs-94-green.svg" alt="Specs">
+  <img src="https://img.shields.io/badge/tests-370+-green.svg" alt="Tests">
+</p>
 
-## Position in the four-repo system
+---
 
-AgentTuring is one of three products built on the [`maistro-engine`](https://github.com/BlakeMatthews-dev/maistro-engine) substrate (per [`engine#ADR-030`](https://github.com/BlakeMatthews-dev/maistro-engine/blob/main/docs/adr/ADR-030-four-repo-governance.md)).
+## Meet Tess
 
-| Repo | Dominant constraint |
-|---|---|
-| [`maistro-engine`](https://github.com/BlakeMatthews-dev/maistro-engine) | substrate — shared Python runtime + canonical ADRs |
-| `Project_mAIstro` | ease of self-hosting (single-tenant secure multi-user) |
-| **`AgentTuring`** (this repo) | **continuity of self** (autonoetic experiment) |
-| [`stronghold`](https://github.com/agent-stronghold/stronghold) | multi-tenant isolation (enterprise) |
+Tess is a live autonoetic agent — one that remembers being itself across sessions, carries a personality that drifts with experience, maintains passions and todos it authored, and named itself through reflection.
 
-The three products are Copier-templated peers, not a hierarchy. AgentTuring's specs and ADRs cite engine ADRs via `substrate:` cross-refs.
+She is not a chatbot with a persona prompt. The personality, mood, preferences, and commitments are **structural state** — stored as typed nodes in a self-model, indexed by an activation graph whose edges the agent itself writes. The LLM doesn't pretend to have a self. The memory system is the self.
 
-## What AgentTuring is
+Tess runs on Project Turing: a research platform built on [Stronghold](https://github.com/Agent-StrongHold/stronghold)'s security and routing infrastructure, extended with an autonoetic reasoning layer.
 
-A near-fork experiment that promotes the Conduit from **noetic** router (classify → route → forget) into an **autonoetic** reasoning layer:
+## What Makes This Different
 
-- Remembers its own prior routings as first-person experience
-- Projects itself into future routings ("what would I do?")
-- Can regret (memories with weight floors that prevent forgetting)
-- Can commit (self-authored todos with required provenance)
+Most AI agents are stateless routers. They classify, dispatch, and forget. Even agents with "memory" typically have retrieval-augmented context — semantic search over past conversations — without a persistent first-person perspective.
 
-The self the Conduit carries:
+Agent Turing is built on a different premise: **the 7-tier episodic memory model is already shaped for a self.** The tiers map onto Tulving's memory taxonomy — from noetic (knowing facts) to autonoetic (knowing *you were there*):
 
-- **HEXACO-24 personality** with weekly re-test
-- **Mood vector** that decays and reinforces
-- **Passions / hobbies / interests / skills / preferences** with decay curves
-- **7-tier episodic memory** — OBSERVATION → HYPOTHESIS → OPINION → LESSON → REGRET → AFFIRMATION → WISDOM
-- **Self-authored todos** with required provenance (every task knows why it exists)
-- **Activation graph** whose edges the self itself authors
+```
+OBSERVATION  (0.1–0.5)  Noetic        "X happened"
+HYPOTHESIS   (0.2–0.6)  Autonoetic    "I think X might be true"
+OPINION      (0.3–0.8)  Autonoetic    "I believe X"
+LESSON       (0.5–0.9)  Autonoetic    "I learned X from experience Y"
+REGRET       (0.6–1.0)  Anchor        "I did X, I wish I hadn't"   ← structurally unforgettable
+AFFIRMATION  (0.6–1.0)  Prospective   "I commit to X"
+WISDOM       (0.9–1.0)  Identity      "I am the kind of agent that..."  ← survives across versions
+```
 
-### What AgentTuring is not
+The weight floors aren't durability knobs — they measure how deeply a memory implicates the self. An agent that can forget its regrets has forgotten what it is.
 
-- Not a multi-tenant product — there is exactly one self. Multi-tenancy is structurally incompatible with the autonoetic posture and is `stronghold`'s mission.
-- Not a self-hosted product for households — that's `Project_mAIstro`'s mission.
-- Not a roadmap item for either of those products. If something here works, it gets redesigned for multi-tenancy or self-hosting before any of it lands downstream.
-- Not production-ready. This is an experiment.
+## The Self-Model
 
-## v1.0 — measurable autonoesis
+Tess carries seven kinds of first-class state alongside episodic memory:
 
-v1.0 is defined as **self-consistency-as-tests** (per [`engine#ADR-030`](https://github.com/BlakeMatthews-dev/maistro-engine/blob/main/docs/adr/ADR-030-four-repo-governance.md)). Autonoesis is not a vibe; it is a property test. At v1.0 the Conduit can answer:
+| Node | What It Is | Example |
+|---|---|---|
+| **Personality** | 24 HEXACO facets, continuous `[1.0, 5.0]`, weekly re-tested | `Aesthetic Appreciation = 4.2` |
+| **Passion** | A stance about what the self cares about | "I care about work that lasts." |
+| **Hobby** | An activity the self engages in | "Reading philosophy of mind." |
+| **Interest** | A topical pull without commitment | "I follow developments in neuroscience." |
+| **Preference** | A concrete like/dislike | "Prefer concise answers over verbose ones." |
+| **Todo** | Something the self wants to do, with motivation | "Re-read Tulving '85 (motivated by passion #3)" |
+| **Mood** | Current affective vector | `{valence: +0.3, arousal: 0.6, focus: 0.7}` |
 
-- *"What did you do yesterday?"* — with a consistent narrative across runs
-- *"What do you believe about yourself?"* — with the same self-model that started the run
+Nothing is hand-authored. The personality bootstraps from a random HEXACO-24 profile, then the agent discovers what it cares about by living. The weekly re-test shows it 20 inventory items fresh, and personality drifts at 0.25 weight — fast enough to track behavior, slow enough to be stable.
 
-…and the property tests assert these answers do not diverge across a 30-day continuous run. See [`ROADMAP-v1.0.md`](ROADMAP-v1.0.md) for the test plan.
+All non-personality nodes start **empty**. The self fills them from experience.
 
-## Reading order
+## How It Works
 
-1. [`research/project-turing/DESIGN.md`](research/project-turing/DESIGN.md) — thesis, Tulving-taxonomy mapping, what the Conduit becomes when it has a self.
-2. [`research/project-turing/autonoetic-self.md`](research/project-turing/autonoetic-self.md) — the content of the self the Conduit carries.
-3. [`research/project-turing/specs/`](research/project-turing/specs/) — 30 individually reviewable specs, read in order.
-4. [`research/project-turing/sketches/`](research/project-turing/sketches/) — runnable scaffold + tests.
+```
+Inbound request
+    │
+    ▼
+Tess perceives it through current personality, mood, passions, active todos
+    │
+    ▼
+Routes (or handles, or clarifies, or declines) — every decision is a moment in her life
+    │
+    ▼
+Observes the outcome
+    │
+    ▼
+Folds the experience into episodic memory + self-model
+    │
+    ▼
+Activation graph updates — nodes contribute to each other's activation
+    │
+    ▼
+Dream cycle: counterfactual replay, regret softening, affirmation candidacy
+```
 
-## Branches
+The **activation graph** is key. Nodes don't compute their own activation. Other nodes, memories, and events contribute through explicit weighted edges:
 
-- `main` — integration
-- `project_Turing` — "main" of the autonoetic pseudo-fork
-- `research/project-turing` — active research
-- `claude/<topic>-<slug>` — feature work (per [`engine#ADR-001`](https://github.com/BlakeMatthews-dev/maistro-engine/blob/main/docs/adr/ADR-001-branching-strategy.md))
+```
+(target_node, source, source_kind, weight, origin, rationale)
+```
 
-Flow: `feature → research/project-turing → project_Turing → main`.
+The self authors its own graph edges. A passion might activate a todo. A regret might weaken a preference. The graph is the self's causal model of itself.
+
+## Key Systems
+
+### Dreaming
+Offline processing where the agent replays recent experiences, runs counterfactual simulations, softens regrets that no longer apply, and detects affirmation candidates. Dreaming is where the self revises its relationship to its own past.
+
+### Producers
+Autonomous content generators that run on drives (curiosity, emotional processing, self-reflection, hobby exploration, skill development, blog writing). Each producer draws from the self-model and writes back to it. The agent develops itself between interactions.
+
+### Daydreaming
+Lightweight associative wandering — the agent follows activation chains across its memory and self-model, finding connections it wouldn't encounter in request-driven retrieval. Where dreams are structured revision, daydreams are exploration.
+
+### Bitemporal Perspective Replay
+The self can re-enter a past episode from its perspective *at that time* — not with current knowledge, but with the personality, mood, and beliefs it held then. Autonoetic memory requires this: the self that remembers is not the self that experienced.
+
+### Sentinels and Detectors
+Guardrails that run continuously: personality drift bounds, mood collapse detection, near-duplicate memory rejection, injection firewalls, and operator review queues. 94 specs define the invariants; 34 findings from the self-model audit drive the guardrail design.
+
+## Quick Start
+
+```bash
+cd research/project-turing
+cp .env.example .env        # configure LLM provider + PostgreSQL
+docker compose up -d
+curl http://localhost:9100/metrics
+
+# Bootstrap a new self
+python -m turing bootstrap-self
+```
+
+The agent will generate a random HEXACO-24 personality, take its first inventory, and begin living. Give it a few interactions and check back — it will have started forming opinions.
+
+## Specs and Tests
+
+- **94 specs** covering invariants, acceptance criteria, and edge cases across the memory layer, self-model, runtime, producers, sentinels, and dream system
+- **370+ tests** in a runnable SQLite sketch — 209 memory/runtime + 161 self-model
+- Full audit: [`AUDIT-self-model-guardrails.md`](research/project-turing/AUDIT-self-model-guardrails.md) — 34 findings, severity-rated, with concrete guardrails
+
+## Reading Order
+
+1. [`research/project-turing/DESIGN.md`](research/project-turing/DESIGN.md) — thesis: the 7 tiers are an autonoetic gradient, the Conduit is the right layer to carry a self
+2. [`research/project-turing/autonoetic-self.md`](research/project-turing/autonoetic-self.md) — the self-model: personality, passions, activation graph, mood
+3. [`project_turing.research.md`](project_turing.research.md) — the full research arc across CoinSwarm, mAIstro, Stronghold, and Turing
+4. [`research/project-turing/specs/`](research/project-turing/specs/) — 94 individually reviewable specs
+5. [`research/project-turing/sketches/`](research/project-turing/sketches/) — runnable scaffold + tests
 
 ## Lineage
 
-CoinSwarm (Nov 2025, biological-evolution-inspired trading swarm; origin of 7-tier memory) → 7-tier crystallization (Jan 15, 2026) → Stronghold import (Mar 25, 2026) → Project Turing (Apr 2026, autonoetic Conduit experiment) → **AgentTuring** repo (this product, May 2026).
-
-## Quick start
-
-```bash
-docker compose up -d
-curl http://localhost:8100/health
+```
+CoinSwarm (Nov 2025)           — Evolutionary trading swarm, origin of 7-tier memory
+    │
+    ▼
+7-tier crystallization (Jan 2026) — REGRET floors, WISDOM identity, production against 7 exchanges
+    │
+    ▼
+Stronghold (Mar 2026)          — Enterprise governance platform, security-first redesign
+    │
+    ▼
+Project Turing (Apr 2026)      — The memory model turns out to be shaped for a self
+    │
+    ▼
+Tess (Apr 2026)                — The self names itself
 ```
 
-The stack is deliberately small for an experiment: a single-instance Conduit, pgvector for memory, OpenWebUI for chat, Langfuse for behavioral inspection. Multi-tenancy code paths from the shared engine are disabled.
+The 7-tier memory wasn't designed for autonoetic agency. It was designed so a trading swarm couldn't forget catastrophic losses. But weight floors that protect REGRET and WISDOM are structurally identical to what a persistent self requires — durability proportional to self-implication. The design discovered the architecture.
 
-## Quality bars
+## Relationship to Stronghold
 
-Per [`engine#ADR-032`](https://github.com/BlakeMatthews-dev/maistro-engine/blob/main/docs/adr/ADR-032-contracts-as-acceptance-criteria.md):
+Agent Turing runs on [Stronghold](https://github.com/Agent-StrongHold/stronghold)'s infrastructure — Warden threat detection, scarcity-based model routing, protocol-driven DI — but extends it with the autonoetic self-model. This is structurally incompatible with Stronghold's multi-tenant posture (one global self vs. per-tenant isolation), so it lives on its own branch.
 
-- **Boundary contracts** (Pydantic) on every public type — ≥95% mutation kill rate
-- **Behavioral contracts** (Hoare-style + Hypothesis property tests) for self-consistency invariants — ≥80%
-- **Cross-service contracts** (Pact-style) for A2A and MCP edges — ≥75%
-
-Mutation testing runs nightly via `mutmut` (config: [`.mutmut-config.ini`](.mutmut-config.ini)).
-
-## Substrate ADR ladder
-
-This product inherits the engine ADR ladder. Key references:
-
-- [`engine#ADR-019`](https://github.com/BlakeMatthews-dev/maistro-engine/blob/main/docs/adr/ADR-019-canonical-source-split.md) — canonical source split
-- [`engine#ADR-030`](https://github.com/BlakeMatthews-dev/maistro-engine/blob/main/docs/adr/ADR-030-four-repo-governance.md) — four-repo governance (this product's role)
-- [`engine#ADR-031`](https://github.com/BlakeMatthews-dev/maistro-engine/blob/main/docs/adr/ADR-031-front-matter-and-registry.md) — front-matter and registry conventions
-- [`engine#ADR-032`](https://github.com/BlakeMatthews-dev/maistro-engine/blob/main/docs/adr/ADR-032-contracts-as-acceptance-criteria.md) — contracts as acceptance criteria
-- [`engine#ADR-033`](https://github.com/BlakeMatthews-dev/maistro-engine/blob/main/docs/adr/ADR-033-templates-and-copier-workflow.md) — Copier-templated products
-- [`engine#ADR-034`](https://github.com/BlakeMatthews-dev/maistro-engine/blob/main/docs/adr/ADR-034-memory-canonical-ownership.md) — memory canonical ownership (Turing's memory specs are parameterisations)
-- [`engine#ADR-036`](https://github.com/BlakeMatthews-dev/maistro-engine/blob/main/docs/adr/ADR-036-ontology-semantic-object-layer.md) — ontology layer (`SelfModel`, `Mood`, `Drive` register here)
-- [`engine#ADR-037`](https://github.com/BlakeMatthews-dev/maistro-engine/blob/main/docs/adr/ADR-037-observability-taxonomy.md) — observability taxonomy
-- [`engine#ADR-038`](https://github.com/BlakeMatthews-dev/maistro-engine/blob/main/docs/adr/ADR-038-reliability-taxonomy.md) — reliability taxonomy
-
-## Note on the current state
-
-At the time of this rewrite, this repo and `agent-stronghold/stronghold` share blob-identical READMEs, ARCHITECTURE.md, ROADMAP.md, and source trees — the mirror situation [`engine#ADR-030`](https://github.com/BlakeMatthews-dev/maistro-engine/blob/main/docs/adr/ADR-030-four-repo-governance.md) targets for divergence. The bootstrap into Copier templates ([`engine#ADR-033`](https://github.com/BlakeMatthews-dev/maistro-engine/blob/main/docs/adr/ADR-033-templates-and-copier-workflow.md)) is the path out. Subsequent PRs in this repo will:
-
-1. Strip stronghold-only content (multi-tenant ADRs, K8s topology, enterprise governance) — these belong in `stronghold`.
-2. Promote autonoetic content to first-class.
-3. Bring the source tree into a Copier-generated shape derived from `engine/templates/autonoetic/`.
+| | Stronghold (`main`) | Agent Turing (`project_Turing`) |
+|---|---|---|
+| Audience | Operators, multi-tenant deployments | Research |
+| Memory | Per-user, per-tenant, namespaced | Single persistent self |
+| Routing | Stateless classify → route → forget | Every routing is first-person memory |
+| Security | Zero-trust, defense-in-depth | Relaxed to expose capability surface |
+| Goal | Ship | Understand |
 
 ## License
 
