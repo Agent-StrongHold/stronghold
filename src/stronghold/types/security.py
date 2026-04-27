@@ -403,3 +403,71 @@ class InsufficientScopeError(TokenValidationError):
         )
         self.required = required
         self.provided = provided
+
+
+# --- Outbound MCP client (Emissary REMOTE_PROXY backend) -----------------
+
+
+@dataclass(frozen=True)
+class ServerMetadata:
+    """RFC 9728 Protected Resource Metadata for a remote MCP server.
+
+    ``canonical_uri`` is what the client passes as the RFC 8707 ``resource``
+    parameter and what tokens issued for this server must carry as ``aud``.
+    """
+
+    canonical_uri: str
+    auth_servers: tuple[str, ...]
+    scopes_supported: frozenset[str]
+
+
+class TokenAudiencePassthroughError(Exception):
+    """Caller tried to use a token whose ``aud`` is not the target server.
+
+    Forwarding such a token would be a token-passthrough — explicitly
+    forbidden by the MCP spec (§"Access Token Privilege Restriction").
+    """
+
+
+class RemoteUnauthorizedError(Exception):
+    """Remote server returned 401 with a ``WWW-Authenticate: Bearer …`` hint.
+
+    Callers should refresh the PRM, re-authorise, and retry — never silently
+    repeat the same token.
+    """
+
+    def __init__(self, message: str, resource_metadata: str | None = None) -> None:
+        super().__init__(message)
+        self.resource_metadata = resource_metadata
+
+
+class RemoteScopeChallengeError(Exception):
+    """Remote server returned 403 with ``error="insufficient_scope"``.
+
+    ``required`` carries the scope set the server says is needed.
+    """
+
+    def __init__(self, required: frozenset[str], message: str = "") -> None:
+        super().__init__(message or f"required scopes: {sorted(required)}")
+        self.required = required
+
+
+class RemoteToolError(Exception):
+    """JSON-RPC error returned by the remote tool/server."""
+
+    def __init__(self, code: int, message: str) -> None:
+        super().__init__(f"[{code}] {message}")
+        self.code = code
+        self.message = message
+
+
+# --- LOCAL_HOST invoker --------------------------------------------------
+
+
+class MCPServerNotRunningError(Exception):
+    """LOCAL_HOST tool's deployed pod is not in RUNNING status."""
+
+    def __init__(self, server_name: str, status: str) -> None:
+        super().__init__(f"server {server_name!r} status={status}")
+        self.server_name = server_name
+        self.status = status
