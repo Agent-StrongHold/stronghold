@@ -527,14 +527,13 @@ class SelfRepo:
             """INSERT INTO self_skills
                (node_id, self_id, name, kind, stored_level, decay_rate_per_day,
                 last_practiced_at, created_at, updated_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+               VALUES (?, ?, ?, ?, ?, 0.0, ?, ?, ?)""",
             (
                 s.node_id,
                 s.self_id,
                 s.name,
                 s.kind.value,
                 s.stored_level,
-                s.decay_rate_per_day,
                 _iso(s.last_practiced_at),
                 _iso(s.created_at),
                 _iso(s.updated_at),
@@ -545,7 +544,7 @@ class SelfRepo:
 
     def get_skill(self, node_id: str) -> Skill:
         row = self._conn.execute(
-            "SELECT node_id, self_id, name, kind, stored_level, decay_rate_per_day, "
+            "SELECT node_id, self_id, name, kind, stored_level, "
             "last_practiced_at, created_at, updated_at "
             "FROM self_skills WHERE node_id = ?",
             (node_id,),
@@ -556,7 +555,7 @@ class SelfRepo:
 
     def list_skills(self, self_id: str) -> list[Skill]:
         rows = self._conn.execute(
-            "SELECT node_id, self_id, name, kind, stored_level, decay_rate_per_day, "
+            "SELECT node_id, self_id, name, kind, stored_level, "
             "last_practiced_at, created_at, updated_at "
             "FROM self_skills WHERE self_id = ?",
             (self_id,),
@@ -567,11 +566,10 @@ class SelfRepo:
         if acting_self_id is not None and s.self_id != acting_self_id:
             raise CrossSelfAccess(f"{s.self_id} vs {acting_self_id}")
         self._conn.execute(
-            "UPDATE self_skills SET stored_level = ?, decay_rate_per_day = ?, "
+            "UPDATE self_skills SET stored_level = ?, "
             "last_practiced_at = ?, updated_at = ? WHERE node_id = ?",
             (
                 s.stored_level,
-                s.decay_rate_per_day,
                 _iso(s.last_practiced_at),
                 _iso(datetime.now(UTC)),
                 s.node_id,
@@ -586,10 +584,9 @@ class SelfRepo:
             name=r[2],
             kind=SkillKind(r[3]),
             stored_level=float(r[4]),
-            decay_rate_per_day=float(r[5]),
-            last_practiced_at=_parse_req(r[6]),
-            created_at=_parse_req(r[7]),
-            updated_at=_parse_req(r[8]),
+            last_practiced_at=_parse_req(r[5]),
+            created_at=_parse_req(r[6]),
+            updated_at=_parse_req(r[7]),
         )
 
     # ------------------------------------------------ todos -----------------

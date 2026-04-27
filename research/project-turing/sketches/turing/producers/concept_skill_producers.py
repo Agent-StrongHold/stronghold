@@ -321,7 +321,6 @@ class SkillBuilder:
             name=name,
             kind=skill_kind,
             stored_level=0.1,
-            decay_rate_per_day=0.01,
             last_practiced_at=datetime.now(UTC),
         )
         self._self_repo.insert_skill(skill)
@@ -491,7 +490,7 @@ class SkillExecutor:
             reflection=learned[:500] or reply.strip()[:200],
         )
         skill = self._self_repo.get_skill(skill_id)
-        delta = {"success": 0.02, "partial": 0.01, "fail": -0.01}.get(outcome, 0.0)
+        delta = {"success": 0.02, "partial": 0.01, "fail": 0.0}.get(outcome, 0.0)
         skill.stored_level = max(0.0, min(1.0, skill.stored_level + delta))
         self._self_repo.update_skill(skill)
         mem = EpisodicMemory(
