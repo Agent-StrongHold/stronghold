@@ -259,7 +259,6 @@ class Skill:
     name: str
     kind: SkillKind
     stored_level: float
-    decay_rate_per_day: float
     last_practiced_at: datetime
     created_at: datetime = field(default_factory=_now)
     updated_at: datetime = field(default_factory=_now)
@@ -267,15 +266,11 @@ class Skill:
     def __post_init__(self) -> None:
         if not 0.0 <= self.stored_level <= 1.0:
             raise ValueError(f"stored_level out of range: {self.stored_level}")
-        if self.decay_rate_per_day <= 0.0:
-            raise ValueError(f"decay_rate_per_day must be positive, got {self.decay_rate_per_day}")
 
 
 def current_level(skill: Skill, at: datetime) -> float:
-    """Spec 24 §24.2: `stored_level * exp(-rate * days_since_practice)`, clamped [0, 1]."""
-    days = max(0.0, (at - skill.last_practiced_at).total_seconds() / 86400.0)
-    raw = skill.stored_level * math.exp(-skill.decay_rate_per_day * days)
-    return max(0.0, min(1.0, raw))
+    """The skill's stored level. No decay — agents don't forget."""
+    return skill.stored_level
 
 
 @dataclass
