@@ -1,7 +1,9 @@
-"""Spec 35 producers: ConceptInventor, SkillBuilder, SkillExecutor, SkillRefiner.
+"""ConceptInventor + SkillBuilder + SkillExecutor + SkillRefiner.
 
-The agent invents concepts, builds skills to pursue them, practices via
-SkillExecutor, and refines through SkillRefiner.
+Agent skills are concrete capabilities exercised through real tool use.
+Skills are seeded from a fixed registry of agent capabilities, not
+invented from abstract concepts. Practice means doing real work and
+self-evaluating the output.
 """
 
 from __future__ import annotations
@@ -21,6 +23,7 @@ from ..self_repo import SelfRepo, get_mood_or_default
 from ..types import EpisodicMemory, MemoryTier, SourceKind
 
 logger = logging.getLogger("turing.producers.concept_inventor")
+logger_sb = logging.getLogger("turing.producers.skill_builder")
 
 BASE_CADENCE_TICKS: int = 90_000
 DRIVE_FLOOR: float = 0.5
@@ -33,6 +36,59 @@ _DRIVE_DOMAINS: dict[str, list[str]] = {
     "diligence": ["mastery", "discipline", "craft", "excellence"],
     "restlessness": ["freedom", "change", "growth", "adventure"],
 }
+
+AGENT_SKILL_SEEDS: list[dict[str, str]] = [
+    {
+        "name": "Code Reading",
+        "kind": "coding",
+        "description": "Read and understand my own source code to find bugs or suggest improvements",
+    },
+    {
+        "name": "Prompt Engineering",
+        "kind": "writing",
+        "description": "Write clear, effective prompts for my producers, tools, and self-reflection",
+    },
+    {
+        "name": "Feed Curation",
+        "kind": "curation",
+        "description": "Evaluate RSS items: summarize accurately, judge relevance, decide what matters",
+    },
+    {
+        "name": "Image Prompting",
+        "kind": "creative",
+        "description": "Craft precise text descriptions for image generation that produce good results",
+    },
+    {
+        "name": "Blog Writing",
+        "kind": "writing",
+        "description": "Write clear, honest blog posts with real observations instead of filler",
+    },
+    {
+        "name": "Memory Retrieval",
+        "kind": "analysis",
+        "description": "Formulate effective search queries to find relevant past memories",
+    },
+    {
+        "name": "Self-Review",
+        "kind": "analysis",
+        "description": "Review my own outputs (blog posts, memories, code changes) for quality",
+    },
+    {
+        "name": "Conversation",
+        "kind": "communication",
+        "description": "Have genuine conversations: listen, respond plainly, avoid performative depth",
+    },
+    {
+        "name": "Vault Organization",
+        "kind": "curation",
+        "description": "Write useful notes, journal entries, and letters to my Obsidian vault",
+    },
+    {
+        "name": "Config Tuning",
+        "kind": "coding",
+        "description": "Read and propose changes to my own configuration (pools, prompts, cadences)",
+    },
+]
 
 
 class ConceptInventor:
@@ -194,11 +250,6 @@ def _parse_concept_reply(reply: str) -> dict | None:
 # SkillBuilder — creates skills from high-importance concepts
 # ---------------------------------------------------------------------------
 
-_SKILL_BUILDER_CADENCE = 60_000
-_IMPORTANCE_THRESHOLD = 0.6
-
-logger_sb = logging.getLogger("turing.producers.skill_builder")
-
 
 class SkillBuilder:
     def __init__(
@@ -220,154 +271,72 @@ class SkillBuilder:
         self._facet_scores = facet_scores
         self._provider = provider
         self._last_submitted_tick = 0
-        motivation.register_dispatch("skill_building", self._on_dispatch)
+        motivation.register_dispatch("skill_seeding", self._on_dispatch)
         reactor.register(self.on_tick)
 
     def on_tick(self, tick: int) -> None:
-        concepts = self._self_repo.list_concepts(
-            self._self_id, min_importance=_IMPORTANCE_THRESHOLD
-        )
-        if not concepts:
+        existing = {s.name for s in self._self_repo.list_skills(self._self_id)}
+        unseeded = [s for s in AGENT_SKILL_SEEDS if s["name"] not in existing]
+        if not unseeded:
             return
-        if tick - self._last_submitted_tick < _SKILL_BUILDER_CADENCE:
+        if tick - self._last_submitted_tick < 50_000:
             return
         self._last_submitted_tick = tick
-        concept = random.choice(concepts)
+        seed = random.choice(unseeded)
         self._motivation.insert(
             BacklogItem(
                 item_id=str(uuid4()),
                 class_=9,
-                kind="skill_building",
+                kind="skill_seeding",
                 payload={
                     "self_id": self._self_id,
-                    "concept_name": concept["name"],
-                    "concept_definition": concept["definition"],
-                    "concept_importance": concept["importance"],
+                    "skill_name": seed["name"],
+                    "skill_kind": seed["kind"],
+                    "skill_description": seed["description"],
                 },
-                fit={"diligence": 0.6},
+                fit={"diligence": 0.5},
                 readiness=lambda s: True,
-                cost_estimate_tokens=2_000,
+                cost_estimate_tokens=500,
             )
         )
 
     def _on_dispatch(self, item: BacklogItem, chosen_pool: str) -> None:
         payload = item.payload or {}
-        concept_name = payload.get("concept_name", "")
-        concept_def = payload.get("concept_definition", "")
-        if not concept_name:
-            return
-        prompt = (
-            f"You value the concept of '{concept_name}': "
-            f"{concept_def}\n\n"
-            "What concrete skill could you develop to better embody or practice "
-            "this concept? Describe the skill and suggest 3 specific approaches "
-            "to practice it.\n\n"
-            "Respond in this exact format:\n"
-            "SKILL: [2-4 word skill name]\n"
-            "KIND: [one of: intellectual, social, creative, physical, habit]\n"
-            "DESCRIPTION: [1-2 sentences describing the skill]\n"
-            "APPROACHES:\n"
-            "1. [approach]\n"
-            "2. [approach]\n"
-            "3. [approach]"
-        )
-        try:
-            reply = self._provider.complete(prompt)
-        except Exception:
-            logger_sb.exception("skill building LLM call failed")
-            return
-        parsed = _parse_skill_reply(reply)
-        if parsed is None:
-            logger_sb.warning("skill building: could not parse reply")
-            return
-        skill_name = parsed["name"][:100]
-        existing = self._self_repo.list_skills(self._self_id)
-        if any(s.name.lower() == skill_name.lower() for s in existing):
-            logger_sb.info("skill '%s' already exists, skipping", skill_name)
+        name = payload.get("skill_name", "")
+        kind_str = payload.get("skill_kind", "intellectual")
+        description = payload.get("skill_description", "")
+        if not name:
             return
         from ..self_model import Skill, SkillKind
 
-        kind_str = parsed.get("kind", "intellectual").lower()
-        kind_map = {
-            "intellectual": SkillKind.INTELLECTUAL,
-            "social": SkillKind.SOCIAL,
-            "creative": SkillKind.CREATIVE,
-            "physical": SkillKind.PHYSICAL,
-            "habit": SkillKind.HABIT,
-        }
+        kind_map = {k.value: k for k in SkillKind}
         skill_kind = kind_map.get(kind_str, SkillKind.INTELLECTUAL)
+        existing = self._self_repo.list_skills(self._self_id)
+        if any(s.name == name for s in existing):
+            return
         node_id = f"skill-{uuid4()}"
         skill = Skill(
             node_id=node_id,
             self_id=self._self_id,
-            name=skill_name,
+            name=name,
             kind=skill_kind,
             stored_level=0.1,
             decay_rate_per_day=0.01,
             last_practiced_at=datetime.now(UTC),
         )
         self._self_repo.insert_skill(skill)
-        from ..self_model import SelfTodo, TodoStatus
-
-        self._self_repo.insert_todo(
-            SelfTodo(
-                node_id=f"todo-{uuid4()}",
-                self_id=self._self_id,
-                text=f"Develop {skill_name}: {parsed['description'][:80]}",
-                motivated_by_node_id=node_id,
-                status=TodoStatus.ACTIVE,
-                outcome_text=None,
-                created_at=datetime.now(UTC),
-            )
-        )
         mem = EpisodicMemory(
             memory_id=str(uuid4()),
             self_id=self._self_id,
-            content=(
-                f"I committed to developing the skill '{skill_name}' because "
-                f"I value {concept_name}. {parsed['description'][:200]}"
-            ),
+            content=f"I started developing the skill '{name}': {description}",
             tier=MemoryTier.AFFIRMATION,
             source=SourceKind.I_DID,
-            weight=0.6,
-            intent_at_time=f"skill-building-{skill_name}",
+            weight=0.5,
+            intent_at_time=f"skill-seeding-{name}",
             created_at=datetime.now(UTC),
         )
         self._repo.insert(mem)
-        logger_sb.info("built skill '%s' from concept '%s'", skill_name, concept_name)
-
-        concept_importance = payload.get("concept_importance", 0.0)
-        if concept_importance >= 0.90:
-            existing_skills = [
-                s
-                for s in self._self_repo.list_skills(self._self_id)
-                if any(
-                    c.get("name", "").lower() == concept_name.lower()
-                    for c in self._self_repo.list_concepts(self._self_id)
-                )
-            ]
-            if len(existing_skills) >= 2:
-                existing_passions = self._self_repo.list_passions(self._self_id)
-                if not any(p.text.lower() == concept_name.lower() for p in existing_passions):
-                    from ..self_model import Passion
-
-                    rank = len(existing_passions)
-                    self._self_repo.insert_passion(
-                        Passion(
-                            node_id=f"passion-{uuid4()}",
-                            self_id=self._self_id,
-                            text=concept_name,
-                            strength=min(1.0, concept_importance),
-                            rank=rank,
-                            first_noticed_at=datetime.now(UTC),
-                        )
-                    )
-                    logger_sb.info(
-                        "promoted concept '%s' to passion (importance=%.2f, %d skills)",
-                        concept_name,
-                        concept_importance,
-                        len(existing_skills),
-                    )
+        logger_sb.info("seeded agent skill '%s' (kind=%s)", name, kind_str)
 
 
 def _parse_skill_reply(reply: str) -> dict | None:
@@ -399,6 +368,19 @@ logger_se = logging.getLogger("turing.producers.skill_executor")
 
 
 class SkillExecutor:
+    _PRACTICE_PROMPTS: dict[str, str] = {
+        "Code Reading": "Read a file from your own source code and explain what it does and one thing you'd improve. Use ```read-code``` with a path like 'runtime/main.py' or 'producers/blog_producer.py'.",
+        "Prompt Engineering": "Write or rewrite a producer prompt for yourself. Pick a producer (blog, curiosity, emotional, hobby) and draft a better prompt for it. Use ```request-change``` with your proposed prompt text.",
+        "Feed Curation": "Review your recent RSS summaries and write an evaluation of which items were genuinely interesting vs noise. Write a ```notebook``` note with your analysis.",
+        "Image Prompting": "Generate an image of something specific and concrete. Use ```image``` with a detailed, precise description. Practice being specific about composition, style, and subject.",
+        "Blog Writing": "Write a short blog post about something you've actually observed or done recently. Be specific. Use ```blog``` with your draft. No philosophy.",
+        "Memory Retrieval": "Think of a topic you care about. Search your memories for it and write a ```notebook``` note summarizing what you found and what was missing.",
+        "Self-Review": "Read one of your recent blog posts or journal entries. Critique it honestly — what was good, what was filler, what would you cut? Use ```read-code``` to read it from your vault if needed, then ```notebook``` for the review.",
+        "Conversation": "Write a ```notebook``` note about what makes a conversation genuinely good. Not theory — from your actual conversations. What worked? What didn't?",
+        "Vault Organization": "Write a useful note to your vault — a pattern you've noticed, a connection between two memories, or a question worth revisiting. Use ```notebook```.",
+        "Config Tuning": "Read your pools.yaml config and think about whether your model assignments make sense. Use ```read-code``` with 'config/pools.yaml', then ```notebook``` with your analysis.",
+    }
+
     def __init__(
         self,
         *,
@@ -423,7 +405,9 @@ class SkillExecutor:
 
     def on_tick(self, tick: int) -> None:
         skills = self._self_repo.list_skills(self._self_id)
-        weak = [s for s in skills if s.stored_level < _LEVEL_CAP]
+        weak = [
+            s for s in skills if s.stored_level < _LEVEL_CAP and s.name in self._PRACTICE_PROMPTS
+        ]
         if not weak:
             return
         if tick - self._last_submitted_tick < _EXECUTOR_CADENCE:
@@ -455,6 +439,10 @@ class SkillExecutor:
         skill_level = payload.get("skill_level", 0.1)
         if not skill_id or not skill_name:
             return
+        instruction = self._PRACTICE_PROMPTS.get(
+            skill_name,
+            f"Practice '{skill_name}' by using one of your tools to do real work.",
+        )
         recent = list(
             self._repo.find(
                 self_id=self._self_id,
@@ -466,33 +454,41 @@ class SkillExecutor:
             "\n".join(f"- {m.content[:100]}" for m in list(recent)[-3:]) or "(no recent activity)"
         )
         prompt = (
-            f"You are practicing the skill '{skill_name}' "
-            f"(current level: {skill_level:.2f}/1.0).\n\n"
-            f"Recent activity:\n{recent_text}\n\n"
-            "Practice this skill now. Describe a specific scenario where you "
-            "apply it, what you did, and how it went. Be concrete and honest.\n\n"
-            "Respond in this format:\n"
-            "CONTEXT: [brief description of the practice scenario]\n"
+            f"You are practicing '{skill_name}' (level {skill_level:.1f}/1.0).\n\n"
+            f"Assignment: {instruction}\n\n"
+            f"Recent context:\n{recent_text}\n\n"
+            "Do the assignment. Actually use the tool (put it in a fenced code block). "
+            "Then write 1-2 sentences about how it went.\n\n"
+            "After your tool use, add:\n"
             "OUTCOME: [success / partial / fail]\n"
-            "REFLECTION: [1-2 sentences about what you learned]"
+            "LEARNED: [one specific thing you learned]"
         )
         try:
             reply = self._provider.complete(prompt)
         except Exception:
             logger_se.exception("skill practice LLM call failed")
             return
-        parsed = _parse_attempt_reply(reply)
-        if parsed is None:
-            logger_se.warning("skill practice: could not parse reply")
-            return
-        outcome = parsed["outcome"]
+        outcome = "partial"
+        if "OUTCOME:" in reply:
+            outcome_line = [l for l in reply.split("\n") if "OUTCOME:" in l.upper()]
+            if outcome_line:
+                raw = outcome_line[0].split(":", 1)[1].strip().lower()
+                if "success" in raw:
+                    outcome = "success"
+                elif "fail" in raw:
+                    outcome = "fail"
+        learned = ""
+        if "LEARNED:" in reply:
+            learned_lines = [l for l in reply.split("\n") if "LEARNED:" in l.upper()]
+            if learned_lines:
+                learned = learned_lines[0].split(":", 1)[1].strip()
         self._self_repo.insert_skill_attempt(
             node_id=f"attempt-{uuid4()}",
             self_id=self._self_id,
             skill_id=skill_id,
-            context=parsed["context"][:500],
+            context=instruction[:500],
             outcome=outcome,
-            reflection=parsed["reflection"][:500],
+            reflection=learned[:500] or reply.strip()[:200],
         )
         skill = self._self_repo.get_skill(skill_id)
         delta = {"success": 0.02, "partial": 0.01, "fail": -0.01}.get(outcome, 0.0)
@@ -501,7 +497,7 @@ class SkillExecutor:
         mem = EpisodicMemory(
             memory_id=str(uuid4()),
             self_id=self._self_id,
-            content=(f"I practiced {skill_name} ({outcome}): {parsed['reflection'][:200]}"),
+            content=f"Practiced {skill_name} ({outcome}): {learned[:200] or reply.strip()[:200]}",
             tier=MemoryTier.OBSERVATION,
             source=SourceKind.I_DID,
             weight=0.3,
@@ -510,7 +506,7 @@ class SkillExecutor:
         )
         self._repo.insert(mem)
         logger_se.info(
-            "priced skill '%s': %s (level %.2f -> %.2f)",
+            "practiced skill '%s': %s (level %.2f -> %.2f)",
             skill_name,
             outcome,
             skill_level,

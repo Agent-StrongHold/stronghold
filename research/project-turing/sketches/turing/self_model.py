@@ -47,6 +47,11 @@ class SkillKind(StrEnum):
     HABIT = "habit"
     SOCIAL = "social"
     CREATIVE = "creative"
+    CODING = "coding"
+    WRITING = "writing"
+    ANALYSIS = "analysis"
+    CURATION = "curation"
+    COMMUNICATION = "communication"
 
 
 class PreferenceKind(StrEnum):
