@@ -165,11 +165,7 @@ def _strict_str_tuple(value: Any, *, field: str, agent_name: str) -> tuple[str, 
     if value is None:
         return ()
     if isinstance(value, str):
-        msg = (
-            f"agent '{agent_name}': field '{field}' is a string ({value!r}); "
-            f"expected a YAML list of strings (e.g. `{field}: [a, b]`)"
-        )
-        raise ConfigError(msg)
+        return (value,)
     if not isinstance(value, (list, tuple)):
         msg = (
             f"agent '{agent_name}': field '{field}' has type "

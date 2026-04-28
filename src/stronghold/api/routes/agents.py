@@ -436,14 +436,11 @@ async def import_agent_from_url(request: Request) -> JSONResponse:
         parts = [p for p in path.split("/") if p]
         if len(parts) < 4 or parts[2] != "zip":
             raise HTTPException(status_code=400, detail="Unsupported codeload URL path")
-    elif host == "raw.githubusercontent.com":
-        # Raw content host must point to a .zip artifact.
-        if not path.lower().endswith(".zip"):
-            raise HTTPException(status_code=400, detail="raw.githubusercontent.com URL must end with .zip")
-    elif host == "objects.githubusercontent.com":
-        # GitHub objects host is used for release artifacts; require .zip.
-        if not path.lower().endswith(".zip"):
-            raise HTTPException(status_code=400, detail="objects.githubusercontent.com URL must end with .zip")
+    elif host in (
+        "raw.githubusercontent.com",
+        "objects.githubusercontent.com",
+    ) and not path.lower().endswith(".zip"):
+        raise HTTPException(status_code=400, detail=f"{host} URL must end with .zip")
 
     # Resolve hostname and check all resolved IPs against private/reserved ranges.
     # Covers IPv4 RFC1918, loopback, link-local (169.254.x.x), IPv6 mapped
