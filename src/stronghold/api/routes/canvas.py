@@ -165,12 +165,24 @@ def make_canvas_router(
             validate_canvas_dimensions(width, height)
         except ValueError as exc:
             # Surface field-level 422 with NOT_DIVISIBLE_BY_8 or range errors
-            msg = str(exc)
-            code = "NOT_DIVISIBLE_BY_8" if "divisible" in msg else "OUT_OF_RANGE"
-            field = "width" if "width" in msg else "height"
+            raw_msg = str(exc)
+            code = "NOT_DIVISIBLE_BY_8" if "divisible" in raw_msg else "OUT_OF_RANGE"
+            field = "width" if "width" in raw_msg else "height"
+            safe_msg = (
+                "dimension must be divisible by 8"
+                if code == "NOT_DIVISIBLE_BY_8"
+                else "dimension is out of allowed range"
+            )
+            logger.warning(
+                "Canvas dimension validation failed for org_id=%s field=%s code=%s",
+                auth.org_id,
+                field,
+                code,
+                exc_info=exc,
+            )
             return JSONResponse(
                 status_code=422,
-                content={"detail": [{"field": field, "code": code, "msg": msg}]},
+                content={"detail": [{"field": field, "code": code, "msg": safe_msg}]},
             )
 
         name = str(body.get("name", "Untitled Canvas")).strip()
