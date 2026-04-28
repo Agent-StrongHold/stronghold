@@ -322,7 +322,6 @@ async def execute_canvas(  # noqa: C901, PLR0912
     source_image: str = "",
     region: str = "full",
     strength: float = 0.6,
-    reference_images: list[str] | None = None,
     # composite params
     layers: list[dict[str, Any]] | None = None,
     canvas_width: int = 1024,
