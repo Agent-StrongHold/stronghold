@@ -14,7 +14,6 @@ from __future__ import annotations
 import base64
 import io
 import logging
-import math
 import uuid
 from dataclasses import dataclass, field
 from typing import Any
@@ -66,7 +65,7 @@ class Canvas:
 
     def sorted_layers(self) -> list[Layer]:
         """Return layers sorted by z_index (back-to-front)."""
-        return sorted(self.layers.values(), key=lambda l: l.z_index)
+        return sorted(self.layers.values(), key=lambda layer: layer.z_index)
 
 
 # ---------------------------------------------------------------------------
@@ -268,7 +267,7 @@ def _render_text(
 
         font_path = font_map.get(font_name, font_name)
         font = ImageFont.truetype(font_path, font_size)
-    except (OSError, IOError):
+    except OSError:
         font = ImageFont.load_default()
 
     # Calculate text bounding box for alignment
@@ -340,9 +339,14 @@ async def execute_canvas(  # noqa: C901, PLR0912
         # Build prompt with isolation instructions per layer type
         full_prompt = prompt
         if layer_type == "background":
-            full_prompt = f"{prompt}. Full environment scene, no people or characters, no objects in foreground."
+            full_prompt = (
+                f"{prompt}. Full environment scene, no people or "
+                "characters, no objects in foreground."
+            )
         elif layer_type in ("character", "object"):
-            full_prompt = f"{prompt}. Isolated on pure white background, clean edges, full body visible."
+            full_prompt = (
+                f"{prompt}. Isolated on pure white background, clean edges, full body visible."
+            )
 
         if lighting:
             full_prompt += f" Lighting: {lighting}."
@@ -375,14 +379,16 @@ async def execute_canvas(  # noqa: C901, PLR0912
                 z_index=0 if layer_type == "background" else 10 + len(canvas.layers),
             )
             canvas.add_layer(layer)
-            created_layers.append({
-                "layer_id": layer_id,
-                "name": layer.name,
-                "width": img.width,
-                "height": img.height,
-                "z_index": layer.z_index,
-                "image_b64": base64.b64encode(img_bytes).decode(),
-            })
+            created_layers.append(
+                {
+                    "layer_id": layer_id,
+                    "name": layer.name,
+                    "width": img.width,
+                    "height": img.height,
+                    "z_index": layer.z_index,
+                    "image_b64": base64.b64encode(img_bytes).decode(),
+                }
+            )
 
         return {
             "action": "generate",
@@ -442,7 +448,7 @@ async def execute_canvas(  # noqa: C901, PLR0912
         views = ["front view", "side view (left)", "back view", "three-quarter view"]
         all_images: list[dict[str, Any]] = []
 
-        for i, view in enumerate(views):
+        for _, view in enumerate(views):
             view_images = await _generate_image(
                 f"{prompt}. {view}, character reference sheet, clean isolated on white background.",
                 tier="draft",
@@ -450,10 +456,12 @@ async def execute_canvas(  # noqa: C901, PLR0912
                 litellm_url=litellm_url,
                 litellm_key=litellm_key,
             )
-            all_images.append({
-                "view": view,
-                "image_b64": base64.b64encode(view_images[0]).decode(),
-            })
+            all_images.append(
+                {
+                    "view": view,
+                    "image_b64": base64.b64encode(view_images[0]).decode(),
+                }
+            )
 
         return {
             "action": "reference",
@@ -488,7 +496,7 @@ async def execute_canvas(  # noqa: C901, PLR0912
             "canvas_id": canvas.id,
             "width": canvas.width,
             "height": canvas.height,
-            "layer_count": len([l for l in canvas.layers.values() if l.visible]),
+            "layer_count": len([ly for ly in canvas.layers.values() if ly.visible]),
             "image_b64": base64.b64encode(result_bytes).decode(),
         }
 
@@ -565,7 +573,7 @@ async def execute_canvas(  # noqa: C901, PLR0912
         }
 
     if action == "transform":
-        layer_id_param = (layers[0].get("layer_id", "") if layers else "")
+        layer_id_param = layers[0].get("layer_id", "") if layers else ""
         transform_spec = layers[0] if layers else {}
         result = transform_layer(
             session_id,
@@ -582,12 +590,12 @@ async def execute_canvas(  # noqa: C901, PLR0912
         return {"action": "transform", **result}
 
     if action == "delete":
-        layer_id_param = (layers[0].get("layer_id", "") if layers else "")
+        layer_id_param = layers[0].get("layer_id", "") if layers else ""
         ok = delete_layer(session_id, layer_id_param)
         return {"action": "delete", "layer_id": layer_id_param, "deleted": ok}
 
     if action == "duplicate":
-        layer_id_param = (layers[0].get("layer_id", "") if layers else "")
+        layer_id_param = layers[0].get("layer_id", "") if layers else ""
         result = duplicate_layer(session_id, layer_id_param)
         if result is None:
             return {"error": f"Layer not found: {layer_id_param}"}
@@ -670,7 +678,8 @@ async def save_character_reference(
     async with db_pool.acquire() as conn:
         await conn.execute(
             """
-            INSERT INTO character_references (id, name, description, tags, user_id, tenant_id, hero_image, view_images)
+            INSERT INTO character_references
+            (id, name, description, tags, user_id, tenant_id, hero_image, view_images)
             VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
             ON CONFLICT (user_id, name) DO UPDATE SET
                 description = EXCLUDED.description,
@@ -679,7 +688,13 @@ async def save_character_reference(
                 view_images = EXCLUDED.view_images,
                 created_at = NOW()
             """,
-            ref_id, name, description, tags, user_id, tenant_id, hero_image,
+            ref_id,
+            name,
+            description,
+            tags,
+            user_id,
+            tenant_id,
+            hero_image,
             __import__("json").dumps(views_json),
         )
 
@@ -715,7 +730,9 @@ async def load_character_reference(
             ORDER BY (user_id = $2) DESC
             LIMIT 1
             """,
-            name, user_id, tenant_id,
+            name,
+            user_id,
+            tenant_id,
         )
         if row is None:
             return None
@@ -744,12 +761,14 @@ async def list_character_references(
             if ref.user_id == user_id or ref.tenant_id == tenant_id:
                 if tags and not set(tags).intersection(ref.tags):
                     continue
-                results.append({
-                    "name": ref.name,
-                    "description": ref.description,
-                    "tags": ref.tags,
-                    "user_id": ref.user_id,
-                })
+                results.append(
+                    {
+                        "name": ref.name,
+                        "description": ref.description,
+                        "tags": ref.tags,
+                        "user_id": ref.user_id,
+                    }
+                )
         return results
 
     async with db_pool.acquire() as conn:
@@ -761,7 +780,9 @@ async def list_character_references(
                 WHERE (user_id = $1 OR tenant_id = $2) AND tags && $3
                 ORDER BY created_at DESC
                 """,
-                user_id, tenant_id, tags,
+                user_id,
+                tenant_id,
+                tags,
             )
         else:
             rows = await conn.fetch(
@@ -771,7 +792,8 @@ async def list_character_references(
                 WHERE user_id = $1 OR tenant_id = $2
                 ORDER BY created_at DESC
                 """,
-                user_id, tenant_id,
+                user_id,
+                tenant_id,
             )
 
     return [
@@ -802,19 +824,19 @@ def list_layers(session_id: str) -> list[dict[str, Any]]:
         return []
     return [
         {
-            "layer_id": l.id,
-            "name": l.name,
-            "type": l.layer_type,
-            "x": l.x,
-            "y": l.y,
-            "scale": l.scale,
-            "rotation": l.rotation,
-            "z_index": l.z_index,
-            "width": l.width,
-            "height": l.height,
-            "visible": l.visible,
+            "layer_id": ly.id,
+            "name": ly.name,
+            "type": ly.layer_type,
+            "x": ly.x,
+            "y": ly.y,
+            "scale": ly.scale,
+            "rotation": ly.rotation,
+            "z_index": ly.z_index,
+            "width": ly.width,
+            "height": ly.height,
+            "visible": ly.visible,
         }
-        for l in canvas.sorted_layers()
+        for ly in canvas.sorted_layers()
     ]
 
 
