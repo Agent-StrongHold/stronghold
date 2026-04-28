@@ -17,6 +17,7 @@ from stronghold.events import Reactor
 from stronghold.memory.learnings.extractor import ToolCorrectionExtractor
 from stronghold.memory.learnings.store import InMemoryLearningStore
 from stronghold.memory.outcomes import InMemoryOutcomeStore
+from stronghold.playbooks.registry import InMemoryPlaybookRegistry
 from stronghold.prompts.store import InMemoryPromptManager
 from stronghold.quota.tracker import InMemoryQuotaTracker
 from stronghold.router.selector import RouterEngine
@@ -27,10 +28,12 @@ from stronghold.security.rate_limiter import InMemoryRateLimiter
 from stronghold.security.sentinel.audit import InMemoryAuditLog
 from stronghold.security.sentinel.policy import Sentinel
 from stronghold.security.strikes import InMemoryStrikeTracker
+from stronghold.security.tool_policy import ToolPolicyProtocol, create_tool_policy
 from stronghold.security.warden.detector import Warden
 from stronghold.sessions.store import InMemorySessionStore
 from stronghold.tools.executor import ToolDispatcher
 from stronghold.tools.registry import InMemoryToolRegistry
+from stronghold.tracing.noop import NoopTracingBackend
 from stronghold.tracing.phoenix_backend import PhoenixTracingBackend
 from stronghold.types.auth import PermissionTable
 from stronghold.types.errors import ConfigError
@@ -40,6 +43,7 @@ if TYPE_CHECKING:
     from stronghold.protocols.memory import AuditLog, LearningStore, OutcomeStore, SessionStore
     from stronghold.protocols.prompts import PromptManager
     from stronghold.protocols.quota import QuotaTracker
+    from stronghold.protocols.tracing import TracingBackend
     from stronghold.types.config import StrongholdConfig
 
 logger = logging.getLogger("stronghold.container")
@@ -64,12 +68,19 @@ class Container:
     warden: Warden
     gate: Gate
     sentinel: Sentinel
-    tracer: PhoenixTracingBackend
+    tracer: TracingBackend
     context_builder: ContextBuilder
     intent_registry: IntentRegistry
     llm: LiteLLMClient
     tool_registry: InMemoryToolRegistry
     tool_dispatcher: ToolDispatcher
+    playbook_registry: InMemoryPlaybookRegistry = field(default_factory=InMemoryPlaybookRegistry)
+    tool_policy: ToolPolicyProtocol | None = None
+    tool_catalog: Any = None
+    skill_catalog: Any = None
+    resource_catalog: Any = None
+    vault_client: Any = None
+    mason_queue: Any = None
     agent_store: InMemoryAgentStore = field(default_factory=lambda: InMemoryAgentStore({}))
     rate_limiter: Any = field(default_factory=InMemoryRateLimiter)  # RateLimiter protocol
     reactor: Reactor = field(default_factory=Reactor)
@@ -78,6 +89,7 @@ class Container:
     coin_ledger: Any = None
     tournament: Any = None
     canary_manager: Any = None
+    orchestrator: Any = None  # OrchestratorEngine, set in app.py lifespan
     learning_approval_gate: Any = None
     learning_promoter: Any = None
     strike_tracker: Any = None  # InMemoryStrikeTracker
@@ -214,6 +226,9 @@ async def create_container(config: StrongholdConfig) -> Container:
         )
         raise ConfigError(msg)
 
+    if not config.jwt_secret:
+        config.jwt_secret = config.router_api_key
+
     # ── Auth ──
     auth_provider, permission_table = _wire_auth(config)
     learning_extractor = ToolCorrectionExtractor()
@@ -303,14 +318,37 @@ async def create_container(config: StrongholdConfig) -> Container:
         permission_table=permission_table,
         audit_log=audit_log,
     )
-    phoenix_endpoint = config.phoenix_endpoint or "http://phoenix:6006"
-    tracer = PhoenixTracingBackend(endpoint=phoenix_endpoint)
+    if config.phoenix_endpoint:
+        tracer: TracingBackend = PhoenixTracingBackend(endpoint=config.phoenix_endpoint)
+    else:
+        tracer: TracingBackend = NoopTracingBackend()
     context_builder = ContextBuilder()
     intent_registry = IntentRegistry()
 
     # Create tool registry + dispatcher
     tool_registry = InMemoryToolRegistry()
     tool_dispatcher = ToolDispatcher(tool_registry)
+
+    # Agent-oriented playbook registry (peer of tool_registry).
+    # Empty at startup; playbooks register themselves from phase D onward.
+    playbook_registry = InMemoryPlaybookRegistry()
+
+    # Tool policy (Casbin-based, ADR-K8S-019)
+    try:
+        tool_policy: ToolPolicyProtocol | None = create_tool_policy()
+        logger.info("Tool policy loaded")
+    except Exception:
+        logger.warning("Tool policy config not found, running without policy enforcement")
+        tool_policy = None
+
+    # Catalogs (ADR-K8S-021/022/023)
+    from stronghold.resources.catalog import ResourceCatalog  # noqa: PLC0415
+    from stronghold.skills.catalog import SkillCatalog  # noqa: PLC0415
+    from stronghold.tools.catalog import ToolCatalog  # noqa: PLC0415
+
+    tool_catalog = ToolCatalog()
+    skill_catalog = SkillCatalog()
+    resource_catalog = ResourceCatalog()
 
     # Register all Mason tools
     from stronghold.tools.file_ops import FILE_OPS_TOOL_DEF, FileOpsExecutor  # noqa: PLC0415
@@ -377,7 +415,14 @@ async def create_container(config: StrongholdConfig) -> Container:
     # Tool executor: use registered tools first, fall back to HTTP MCP
     dev_tools = HTTPToolExecutor(base_url="http://dev-tools-mcp:8300")
 
-    async def _tool_exec(name: str, args: dict) -> str:  # type: ignore[type-arg]
+    async def _tool_exec(name: str, args: dict, *, auth: Any = None) -> str:  # type: ignore[type-arg]
+        # Policy gate (ADR-K8S-019): check before any execution
+        if tool_policy is not None and auth is not None:
+            user_id = getattr(auth, "user_id", "")
+            org_id = getattr(auth, "org_id", "")
+            if not tool_policy.check_tool_call(user_id, org_id, name):
+                raise PermissionError(f"Tool call denied by policy: {name}")
+
         # Try registered native tools first
         if name in tool_registry:
             return await tool_dispatcher.execute(name, args)
@@ -465,6 +510,11 @@ async def create_container(config: StrongholdConfig) -> Container:
         llm=llm,
         tool_registry=tool_registry,
         tool_dispatcher=tool_dispatcher,
+        playbook_registry=playbook_registry,
+        tool_policy=tool_policy,
+        tool_catalog=tool_catalog,
+        skill_catalog=skill_catalog,
+        resource_catalog=resource_catalog,
         agent_store=InMemoryAgentStore(agents, prompt_manager),
         rate_limiter=rate_limiter,
         reactor=reactor,

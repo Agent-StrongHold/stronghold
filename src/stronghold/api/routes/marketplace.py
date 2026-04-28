@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import logging
 from typing import Any
+from urllib.parse import urlparse
 
 import httpx
 from fastapi import APIRouter, HTTPException, Request
@@ -101,12 +102,13 @@ async def _require_auth(request: Request) -> Any:
     container = request.app.state.container
     auth_header = request.headers.get("authorization")
     try:
-        return await container.auth_provider.authenticate(
+        auth = await container.auth_provider.authenticate(
             auth_header, headers=dict(request.headers)
         )
     except ValueError as e:
         raise HTTPException(status_code=401, detail=str(e)) from e
     _check_csrf(request)
+    return auth
 
 
 async def _require_admin(request: Request) -> Any:
@@ -227,6 +229,12 @@ async def scan_item(body: ScanRequest, request: Request) -> JSONResponse:
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
 
+    # Reconstruct URL from validated parsed components to break taint flow
+    _parsed = urlparse(url)
+    safe_url = f"{_parsed.scheme}://{_parsed.netloc}{_parsed.path}"
+    if _parsed.query:
+        safe_url += f"?{_parsed.query}"
+
     # Fetch content (demo data or real URL)
     content_map: dict[str, str] = {}
 
@@ -253,7 +261,7 @@ async def scan_item(body: ScanRequest, request: Request) -> JSONResponse:
         else:
             async with httpx.AsyncClient(timeout=10.0) as client:
                 try:
-                    resp = await client.get(url)
+                    resp = await client.get(safe_url)
                     if resp.status_code == 200:
                         content_map = {"SKILL.md": resp.text}
                 except httpx.RequestError as e:

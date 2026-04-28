@@ -55,15 +55,20 @@ def estimate_complexity(text: str, task_type: str) -> str:
 
 
 def infer_priority(user_text: str) -> str:
-    """Infer priority from urgency keywords."""
+    """Infer priority tier from urgency keywords.
+
+    Returns a 6-tier priority value per ADR-K8S-014:
+      P0 = chat-critical, P1 = chat-tools, P2 = user-missions,
+      P3 = backend-support, P4 = quartermaster, P5 = builders.
+    """
     text = user_text.lower()
     if any(s in text for s in ["urgent", "critical", "emergency", "asap", "broken", "down"]):
-        return "critical"
+        return "P0"
     if any(s in text for s in ["important", "priority", "deadline", "client", "demo"]):
-        return "high"
+        return "P1"
     if any(s in text for s in ["just curious", "when you get a chance", "no rush", "fyi"]):
-        return "low"
-    return "normal"
+        return "P4"
+    return "P2"
 
 
 def automation_min_tier(user_text: str, base_min_tier: str) -> str:
@@ -79,3 +84,22 @@ def automation_min_tier(user_text: str, base_min_tier: str) -> str:
     if TIER_ORDER.get(base_min_tier, 0) < TIER_ORDER["medium"]:
         return "medium"
     return base_min_tier
+
+
+_PLANNER_TIER_MAP: dict[str, str] = {
+    "simple": "medium",
+    "moderate": "large",
+    "complex": "frontier",
+}
+
+
+def planner_model_tier(complexity: str, *, override: str | None = None) -> str:
+    """Select planner model tier based on issue complexity.
+
+    Simple issues route to medium (Sonnet-class) to save Opus budget.
+    Moderate/complex issues route to large/frontier (Opus-class) where
+    planning quality affects outcomes.
+    """
+    if override is not None:
+        return override
+    return _PLANNER_TIER_MAP.get(complexity, "large")

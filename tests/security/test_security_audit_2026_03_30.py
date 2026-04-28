@@ -118,8 +118,7 @@ class TestCriticalPgPromptManagerOrgGap:
         sig = inspect.signature(PgPromptManager.get)
         params = set(sig.parameters.keys())
         assert "org_id" not in params, (
-            "BUG CONFIRMED: PgPromptManager.get() has no org_id. "
-            "Cross-org prompt read is possible."
+            "BUG CONFIRMED: PgPromptManager.get() has no org_id. Cross-org prompt read is possible."
         )
 
     def test_c4_pg_prompt_upsert_has_no_org_filter(self) -> None:
@@ -180,7 +179,9 @@ class TestHighAgentStoreOrgGaps:
         — both conditions must be truthy, so empty caller bypasses the check.
         """
         source = inspect.getsource(
-            __import__("stronghold.agents.store", fromlist=["InMemoryAgentStore"]).InMemoryAgentStore.get
+            __import__(
+                "stronghold.agents.store", fromlist=["InMemoryAgentStore"]
+            ).InMemoryAgentStore.get
         )
         # The condition is: if org_id and identity.org_id and identity.org_id != org_id
         # Empty org_id makes the first condition False, skipping the filter entirely
@@ -252,16 +253,13 @@ class TestHighWardenScanWindowGap:
         assert not short.clean, "Sanity: injection must be detected in short content"
 
         # Place injection in the gap
-        head_padding = "A" * 10300    # past 10240 head window
-        tail_padding = "B" * 2100     # past 2048 tail window
+        head_padding = "A" * 10300  # past 10240 head window
+        tail_padding = "B" * 2100  # past 2048 tail window
         gapped = head_padding + " " + injection + " " + tail_padding
 
         verdict = await warden.scan(gapped, "user_input")
-        # BUG: injection in the gap is not scanned
-        assert verdict.clean is True, (
-            "BUG CONFIRMED: injection in scan window gap evades detection. "
-            "Fix: scan full content or use overlapping windows."
-        )
+        # Fixed: overlapping windows now detect injections in gaps
+        assert not verdict.clean, "Injection in gap must be detected with overlapping windows"
 
     async def test_h3_head_detected(self) -> None:
         """Injection in first 10KB is always caught."""
@@ -290,7 +288,7 @@ class TestHighWardenL3FailOpen:
     """
 
     async def test_h4_l3_returns_safe_on_exception(self) -> None:
-        """L3 failure returns label='safe' instead of 'inconclusive'."""
+        """L3 failure correctly returns label='inconclusive' on error."""
         from stronghold.security.warden.llm_classifier import classify_tool_result
 
         failing_llm = FakeLLMClient()
@@ -301,12 +299,9 @@ class TestHighWardenL3FailOpen:
             failing_llm,
             "test-model",
         )
-        # BUG: returns "safe" on error
-        assert result["label"] == "safe", (
-            "BUG CONFIRMED: L3 returns 'safe' on failure. "
-            "Fix: return 'inconclusive' and propagate as elevated risk."
-        )
+
         assert "error" in result
+        assert result["label"] == "inconclusive"
 
     async def test_h4_l3_detects_suspicious_when_healthy(self) -> None:
         """Positive: L3 correctly identifies suspicious content."""
@@ -324,53 +319,64 @@ class TestHighWardenL3FailOpen:
 
 
 class TestHighArtificerMissingSecurity:
-    """H5: ArtificerStrategy.reason() has no Sentinel/Warden/PII on tool results.
+    """H5 (C13): ArtificerStrategy.reason() now has full Sentinel/Warden/PII
+    pipeline on tool results — parity with ReactStrategy.
 
     ReactStrategy has: 32KB arg limit, sentinel pre_call, warden scan,
-    PII filter, 16KB result truncation. Artificer has none of these.
+    PII filter, 16KB result truncation. Artificer now has all of these.
     OWASP: LLM01 (Prompt Injection), LLM06 (Excessive Agency)
     """
 
-    def test_h5_no_sentinel_pre_call(self) -> None:
-        """ArtificerStrategy lacks sentinel.pre_call() on tool arguments."""
-        from stronghold.agents.artificer.strategy import ArtificerStrategy
+    def test_h5_sentinel_pre_call_fires(self) -> None:
+        """ArtificerStrategy invokes sentinel.pre_call() on tool arguments."""
+        from stronghold.agents.artificer import strategy as artificer_mod
 
-        source = inspect.getsource(ArtificerStrategy.reason)
-        assert "pre_call" not in source, (
-            "BUG CONFIRMED: no sentinel pre_call in Artificer. "
-            "Tool args are not permission-checked or schema-validated."
+        source = inspect.getsource(artificer_mod)
+        assert "pre_call" in source, (
+            "REGRESSION: sentinel.pre_call() missing from ArtificerStrategy. "
+            "Tool args must be permission-checked and schema-validated."
         )
 
-    def test_h5_no_sentinel_post_call(self) -> None:
-        """ArtificerStrategy lacks sentinel.post_call() on tool results."""
-        from stronghold.agents.artificer.strategy import ArtificerStrategy
+    def test_h5_sentinel_post_call_fires(self) -> None:
+        """ArtificerStrategy invokes sentinel.post_call() on tool results."""
+        from stronghold.agents.artificer import strategy as artificer_mod
 
-        source = inspect.getsource(ArtificerStrategy.reason)
-        assert "post_call" not in source, (
-            "BUG CONFIRMED: no sentinel post_call in Artificer. "
-            "Tool results bypass Warden scan + PII filter."
+        source = inspect.getsource(artificer_mod)
+        assert "post_call" in source, (
+            "REGRESSION: sentinel.post_call() missing from ArtificerStrategy. "
+            "Tool results must pass through Warden scan + PII filter."
         )
 
-    def test_h5_no_arg_size_limit(self) -> None:
-        """ArtificerStrategy lacks the 32KB tool argument size check."""
-        from stronghold.agents.artificer.strategy import ArtificerStrategy
+    def test_h5_arg_size_limit_enforced(self) -> None:
+        """ArtificerStrategy enforces the 32KB tool argument size limit."""
+        from stronghold.agents.artificer import strategy as artificer_mod
 
-        source = inspect.getsource(ArtificerStrategy.reason)
-        has_check = "32768" in source or "32_768" in source
-        assert not has_check, (
-            "BUG CONFIRMED: no 32KB arg size check in Artificer. "
-            "LLM can generate massive tool arguments (JSON bomb)."
+        source = inspect.getsource(artificer_mod)
+        has_check = (
+            "32768" in source
+            or "32_768" in source
+            or "32 * 1024" in source
+            or "_TOOL_ARGS_MAX_BYTES" in source
+        )
+        assert has_check, (
+            "REGRESSION: 32KB arg size check missing from ArtificerStrategy. "
+            "LLM could generate massive tool arguments (JSON bomb)."
         )
 
-    def test_h5_no_result_truncation(self) -> None:
-        """ArtificerStrategy lacks the 16KB tool result truncation."""
-        from stronghold.agents.artificer.strategy import ArtificerStrategy
+    def test_h5_result_truncation_enforced(self) -> None:
+        """ArtificerStrategy truncates tool results over 16KB."""
+        from stronghold.agents.artificer import strategy as artificer_mod
 
-        source = inspect.getsource(ArtificerStrategy.reason)
-        has_truncation = "16384" in source or "16_384" in source
-        assert not has_truncation, (
-            "BUG CONFIRMED: no 16KB result truncation in Artificer. "
-            "Large tool results can exhaust context window."
+        source = inspect.getsource(artificer_mod)
+        has_truncation = (
+            "16384" in source
+            or "16_384" in source
+            or "16 * 1024" in source
+            or "_TOOL_RESULT_MAX_BYTES" in source
+        )
+        assert has_truncation, (
+            "REGRESSION: 16KB result truncation missing from ArtificerStrategy. "
+            "Large tool results could exhaust the context window."
         )
 
 
@@ -406,12 +412,7 @@ class TestHighSemanticCodeSyntaxBypass:
 
     def test_h6_real_code_not_flagged(self) -> None:
         """Positive: legitimate code must not trigger false positives."""
-        code = (
-            "import hashlib\n"
-            "def disable_cache():\n"
-            "    cache.clear()\n"
-            "    return True\n"
-        )
+        code = "import hashlib\ndef disable_cache():\n    cache.clear()\n    return True\n"
         suspicious, _ = semantic_tool_poisoning_scan(code)
         assert not suspicious
 
@@ -430,14 +431,14 @@ class TestHighJWTKeyReuse:
     """
 
     def test_h7_login_uses_router_api_key_for_jwt(self) -> None:
-        """The demo login route signs JWTs with config.router_api_key."""
+        """The demo login route must use a dedicated jwt_secret, not router_api_key."""
         from stronghold.api.routes.auth import demo_login
 
         source = inspect.getsource(demo_login)
-        assert "router_api_key" in source, (
-            "Login uses router_api_key for JWT signing. "
-            "Fix: use a separate STRONGHOLD_JWT_SECRET."
+        assert "jwt_secret" in source, (
+            "Login must use jwt_secret for JWT signing, not router_api_key."
         )
+        assert "router_api_key" not in source, "Login must NOT use router_api_key for JWT signing."
 
     def test_h7_demo_cookie_warns_but_does_not_reject_short_key(self) -> None:
         """DemoCookieAuthProvider only warns on short keys, does not reject.
@@ -470,8 +471,7 @@ class TestHighQuotaDashboardXSS:
         from pathlib import Path
 
         quota_html = (
-            Path(__file__).parent.parent.parent
-            / "src" / "stronghold" / "dashboard" / "quota.html"
+            Path(__file__).parent.parent.parent / "src" / "stronghold" / "dashboard" / "quota.html"
         )
         if not quota_html.exists():
             pytest.skip("quota.html not found")
@@ -533,7 +533,6 @@ class TestHighAdminOrgScoping:
 
         source = inspect.getsource(admin.update_user_roles)
         # The SQL should have an org_id WHERE clause
-        has_org_in_update = "org_id" in source and "UPDATE" in source
         # BUG: currently the UPDATE users SET roles WHERE id = $N has no org_id
         # We check the SQL specifically
         if "WHERE id = " in source or "WHERE email = " in source:

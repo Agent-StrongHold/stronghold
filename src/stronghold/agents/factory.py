@@ -131,25 +131,44 @@ def _parse_agent_dir(agent_dir: Path) -> tuple[dict[str, Any], str, str] | None:
 # ── Identity + strategy ──────────────────────────────────────────────
 
 
+def _safe_tuple(value: Any) -> tuple[Any, ...]:
+    """Coerce YAML values to tuple safely.
+
+    YAML footguns this protects against (SEC-011, SEC-012):
+      - `tools: null` → Python None → tuple(None) raises TypeError
+      - `tools: "shell"` → string → tuple iterates chars as ('s','h','e','l','l')
+      - `tools: {}` / `tools: 42` → invalid, silently becomes ()
+    """
+    if value is None:
+        return ()
+    if isinstance(value, str):
+        # Common YAML mistake: `tools: "shell"` meant `tools: [shell]`
+        return () if not value else (value,)
+    if isinstance(value, (list, tuple)):
+        return tuple(value)
+    return ()
+
+
 def _build_identity_from_manifest(manifest: dict[str, Any]) -> AgentIdentity:
     name = manifest["name"]
-    reasoning = manifest.get("reasoning", {})
+    reasoning = manifest.get("reasoning", {}) or {}
     return AgentIdentity(
         name=name,
         version=manifest.get("version", "1.0.0"),
         description=manifest.get("description", ""),
         soul_prompt_name=f"agent.{name}.soul",
         model=manifest.get("model", "auto"),
-        model_fallbacks=tuple(manifest.get("model_fallbacks", ())),
-        model_constraints=manifest.get("model_constraints", {}),
-        tools=tuple(manifest.get("tools", ())),
-        skills=tuple(manifest.get("skills", ())),
-        rules=tuple(manifest.get("rules", ())),
+        model_fallbacks=_safe_tuple(manifest.get("model_fallbacks")),
+        model_constraints=manifest.get("model_constraints", {}) or {},
+        tools=_safe_tuple(manifest.get("tools")),
+        skills=_safe_tuple(manifest.get("skills")),
+        rules=_safe_tuple(manifest.get("rules")),
         trust_tier=manifest.get("trust_tier", "t2"),
+        priority_tier=manifest.get("priority_tier", "P2"),
         max_tool_rounds=reasoning.get("max_subtasks", reasoning.get("max_rounds", 3)),
         reasoning_strategy=reasoning.get("strategy", "direct"),
-        memory_config=manifest.get("memory", {}),
-        phases=tuple(reasoning.get("phases", ())),
+        memory_config=manifest.get("memory", {}) or {},
+        phases=_safe_tuple(reasoning.get("phases")),
     )
 
 
@@ -167,6 +186,7 @@ def _build_identity_from_record(record: Any) -> AgentIdentity:
         skills=tuple(record.skills or []),
         rules=tuple(record.rules.splitlines()) if record.rules else (),
         trust_tier=record.trust_tier,
+        priority_tier=getattr(record, "priority_tier", "P2"),
         max_tool_rounds=record.max_tool_rounds,
         reasoning_strategy=record.reasoning_strategy,
         memory_config=record.memory_config or {},
@@ -370,6 +390,7 @@ async def create_agents(
                     max_tool_rounds=identity.max_tool_rounds,
                     memory_config=identity.memory_config,
                     trust_tier=identity.trust_tier,
+                    priority_tier=identity.priority_tier,
                     provenance="builtin",
                     org_id="",
                     preamble=True,

@@ -220,7 +220,11 @@ class FakeRateLimiter:
 
     async def check(self, key: str) -> tuple[bool, dict[str, str]]:
         self.calls.append(key)
-        headers = {"X-RateLimit-Limit": "60", "X-RateLimit-Remaining": "59", "X-RateLimit-Reset": "60"}
+        headers = {
+            "X-RateLimit-Limit": "60",
+            "X-RateLimit-Remaining": "59",
+            "X-RateLimit-Reset": "60",
+        }
         return self._always_allow, headers
 
     async def record(self, key: str) -> None:
@@ -469,6 +473,125 @@ class FakeMcpDeployer:
         return self._healthy
 
 
+class FakeToolPolicy:
+    """In-memory tool policy for tests.
+
+    Default: allow everything. Call ``deny_tool`` or ``deny_task``
+    to block specific combinations.
+    """
+
+    def __init__(self) -> None:
+        self._denied_tools: set[tuple[str, str, str]] = set()
+        self._denied_tasks: set[tuple[str, str, str]] = set()
+        self.tool_checks: list[tuple[str, str, str]] = []
+        self.task_checks: list[tuple[str, str, str]] = []
+
+    def deny_tool(self, user_id: str, org_id: str, tool_name: str) -> None:
+        self._denied_tools.add((user_id, org_id, tool_name))
+
+    def deny_task(self, user_id: str, org_id: str, agent_name: str) -> None:
+        self._denied_tasks.add((user_id, org_id, agent_name))
+
+    def check_tool_call(
+        self, user_id: str, org_id: str, tool_name: str,
+    ) -> bool:
+        self.tool_checks.append((user_id, org_id, tool_name))
+        return (user_id, org_id, tool_name) not in self._denied_tools
+
+    def check_task_creation(
+        self, user_id: str, org_id: str, agent_name: str,
+    ) -> bool:
+        self.task_checks.append((user_id, org_id, agent_name))
+        return (user_id, org_id, agent_name) not in self._denied_tasks
+
+
+class FakeIntentClassifier:
+    """Minimal intent classifier for tests (issue #620).
+
+    Returns a constant ``{"intent": "unknown", "confidence": 0.5}`` so
+    callers that just need *some* classifier can wire one in without
+    pulling the production keyword/LLM pipeline. ``classify`` is a
+    ``@staticmethod`` so ``inspect.signature(FakeIntentClassifier.classify)``
+    sees a single ``text`` parameter (no implicit ``self``).
+    """
+
+    @staticmethod
+    async def classify(text: str) -> dict[str, Any]:
+        return {"intent": "unknown", "confidence": 0.5}
+
+
+class FakeVaultClient:
+    """In-memory vault for tests (ADR-K8S-018).
+
+    Stores secrets as ``{org_id}/{user_id}/{service}/{key}`` -> value.
+    """
+
+    def __init__(self) -> None:
+        self._store: dict[str, str] = {}
+        self._version: dict[str, int] = {}
+
+    def _path(self, org_id: str, user_id: str, service: str, key: str) -> str:
+        return f"{org_id}/{user_id}/{service}/{key}"
+
+    async def get_user_secret(
+        self, org_id: str, user_id: str, service: str, key: str,
+    ) -> Any:
+        from stronghold.protocols.vault import VaultSecret
+
+        path = self._path(org_id, user_id, service, key)
+        if path not in self._store:
+            raise LookupError(f"No secret at {path}")
+        return VaultSecret(
+            value=self._store[path],
+            service=service,
+            key=key,
+            version=self._version.get(path),
+        )
+
+    async def put_user_secret(
+        self, org_id: str, user_id: str, service: str, key: str, value: str,
+    ) -> Any:
+        from stronghold.protocols.vault import VaultSecret
+
+        path = self._path(org_id, user_id, service, key)
+        ver = self._version.get(path, 0) + 1
+        self._store[path] = value
+        self._version[path] = ver
+        return VaultSecret(value=value, service=service, key=key, version=ver)
+
+    async def delete_user_secret(
+        self, org_id: str, user_id: str, service: str, key: str,
+    ) -> None:
+        path = self._path(org_id, user_id, service, key)
+        self._store.pop(path, None)
+        self._version.pop(path, None)
+
+    async def list_user_services(
+        self, org_id: str, user_id: str,
+    ) -> list[str]:
+        prefix = f"{org_id}/{user_id}/"
+        services = set()
+        for k in self._store:
+            if k.startswith(prefix):
+                parts = k[len(prefix):].split("/")
+                if parts:
+                    services.add(parts[0])
+        return sorted(services)
+
+    async def revoke_user(
+        self, org_id: str, user_id: str,
+    ) -> int:
+        prefix = f"{org_id}/{user_id}/"
+        to_delete = [k for k in self._store if k.startswith(prefix)]
+        for k in to_delete:
+            del self._store[k]
+            self._version.pop(k, None)
+        return len(to_delete)
+
+    async def close(self) -> None:
+        pass
+
+
 # ── Test container factory ───────────────────────────────────────────
 # Use these instead of constructing Container manually.
 
@@ -568,3 +691,59 @@ def make_test_container(
     }
     fields.update(overrides)
     return Container(**fields)
+
+
+# ── Spec-driven verification fakes ────────────────────────────────
+
+
+class FakeSpecStore:
+    """In-memory SpecStore for testing."""
+
+    def __init__(self) -> None:
+        from stronghold.types.spec import Spec
+
+        self._specs: dict[int, Spec] = {}
+
+    async def save(self, spec: Any) -> None:
+        self._specs[spec.issue_number] = spec
+
+    async def get(self, issue_number: int) -> Any | None:
+        return self._specs.get(issue_number)
+
+    async def list_active(self) -> list[Any]:
+        from stronghold.types.spec import SpecStatus
+
+        return [
+            s for s in self._specs.values() if s.status in (SpecStatus.DRAFT, SpecStatus.ACTIVE)
+        ]
+
+
+class FakeSpecVerifier:
+    """In-memory SpecVerifier that returns configurable results."""
+
+    def __init__(self, *, default_pass: bool = True) -> None:
+        from stronghold.types.spec import VerificationResult
+
+        self._default_pass = default_pass
+        self._overrides: dict[tuple[int, str], VerificationResult] = {}
+        self.verify_calls: list[tuple[int, str]] = []
+
+    def set_result(self, issue_number: int, stage: str, result: Any) -> None:
+        self._overrides[(issue_number, stage)] = result
+
+    async def verify(self, spec: Any, stage: str, result: dict[str, object]) -> Any:
+        from stronghold.types.spec import VerificationResult
+
+        self.verify_calls.append((spec.issue_number, stage))
+        key = (spec.issue_number, stage)
+        if key in self._overrides:
+            return self._overrides[key]
+        covered = len(spec.property_tests)
+        total = len(spec.invariants)
+        coverage = (covered / total * 100.0) if total > 0 else 0.0
+        return VerificationResult(
+            spec_issue_number=spec.issue_number,
+            stage=stage,
+            passed=self._default_pass,
+            coverage_pct=coverage,
+        )

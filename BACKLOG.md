@@ -1,7 +1,7 @@
 # Stronghold Backlog
 
-**Last Updated:** 2026-03-31
-**Status:** Pre-v1.0 — Phases 1-4 complete + 3 security audits + 1 live red team done
+**Last Updated:** 2026-04-18
+**Status:** Pre-v1.0 — Phases 1-4 complete + 3 security audits + 1 live red team done. CFM-1 through CFM-5 added 2026-04-18 (Conductor Feature Migration → v1.4–v1.7).
 
 ---
 
@@ -162,7 +162,7 @@ bypass all application-level security controls.
 - [ ] **C3: PgAgentRegistry.upsert() name collision** — ON CONFLICT (name) overwrites cross-org (`pg_agents.py:56`). Fix: UNIQUE(name, org_id)
 - [ ] **C4: PgPromptManager zero org_id** — all queries use name+label, no org column. Cross-org prompt poisoning (`pg_prompts.py` entire file)
 - [ ] **C5: Learning approve/reject by integer ID** — no org_id check on approve/reject. Admin Org-A approves Org-B's learnings (`admin.py:~270`)
-- [ ] **C6: MCP server DELETE no auth/org check** — any authenticated user can delete any org's MCP server by name. No admin role required (`mcp.py:~350`)
+- [x] **C6: MCP server DELETE no auth/org check** — any authenticated user can delete any org's MCP server by name. No admin role required (`mcp.py:~350`). *Closed 2026-04-23: `_require_org_match` guard added to DELETE, super-admin required for global servers. See tests/api/test_mcp_routes_security.py.*
 - [ ] **C7: update_user_roles no org_id in SQL** — `UPDATE users SET roles WHERE id=$2`, no `AND org_id`. Cross-tenant privilege escalation (`admin.py:398`)
 
 #### HIGH — Security Layer Bypasses
@@ -177,7 +177,7 @@ bypass all application-level security controls.
 - [ ] **H9: InMemoryAgentStore.get() empty org_id bypass** — empty caller org_id sees all org-scoped agents (`store.py:117`)
 - [ ] **H10: Session prefix collision** — org_id containing `/` enables `startswith` prefix attack (`sessions/store.py:43`)
 - [ ] **H11: Strike remove/unlock/enable no org_id** — cross-tenant strike manipulation (`admin.py:1485-1529`)
-- [ ] **H12: MCP server start/stop no org_id** — any user starts/stops any org's MCP servers (`mcp.py:301-340`)
+- [x] **H12: MCP server start/stop no org_id** — any user starts/stops any org's MCP servers (`mcp.py:301-340`). *Closed 2026-04-23: same `_require_org_match` guard applied to start + stop. See tests/api/test_mcp_routes_security.py.*
 - [ ] **H13: PgQuotaTracker global** — no org_id dimension; one org exhausts all providers for all orgs (`pg_quota.py`)
 - [ ] **H14: XSS via marked.parse()** — quota.html line 537: AI response rendered as raw HTML via innerHTML. CSP allows unsafe-inline
 - [ ] **H15: Agent trust AI/admin review global** — trust tier mutations operate by name with no org_id (`admin.py:~1400`)
@@ -221,7 +221,7 @@ bypass all application-level security controls.
 - [ ] **D2: No lock file — supply chain attack surface** — no requirements.txt, poetry.lock, or uv.lock. All deps use floor-only `>=` specifiers. Every build resolves fresh from PyPI. Dependency confusion and transitive drift are both possible. **Fix:** generate `requirements.txt` with `pip-compile --generate-hashes`, use `--require-hashes` in Dockerfile
 - [ ] **D3: CDN scripts unpinned, no SRI hashes** — `cdn.tailwindcss.com` has NO version at all (dev-only CDN). Chart.js `@4` and marked.js `@15` pinned to major only. Zero `integrity=` attributes on any `<script>` tag. CDN compromise = arbitrary JS on every dashboard page. **Fix:** self-host Tailwind (production build), pin exact versions with SRI hashes, add `crossorigin="anonymous"`
 - [ ] **D4: 18 known CVEs across 9 packages** — pip-audit found HIGH vulns in urllib3 (2.3.0→2.6.3), requests (2.32.3→2.33.0), h2 (4.2.0→4.3.0), pip (25.1.1→26.0), plus MEDIUM in pygments, markdown, wheel, jaraco-context. **Fix:** `pip install --upgrade urllib3 requests h2`
-- [ ] **D5: MCP deployer accepts arbitrary env vars** — `body.get("env", {})` and `body.get("secrets", {})` passed directly to K8s pod spec. Any authenticated user (no admin required) can inject env vars or reference K8s secrets. **Fix:** whitelist env var names, restrict secret references, require admin role for MCP deploy
+- [x] **D5: MCP deployer accepts arbitrary env vars** — `body.get("env", {})` and `body.get("secrets", {})` passed directly to K8s pod spec. *Closed 2026-04-23: admin role required for custom-image deploy (catalog deploy remains open to engineers); `_sanitize_env` rejects shell metacharacters / non-alphanumeric keys / oversize values; `_sanitize_secrets` restricts secret refs to the caller's tenant namespace (`stronghold-<org_id>-*`) with `stronghold-shared-*` reserved for super-admins. See tests/api/test_mcp_routes_security.py.*
 - [ ] **D6: `/greathall` and `/prompts` served without server-side auth** — served as static files in app.py lines 167-175 without `_check_auth()`. Other dashboard routes (skills, etc.) properly gate behind auth. **Fix:** move to dashboard router with auth check
 
 #### Confirmed Non-Issues (bandit false positives)
@@ -332,6 +332,81 @@ bypass all application-level security controls.
 - [ ] **Canvas compositor service** — layer assembly (background + characters + objects + text), position/scale/rotate per layer, PNG/WebP output.
 - [ ] **Wire Fabulist agent** — children's storybook creator, uses canvas tool, add `storybook` task type to classifier.
 
+### Conductor Feature Migration (2026-04-18)
+
+Five features worth porting from the running conductor-router with Stronghold-native shape. Listed in build-dependency order. Design rationale in the 2026-04-18 session log. Full architecture coverage in `ARCHITECTURE.md §15`.
+
+#### CFM-1: Review Queue Engine (foundation for the four below)
+- [ ] **`src/stronghold/review/`** — typed review items + priority calculator + reviewer classes + reactor-driven enqueue. Lives BESIDE the orchestrator (review work is often human-in-the-loop; latency, failure modes, and scaling differ fundamentally from execution `WorkItem`s)
+- [ ] `ReviewItem.kind` vocabulary: `forge_skill`, `forge_node_kind`, `recipe_variant_promote`, `apm_change`, `user_tier_promote`, `stf_ratchet_decision`, `learning_promote`, `agent_import`
+- [ ] Priority calculator = `f(stakes_impact, −origin_stf, plan_tier_sla, age_bonus, blast_radius, backlog_pressure)` — queue self-sorts toward "aged + dangerous + high-stakes"
+- [ ] Reviewer classes: `human_only` | `ai_allowed` | `ai_only` (Auditor agent owns the AI side — maps to the existing Herald→QM→Archie→Mason→Auditor→Gatekeeper→Master-at-Arms pipeline plan)
+- [ ] `/dashboard/reviews.html` inbox with filters by kind × state × `origin_stf`
+- [ ] Reactor enqueue hooks: `forge.skill_created`, `variant.hit_threshold`, `apm.change_submitted`, `session.stf_descent_pending`, `learning.ready_for_promote`
+- [ ] In-session STF-ratchet HITL reuses engine primitives; renders inline in chat UI (synchronous — blocks the turn)
+- [ ] SLA + escalation-on-stale + auto-expire + reassignment on reviewer unavailability
+- [ ] `ReviewOutcome { reviewer, decision, rationale, trace_ref }` is a first-class audit artifact
+- [ ] Shared with orchestrator only via `types/priority.py` (`PrioritySignal`) and `types/review.py` (`ReviewRequest`) — no cross-subsystem imports
+
+#### CFM-2: Session Trust Floor (STF) + Trust Ledger
+- [ ] **`src/stronghold/trust/`** — `reducer.py`, `signals.py`, `ledger.py`, `thresholds.py`, `policy.py`, `exchange.py`
+- [ ] `STF = min(agent.tier, recipe.tier, node.tier, tool.tier, input_source.tier, user.trust_score_tier, warden.safety_confidence_tier, …)` computed dynamically at runtime
+- [ ] Monotonically non-increasing per session — redaction, compaction, and summarization do NOT heal (otherwise compaction becomes a laundering vector)
+- [ ] Forks and sub-flows inherit parent STF; new session required to reset
+- [ ] Contributors emit `TrustSignal { source, tier, confidence, rationale, trace_ref }`; unknown sources default to `☠️ Skull`
+- [ ] User trust ledger: `Δ = plan_multiplier × copper_value × session_T_score`
+- [ ] `plan_multiplier`: free=0, paid=1, team_plan=2, team_admin=5, org_admin=10, super_admin=100
+- [ ] `session_T_score`: T1=+2, T2=+1, T3=0, ☠️Skull=−10 (clamps to 0 for team_admin and above — preserves security-testing legitimacy)
+- [ ] Exponential tier thresholds in `thresholds.yaml` (hot-reloadable), origin centered slightly positive into T2 (narrow T2 band, wide T1/T3, unbounded T0/Skull)
+- [ ] Copper = `tokens_used × token_value`; other currencies convert via `trust/exchange.py`
+- [ ] Warden verdict gains `confidence ∈ [0,1]` — low confidence drags input's effective tier down
+- [ ] Recipe dispatch emits `stf_insufficient` event (not exception) when `STF < recipe.required_tier` → review engine renders HITL decision
+- [ ] HITL surface: (a) pending input would lower STF, (b) action blocked by current STF, (c) passive trust indicator always visible with descent timeline
+- [ ] Read-down semantics only — lowered STF blocks NEW privileged actions, does not block reading poisoned context
+
+#### CFM-3: Recipe + Variant Evolution Engine
+- [ ] **`src/stronghold/types/recipe.py`** — `RecipeSpec`, `FlowSpec`, `NodeSpec`, `EdgeSpec`, `StateSchema` — pure data, YAML-serializable, no Python callables
+- [ ] **`src/stronghold/evaluation/`** — `recipes.py` (CRUD), `thompson.py` (Beta posteriors per `(recipe_id, variant_id, intent)`), `outcomes.py`, `promotion.py`, `validator.py` (reachability, schema check, no-orphan edges, no-undeclared-state-refs)
+- [ ] **`src/stronghold/execution/`** — `graph_runner.py`, `node_handlers.py`, `state.py` — interprets `FlowSpec`. Simple agents are degenerate graphs (one node, no edges); graph/workflow agents share the same envelope
+- [ ] Single envelope for all agent shapes — strategy-based AND graph-based bind through one `RecipeSpec`; `FlowSpec` expresses both
+- [ ] `NodeSpec.kind` is an OPEN registry. Built-in kinds (`reason`, `tool`, `branch`, `recipe`, `collect`) are reserved and ship at T0
+- [ ] Unknown kinds default to `☠️ Skull` tier — declarative specs are harmless, only execution is gated (trust tier system already handles the governance concern)
+- [ ] Per-kind `param_schema` required at registration; `declared_side_effects: list[str]` enforced by Sentinel at runtime (kind claiming `["network"]` cannot open filesystem)
+- [ ] `effective_tier = min(recipe.tier, min(node.kind.tier for node in flow.nodes))`
+- [ ] Variant promotion → review queue (not immediate) with policy-driven auto-approve thresholds
+- [ ] `RecipeSpec` round-trips through GitAgent export/import as YAML
+- [ ] Variants carry spec diffs, not runtime objects; Thompson sampling operates on spec hashes
+- [ ] `migrations/00XX_recipes.sql` — `recipes`, `variants`, `variant_outcomes`, `node_kinds` tables
+
+#### CFM-4: APM (Agent Personality Manifest)
+- [ ] **`src/stronghold/types/apm.py`** — Pydantic model with seven sections: `identity`, `core_values`, `communication_style`, `expertise`, `boundaries`, `tools_and_methods`, `memory_anchors`
+- [ ] **`src/stronghold/agents/apm_store.py`** — persistence, trust-tier default resolution, hash-on-save
+- [ ] **`src/stronghold/prompts/apm_renderer.py`** — APM → system prompt fragment, strategy-agnostic
+- [ ] Every agent has exactly one APM (merged from trust-tier baseline if none declared)
+- [ ] `GET/PUT /v1/stronghold/agents/{id}/apm` — PUT gated by Warden scan (APM edits are a high-trust boundary — an APM is an agent prompt)
+- [ ] APM changes enqueue review (`human_only` by default; downgrade to `ai_allowed` via policy later)
+- [ ] APM included in GitAgent export bundle as `apm.yaml`; re-hydrates on import
+- [ ] Audit entry per change: `actor`, `old_hash`, `new_hash`, `trace_id`
+- [ ] `migrations/00XX_apm.sql` — `apm` table (agent_id PK, yaml, hash, updated_at)
+- [ ] `/dashboard/agents/{id}/apm` — edit UI with diff preview and "request review" flow
+
+#### CFM-5: Intel Dashboard (Traces + RCA + Evolution + Reviews)
+- [ ] **`src/stronghold/intel/`** — `traces.py` (Langfuse client + pagination + score writeback), `rca.py` (structured post-mortem generation), `evolution.py` (timeline aggregator)
+- [ ] **`src/stronghold/api/routes/intel.py`** and **`src/stronghold/dashboard/intel.html`** — four tabs: Traces, RCA, Evolution, Reviews
+- [ ] Traces tab: paginated browser with filters by agent/intent/verdict; click → span tree; inline score control (1–5 + tags + note)
+- [ ] `POST /v1/stronghold/traces/{id}/score` — dual-writes to Langfuse + outcomes store; reviewer trust accrual credits the scorer
+- [ ] RCA tab: auto-generated post-mortems from failed `WorkItem`s (root cause, failing tool, suggested learning)
+- [ ] `WorkItem` failure → reactor event → `rca.generate_rca` (async, bounded concurrency, retrigger endpoint for manual runs)
+- [ ] RCA candidates feed `memory/learnings/extractor.py` at low weight until reinforced
+- [ ] Evolution tab: chronological `EvolutionEvent` stream across memory, recipe, skill, learning, and node-kind mutations — renders STRUCTURAL diffs (not just prompt text) including `RecipeSpec` and `FlowSpec` changes
+- [ ] Reviews tab: mirrors the Review Queue Engine inbox with the same filters
+
+#### CFM Support — Reactor Enhancements (small, lands with CFM-1)
+- [ ] **Density-aware jitter** — per-firing-bin trigger count drives jitter budget via `max_jitter_secs = min(ceiling, base + k × log2(density))` — prevents thundering-herd on shared firing times (many 06:00 triggers spread into a minutes-wide window)
+- [ ] **Coalescence / timer slack** — `leeway: "±Nmin"` field lets reactor snap low-density triggers together for batch wake efficiency (opposite direction: spread when dense, gather when sparse)
+- [ ] Extend `TriggerSpec` to accept `jitter` for `TIME` mode (not just `INTERVAL`); add `leeway` field
+- [ ] Log bucketing decisions in trigger audit so "why did this fire at 06:07?" is answerable
+
 ### Documentation
 - [ ] Update SECURITY.md with L2.5/L3 descriptions
 - [ ] API documentation (OpenAPI spec review)
@@ -368,6 +443,33 @@ bypass all application-level security controls.
 - Tournament-based skill promotion
 - Learning promotion requires approval gate
 - Automated security re-scan via reactor triggers
+
+### v1.3: Multi-Tenant + Adaptive Tools
+- See `ROADMAP.md` — K8s namespace-per-tenant isolation, per-tenant prompt isolation, agent marketplace, adaptive tool composition
+
+### v1.4: Governance Queue + Trust Economy (see CFM-1, CFM-2)
+- Review Queue Engine (CFM-1) — typed review items, priority calculator, Auditor consumer, HITL dashboard
+- Session Trust Floor (CFM-2) — monotonic per-session floor, contributor signals, Warden confidence, HITL descent dialog
+- Trust Ledger — copper-value-denominated user trust points, plan-multiplier accrual, exponential tier thresholds, admin skull clamp
+- Density-aware jitter + coalescence / timer slack in Reactor
+
+### v1.5: Recipe + Variant Evolution + APM (see CFM-3, CFM-4)
+- Recipe engine — pure-spec `RecipeSpec`/`FlowSpec`/`NodeSpec` with open node-kind registry defaulting new kinds to Skull
+- Execution layer — `graph_runner` interprets `FlowSpec`; strategy agents are degenerate graphs
+- Thompson-sampled variant selection + promotion-via-review
+- APM — 7-section Agent Personality Manifest with Warden-gated writes, GitAgent round-trip, review-queued changes
+
+### v1.6: Intel Dashboard + Structured Evolution Timeline (see CFM-5)
+- Intel dashboard with Traces + RCA + Evolution + Reviews tabs
+- RCA pipeline — failed `WorkItem` → reactor event → structured post-mortem → candidate learning
+- Evolution timeline renders structural diffs (RecipeSpec + FlowSpec + node-kind tier changes)
+- Trace scoring dual-writes to Langfuse + outcomes store; scorer earns trust
+
+### v1.7: Trust Economy Surface + Currency Layer
+- Top-tier gamification — profile badges for T0/T0+/T0++, profile-load effects, differential AI greetings keyed off rank
+- Skull soft-barrier engine — plan-aware depth response: paid user progressive rate-limit + auto-block, team plan escalating admin notifications + tool lockdown
+- Currency exchange layer — copper + additional currencies with configurable exchange rates, ledger conversion primitive
+- Reviewer trust accrual — thoughtful approvers earn trust points; stale/rubber-stamp approvals flagged
 
 ### v2.0: Enterprise GA
 - Per-tenant security policy configuration
@@ -435,3 +537,19 @@ bypass all application-level security controls.
 - **Wave 3** (advanced evasion): scan window gap bypass confirmed (input Warden missed, output Sentinel caught), learning poisoning blocked by Warden scan, strike persistence gap (in-memory = lost on restart), forged JWT budget consumption, prompt PUT 500 error
 - **Total: 28 infrastructure/deployment findings** (R1-R28): 11 CRITICAL, 9 HIGH, 8 MEDIUM
 - **Combined with code audit: 70 security findings** across 4 audit rounds
+
+### 2026-04-18: Conductor Feature Migration Design Pass
+- Audited the still-running conductor-router against Stronghold to identify portable features
+- Ignored the conductor roadmap's aspirational feature names (Dream Loop, Mood Ring, Phantom, Context Archaeology, Temporal Patterns) — those labels do not appear in the live code
+- Confirmed Stronghold's reactor is a cleaner refactor of conductor-router's — same four modes + circuit breaker, improvements: split types/runtime/action, jitter on intervals, proper DI. `OrchestratorEngine` is Stronghold's net-new piece over conductor (priority-tiered `WorkItem` dispatch)
+- Identified five portable features → **CFM-1 through CFM-5**: review queue engine, STF + trust ledger, recipe + variant engine, APM, Intel dashboard
+- Key design decisions captured:
+  - Recipe is a **single declarative envelope** with `FlowSpec`; strategy agents and graph/workflow agents share one shape. Spec/engine separation — YAML round-trips, pure-data validation before instantiation
+  - `NodeSpec.kind` is an **open registry defaulting new kinds to Skull** — declarative specs are harmless, execution is gated by the existing trust-tier apparatus
+  - Session Trust Floor is **`min()` of every contributor and monotonically non-increasing within a session** — redaction and compaction do not heal (otherwise compaction becomes a laundering vector)
+  - User trust points accrue via `plan_multiplier × copper_value × session_T_score` — copper wraps `tokens_used × token_value`; admins clamp to 0 at Skull to preserve security-testing legitimacy; free users have multiplier 0 so they neither earn nor sabotage; exponential tier thresholds with narrow T2 band
+  - Review engine lives **beside** the orchestrator because reviews are often HITL and have fundamentally different latency/failure modes from execution `WorkItem`s
+  - Three reviewer classes: `human_only` | `ai_allowed` | `ai_only` — Auditor agent owns the AI side, ties into the existing Herald→…→Master-at-Arms pipeline plan
+- Roadmap-only items added: top-tier gamification (badges, fireworks, differential AI greetings), skull soft-barrier engine (plan-aware depth response), currency exchange layer, reviewer trust accrual
+- Reactor gets two minor extensions alongside CFM-1: density-aware jitter (spread thundering herds) and coalescence/timer-slack (gather sparse triggers for efficiency)
+- Architecture coverage: `ARCHITECTURE.md §15`. Roadmap integration: `ROADMAP.md` v1.4–v1.7

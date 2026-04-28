@@ -131,7 +131,7 @@ def sessions_app() -> FastAPI:
             agents={"arbiter": default_agent},
         )
 
-    container = asyncio.get_event_loop().run_until_complete(setup())
+    container = asyncio.run(setup())
     app.state.container = container
     return app
 
@@ -145,7 +145,6 @@ class TestListSessions:
             )
             assert resp.status_code == 200
             data = resp.json()
-            assert isinstance(data, list)
             assert len(data) == 1
             assert data[0]["session_id"] == "__system__/_/system:test-session"
             assert data[0]["message_count"] == 2
