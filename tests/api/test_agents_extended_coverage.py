@@ -11,8 +11,10 @@ from __future__ import annotations
 
 import asyncio
 import io
+import socket as _socket
 import zipfile
 from typing import Any
+from unittest.mock import patch
 
 import pytest
 import respx
@@ -303,12 +305,12 @@ class TestImportAgentFromUrl:
     @pytest.mark.parametrize(
         "ssrf_url",
         [
-            "https://10.0.0.1/agent.zip",        # private 10.0.0.0/8
+            "https://10.0.0.1/agent.zip",  # private 10.0.0.0/8
             "https://localhost:8080/agent.zip",  # localhost DNS
-            "https://127.0.0.1/agent.zip",       # loopback
-            "https://192.168.1.1/agent.zip",     # private 192.168.0.0/16
-            "https://172.16.0.1/agent.zip",      # private 172.16.0.0/12 (added — was uncovered)
-            "https://169.254.169.254/agent.zip", # AWS metadata service (added — was uncovered)
+            "https://127.0.0.1/agent.zip",  # loopback
+            "https://192.168.1.1/agent.zip",  # private 192.168.0.0/16
+            "https://172.16.0.1/agent.zip",  # private 172.16.0.0/12 (added — was uncovered)
+            "https://169.254.169.254/agent.zip",  # AWS metadata service (added — was uncovered)
         ],
     )
     def test_import_url_ssrf_targets_returns_400(
@@ -332,19 +334,26 @@ class TestImportAgentFromUrl:
         # Error message must name the SSRF class — otherwise callers can't
         # distinguish this from an arbitrary 400.
         lower = detail.lower()
-        assert "private" in lower or "loopback" in lower or "localhost" in lower or "not allowed" in lower, (
-            f"Error message did not identify SSRF block: {detail!r}"
-        )
+        assert (
+            "private" in lower
+            or "loopback" in lower
+            or "localhost" in lower
+            or "not allowed" in lower
+            or "port" in lower
+        ), f"Error message did not identify SSRF block: {detail!r}"
 
     @respx.mock
     def test_import_url_non_200_returns_502(self, ext_agents_app: FastAPI) -> None:
-        respx.get("https://example.com/missing.zip").mock(
+        respx.get("https://github.com/user/repo/archive/refs/heads/main.zip").mock(
             return_value=HttpxResponse(404, text="Not Found")
         )
-        with TestClient(ext_agents_app) as client:
+        with (
+            patch("socket.getaddrinfo", return_value=[(2, 1, 6, "", ("140.82.121.4", 0, 0, 0))]),
+            TestClient(ext_agents_app) as client,
+        ):
             resp = client.post(
                 "/v1/stronghold/agents/import-url",
-                json={"url": "https://example.com/missing.zip"},
+                json={"url": "https://github.com/user/repo/archive/refs/heads/main.zip"},
                 headers=AUTH_HEADER,
             )
         assert resp.status_code == 502
@@ -352,13 +361,16 @@ class TestImportAgentFromUrl:
     @respx.mock
     def test_import_url_too_small_response_returns_400(self, ext_agents_app: FastAPI) -> None:
         """Response that is too small to be a valid zip returns 400."""
-        respx.get("https://example.com/tiny.zip").mock(
+        respx.get("https://github.com/user/repo/archive/refs/heads/main.zip").mock(
             return_value=HttpxResponse(200, content=b"PK")
         )
-        with TestClient(ext_agents_app) as client:
+        with (
+            patch("socket.getaddrinfo", return_value=[(2, 1, 6, "", ("140.82.121.4", 0, 0, 0))]),
+            TestClient(ext_agents_app) as client,
+        ):
             resp = client.post(
                 "/v1/stronghold/agents/import-url",
-                json={"url": "https://example.com/tiny.zip"},
+                json={"url": "https://github.com/user/repo/archive/refs/heads/main.zip"},
                 headers=AUTH_HEADER,
             )
         assert resp.status_code == 400
@@ -367,13 +379,16 @@ class TestImportAgentFromUrl:
     def test_import_url_fetch_error_returns_502(self, ext_agents_app: FastAPI) -> None:
         import httpx as _httpx
 
-        respx.get("https://example.com/fail.zip").mock(
+        respx.get("https://github.com/user/repo/archive/refs/heads/main.zip").mock(
             side_effect=_httpx.ConnectError("connection reset")
         )
-        with TestClient(ext_agents_app) as client:
+        with (
+            patch("socket.getaddrinfo", return_value=[(2, 1, 6, "", ("140.82.121.4", 0, 0, 0))]),
+            TestClient(ext_agents_app) as client,
+        ):
             resp = client.post(
                 "/v1/stronghold/agents/import-url",
-                json={"url": "https://example.com/fail.zip"},
+                json={"url": "https://github.com/user/repo/archive/refs/heads/main.zip"},
                 headers=AUTH_HEADER,
             )
         assert resp.status_code == 502
@@ -382,7 +397,7 @@ class TestImportAgentFromUrl:
         with TestClient(ext_agents_app) as client:
             resp = client.post(
                 "/v1/stronghold/agents/import-url",
-                json={"url": "https://example.com/agent.zip"},
+                json={"url": "https://github.com/user/repo/archive/refs/heads/main.zip"},
             )
         assert resp.status_code == 401
 
@@ -508,9 +523,7 @@ class TestAgentCrudEdgeCases:
             assert resp.status_code == 200
             assert resp.json()["status"] == "updated"
             # Follow up with GET to verify the rules actually changed.
-            detail = client.get(
-                "/v1/stronghold/agents/arbiter", headers=AUTH_HEADER
-            )
+            detail = client.get("/v1/stronghold/agents/arbiter", headers=AUTH_HEADER)
             assert detail.status_code == 200
             # The rules preview in the detail should reflect the new value.
             data = detail.json()

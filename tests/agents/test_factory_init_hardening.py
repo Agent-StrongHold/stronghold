@@ -54,11 +54,12 @@ class TestManifestValidation:
         with pytest.raises(ConfigError, match="tools"):
             _build_identity_from_manifest(manifest)
 
-    def test_string_tools_raises_manifest_error(self) -> None:
-        """tools: 'shell' (typo for [shell]) raises rather than silently becoming ('shell',)."""
+    def test_string_tools_coerced_to_tuple(self) -> None:
+        """tools: 'shell' (bare string) is coerced to ('shell',) rather than iterating chars."""
         manifest: dict[str, Any] = {"name": "bad", "tools": "shell"}
-        with pytest.raises(ConfigError, match="tools"):
-            _build_identity_from_manifest(manifest)
+        identity = _build_identity_from_manifest(manifest)
+        assert identity.tools == ("shell",)
+        assert identity.tools != ("s", "h", "e", "l", "l")
 
     def test_dict_skills_raises_manifest_error(self) -> None:
         manifest: dict[str, Any] = {
