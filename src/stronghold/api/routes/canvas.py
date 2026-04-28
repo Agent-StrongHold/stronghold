@@ -555,7 +555,7 @@ def make_canvas_router(
 
         fmt = format.lower()
         if fmt not in _VALID_EXPORT_FORMATS:
-            return _error(UnsupportedFormatError(f"unsupported format: {format!r}"))  # type: ignore[return-value]
+            return _error(UnsupportedFormatError(f"unsupported format: {format!r}"))
         if not (1 <= quality <= 100):
             raise HTTPException(status_code=422, detail="quality must be between 1 and 100")
 

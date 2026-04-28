@@ -50,7 +50,8 @@ _TERMINAL_STATUSES = frozenset({JobStatus.DONE, JobStatus.FAILED, JobStatus.CANC
 
 
 class _WardenProtocol:
-    async def scan_prompt(self, prompt: str) -> str: ...  # noqa: D102
+    async def scan_prompt(self, prompt: str) -> str:  # noqa: D102
+        raise NotImplementedError
 
 
 # ─────────────────────────────────────────────────────────────────────
@@ -59,8 +60,11 @@ class _WardenProtocol:
 
 
 class _ModelRegistryProtocol:
-    def is_registered(self, model_id: str) -> bool: ...  # noqa: D102
-    def get_default_draft(self) -> str: ...  # noqa: D102
+    def is_registered(self, model_id: str) -> bool:  # noqa: D102
+        raise NotImplementedError
+
+    def get_default_draft(self) -> str:  # noqa: D102
+        raise NotImplementedError
 
 
 # ────────────────────────────��───────────────────────��────────────────

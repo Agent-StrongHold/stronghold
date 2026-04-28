@@ -7,7 +7,7 @@ app.dependency_overrides.
 
 from __future__ import annotations
 
-from typing import Annotated
+from typing import Annotated, cast
 
 from fastapi import Depends, HTTPException, Request
 
@@ -26,9 +26,12 @@ async def get_auth_context(request: Request) -> AuthContext:
     container = request.app.state.container
     auth_header = request.headers.get("authorization")
     try:
-        return await container.auth_provider.authenticate(
-            auth_header,
-            headers=dict(request.headers),
+        return cast(
+            "AuthContext",
+            await container.auth_provider.authenticate(
+                auth_header,
+                headers=dict(request.headers),
+            ),
         )
     except ValueError as exc:
         raise HTTPException(status_code=401, detail=str(exc)) from exc

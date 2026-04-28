@@ -208,6 +208,9 @@ def _composite_layers(canvas: Canvas) -> bytes:
     """Composite all visible layers into a single PNG."""
     from PIL import Image  # noqa: PLC0415
 
+    _LANCZOS = getattr(Image, "Resampling", Image).LANCZOS  # noqa: N806
+    _BICUBIC = getattr(Image, "Resampling", Image).BICUBIC  # noqa: N806
+
     base = Image.new("RGBA", (canvas.width, canvas.height), canvas.background_color)
 
     for layer in canvas.sorted_layers():
@@ -220,11 +223,11 @@ def _composite_layers(canvas: Canvas) -> bytes:
         if layer.scale != 1.0:
             new_w = max(1, int(img.width * layer.scale))
             new_h = max(1, int(img.height * layer.scale))
-            img = img.resize((new_w, new_h), Image.LANCZOS)
+            img = img.resize((new_w, new_h), _LANCZOS)
 
         # Rotate (expand=True keeps the full image after rotation)
         if layer.rotation != 0:
-            img = img.rotate(-layer.rotation, expand=True, resample=Image.BICUBIC)
+            img = img.rotate(-layer.rotation, expand=True, resample=_BICUBIC)
 
         # Paste at position (using alpha channel as mask)
         base.paste(img, (layer.x, layer.y), img)
@@ -268,7 +271,7 @@ def _render_text(
         font_path = font_map.get(font_name, font_name)
         font = ImageFont.truetype(font_path, font_size)
     except OSError:
-        font = ImageFont.load_default()
+        font = ImageFont.load_default()  # type: ignore[assignment]
 
     # Calculate text bounding box for alignment
     bbox = draw.textbbox((0, 0), text, font=font)
@@ -473,7 +476,7 @@ async def execute_canvas(  # noqa: C901, PLR0912
         # Update layer transforms from the provided layer specs
         if layers:
             for spec in layers:
-                layer = canvas.get_layer(spec.get("layer_id", spec.get("image", "")))
+                layer = canvas.get_layer(spec.get("layer_id", spec.get("image", "")))  # type: ignore[assignment]
                 if layer is None:
                     continue
                 if "x" in spec:
@@ -536,7 +539,7 @@ async def execute_canvas(  # noqa: C901, PLR0912
         img_bytes = base64.b64decode(upload_image)
         from PIL import Image  # noqa: PLC0415
 
-        img = Image.open(io.BytesIO(img_bytes)).convert("RGBA")
+        img = Image.open(io.BytesIO(img_bytes)).convert("RGBA")  # type: ignore[assignment]
 
         # Re-encode as PNG for consistent storage
         buf = io.BytesIO()

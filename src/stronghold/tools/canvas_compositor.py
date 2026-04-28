@@ -20,11 +20,14 @@ logger = logging.getLogger("stronghold.tools.canvas_compositor")
 
 # Pillow is a required runtime dependency (added to pyproject.toml)
 try:
-    from PIL import Image, ImageDraw, ImageFont  # type: ignore[import]
+    from PIL import Image, ImageDraw, ImageFont
 
     _PIL_AVAILABLE = True
 except ImportError:  # pragma: no cover
     _PIL_AVAILABLE = False
+
+_LANCZOS = getattr(Image, "Resampling", Image).LANCZOS
+_BICUBIC = getattr(Image, "Resampling", Image).BICUBIC
 
 
 # ─────────────────────────────────────────────────────────────────────
@@ -33,7 +36,7 @@ except ImportError:  # pragma: no cover
 
 
 class ImageStore(Protocol):
-    async def fetch(self, url: str) -> Image.Image: ...  # type: ignore[name-defined]
+    async def fetch(self, url: str) -> Image.Image: ...
 
 
 # ─────────────────────────────────────────────────────────────────────
@@ -58,7 +61,7 @@ def _parse_hex_color(hex_color: str) -> tuple[int, int, int, int]:
 
 
 def _transform_layer_image(
-    src: Image.Image,  # type: ignore[name-defined]
+    src: Image.Image,
     *,
     canvas_w: int,
     canvas_h: int,
@@ -67,7 +70,7 @@ def _transform_layer_image(
     scale: float,
     rotation: float,
     opacity: float,
-) -> Image.Image:  # type: ignore[name-defined]
+) -> Image.Image:
     """Apply scale, rotation, opacity, and position to a layer image.
 
     Returns a new RGBA image the size of the canvas with the transformed
@@ -80,11 +83,11 @@ def _transform_layer_image(
     if scale != 1.0 and scale > 0:
         new_w = max(1, round(img.width * scale))
         new_h = max(1, round(img.height * scale))
-        img = img.resize((new_w, new_h), Image.LANCZOS)
+        img = img.resize((new_w, new_h), _LANCZOS)
 
     # Rotation — expand=True keeps the full rotated image
     if rotation != 0.0:
-        img = img.rotate(-rotation, expand=True, resample=Image.BICUBIC)
+        img = img.rotate(-rotation, expand=True, resample=_BICUBIC)
 
     # Apply opacity by scaling the alpha channel
     if opacity < 1.0:
@@ -107,13 +110,13 @@ def _render_text_layer(
     text_config: TextConfig,
     canvas_w: int,
     canvas_h: int,
-) -> Image.Image:  # type: ignore[name-defined]
+) -> Image.Image:
     """Render text onto a transparent canvas-sized image."""
     frame = Image.new("RGBA", (canvas_w, canvas_h), (0, 0, 0, 0))
     draw = ImageDraw.Draw(frame)
 
     # Attempt to load a system font; fall back to default
-    font: ImageFont.ImageFont | ImageFont.FreeTypeFont  # type: ignore[name-defined]
+    font: ImageFont.ImageFont | ImageFont.FreeTypeFont
     try:
         font = ImageFont.truetype("DejaVuSans.ttf", text_config.size)
     except OSError:
@@ -164,10 +167,10 @@ def _render_text_layer(
 
 
 def _alpha_composite_frame(
-    base: Image.Image,  # type: ignore[name-defined]
-    layer_frame: Image.Image,  # type: ignore[name-defined]
+    base: Image.Image,
+    layer_frame: Image.Image,
     blend_mode: str,
-) -> Image.Image:  # type: ignore[name-defined]
+) -> Image.Image:
     """Composite layer_frame over base with the given blend mode."""
     if blend_mode == "normal":
         return Image.alpha_composite(base, layer_frame)
@@ -177,23 +180,23 @@ def _alpha_composite_frame(
     layer_rgb = layer_frame.convert("RGB")
 
     if blend_mode == "multiply":
-        from PIL import ImageChops  # type: ignore[import]
+        from PIL import ImageChops
 
         blended_rgb = ImageChops.multiply(base_rgb, layer_rgb)
     elif blend_mode == "screen":
-        from PIL import ImageChops  # type: ignore[import]
+        from PIL import ImageChops
 
         blended_rgb = ImageChops.screen(base_rgb, layer_rgb)
     elif blend_mode == "overlay":
-        from PIL import ImageChops  # type: ignore[import]
+        from PIL import ImageChops
 
-        blended_rgb = ImageChops.overlay(base_rgb, layer_rgb)  # type: ignore[attr-defined]
+        blended_rgb = ImageChops.overlay(base_rgb, layer_rgb)
     elif blend_mode == "darken":
-        from PIL import ImageChops  # type: ignore[import]
+        from PIL import ImageChops
 
         blended_rgb = ImageChops.darker(base_rgb, layer_rgb)
     elif blend_mode == "lighten":
-        from PIL import ImageChops  # type: ignore[import]
+        from PIL import ImageChops
 
         blended_rgb = ImageChops.lighter(base_rgb, layer_rgb)
     else:
@@ -206,19 +209,19 @@ def _alpha_composite_frame(
     return Image.alpha_composite(base, blended)
 
 
-def _encode_png(img: Image.Image) -> bytes:  # type: ignore[name-defined]
+def _encode_png(img: Image.Image) -> bytes:
     buf = io.BytesIO()
     img.save(buf, format="PNG", optimize=False)
     return buf.getvalue()
 
 
-def _encode_webp(img: Image.Image, quality: int = 90) -> bytes:  # type: ignore[name-defined]
+def _encode_webp(img: Image.Image, quality: int = 90) -> bytes:
     buf = io.BytesIO()
     img.save(buf, format="WEBP", quality=quality)
     return buf.getvalue()
 
 
-def _encode_jpg(img: Image.Image, quality: int = 90) -> bytes:  # type: ignore[name-defined]
+def _encode_jpg(img: Image.Image, quality: int = 90) -> bytes:
     buf = io.BytesIO()
     img.convert("RGB").save(buf, format="JPEG", quality=quality)
     return buf.getvalue()
@@ -255,12 +258,12 @@ class PilCompositorService:
         )
 
         # Build the base (background colour)
-        output: Image.Image = await asyncio.to_thread(  # type: ignore[name-defined]
+        output: Image.Image = await asyncio.to_thread(
             Image.new, "RGBA", (canvas_w, canvas_h), bg_color
         )
 
         for lyr in visible:
-            frame: Image.Image | None = None  # type: ignore[name-defined]
+            frame: Image.Image | None = None
 
             if lyr.layer_type == "text" and lyr.text_config is not None:
                 frame = await asyncio.to_thread(
@@ -318,7 +321,7 @@ class PilCompositorService:
         quality: int = 90,
     ) -> bytes:
         """Re-encode existing PNG bytes into the requested format."""
-        img: Image.Image = await asyncio.to_thread(  # type: ignore[name-defined]
+        img: Image.Image = await asyncio.to_thread(
             lambda b: Image.open(io.BytesIO(b)).convert("RGBA"), image_bytes
         )
         target = fmt.lower()
