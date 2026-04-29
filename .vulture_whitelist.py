@@ -485,3 +485,10 @@ VIOLATED  # unused variable (src/stronghold/types/spec.py:31)
 ToolCall  # unused class (src/stronghold/types/tool.py:21)
 warden_flags  # unused variable (src/stronghold/types/tool.py:37)
 sentinel_repaired  # unused variable (src/stronghold/types/tool.py:38)
+
+# Protocol method parameters in stubs where the body is `...`.
+# Vulture can't see that these are part of the protocol contract and are
+# consumed by concrete implementations.
+client_info  # unused variable (src/stronghold/protocols/security.py:142)
+raw_token  # unused variable (src/stronghold/protocols/security.py:163)
+expected_audience  # unused variable (src/stronghold/protocols/security.py:164)
