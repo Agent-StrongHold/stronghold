@@ -1135,3 +1135,22 @@ Combined: the reactor becomes a *load-aware scheduler*. Trigger authors declare 
 CFM-1 is the foundation — every promotion and review in CFM-2..CFM-5 consumes it. CFM-2 gates dispatch for the rest. CFM-3 and CFM-4 are independent and can land in parallel after CFM-2. CFM-5 lands last because its evolution timeline wants to include recipe and APM changes.
 
 Recommended sequence: **CFM-1 → CFM-2 → (CFM-3 || CFM-4) → CFM-5**. Reactor enhancements (§15.6) ride alongside CFM-1. Gamification, skull soft-barrier engine, and currency exchange UX (v1.7) follow CFM-2 once the trust economy has data to surface.
+
+---
+
+## 16. CI Gates (Code-Quality Gates)
+
+**Added:** 2026-04-29. **Scope:** the eight CI quality gates that run on every PR. Owns the policy ("what we measure"), the enforcement model ("how we transition from warn to block"), and the contracts ("how each gate is wired"). The runtime wiring lives in `.github/workflows/ci.yml`; this section is the source of truth for *why* each step exists and *what* shape it must take.
+
+### 16.1 Goals & Non-Goals
+
+**Goals.**
+1. **Catch regressions, not legacy debt.** A PR that doesn't make a metric worse must not be blocked by a metric that was already bad on its base. Baseline-freeze is the load-bearing primitive — every gate either ratchets a numeric threshold or carries an explicit allow-list of pre-existing offenders.
+2. **Fast PR feedback.** The pattern-level gates (Xenon, Vulture, duplication, docstring, assertion-pattern lint) finish inside 60s on a clean checkout. The semantic gates (mutation, LLM judge) are tier-3-only — PR-to-`integration`/`main` — because their wall-time and dollar cost don't fit a per-push budget.
+3. **Single rollout shape per gate.** Every gate moves through the same three states: `disabled → warn-only → blocking`. No gate is born blocking. Promotion happens by deleting `|| true` from one workflow step, not by editing prose.
+4. **One source of truth per metric.** Thresholds, baseline files, and exclusion lists live next to the code they describe (`.xenon-baseline.json`, `.vulture_whitelist.py`, `.jscpd.json`, `pyproject.toml [tool.interrogate]`). The workflow file consumes them; it never embeds the numbers.
+
+**Non-goals.**
+- Replacing the existing tiered pytest gates (Tier-1/2/3 in `ci.yml`). Coverage and test count are orthogonal to the quality dimensions §16 covers.
+- Catching every code smell. The `docs/code-smell-catalog-2026-04-23.md` catalog is the *full* taxonomy; §16 picks the subset that has a cheap-and-deterministic detector. Smells without one stay manual-review territory.
+- Replacing Auditor's existing rubric (presence + pytest-green + ruff/mypy/bandit). §16 sits *after* Auditor in the pipeline and adds the dimensions Auditor doesn't measure (cf. §16.4.5–7 and `docs/test-quality-audit-and-ci-gate-proposal.md` §4).
