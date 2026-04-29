@@ -1657,3 +1657,41 @@ Feature: G-8 quality-baseline freeze
     When the lint job runs
     Then G-8 exits 1
 ```
+
+### 16.6 Edge Cases
+
+The cases below are the failure modes the §16 Gherkin AC are likely to miss. They are documented here so the test suite for the gate scripts (CLAUDE.md Build Rule #2 step 4-5) covers them explicitly.
+
+**16.6.1 Branch model.**
+- A PR opened against `feature/*` should *not* run T3 gates (G-6, G-7). The current `ci.yml` already gates Tier-3 on `base_ref in ('integration', 'main')`; §16 reuses the same conditional and inherits this behavior.
+- A PR retargeted from `feature/*` to `integration` mid-flight: the next push triggers T3 gates and the PR may flip to red. Document in PR-title conventions; do not paper over with delayed enforcement.
+
+**16.6.2 Force-push and rewrites.**
+- Baselines reference file paths and function names. A force-push that renames a function makes the prior baseline entry stale. Each gate's wrapper must treat *unmatched* baseline entries as warnings, not silent passes — otherwise a rename is a free pass.
+- Squashing a multi-commit branch where the first commit added a baseline entry and the last removed it: the squash diff is net-neutral; G-8 sees zero growth and passes correctly.
+
+**16.6.3 Generated and vendored code.**
+- `migrations/`, `src/stronghold/types/openapi/` (if present in future), and any `__generated__.py` files are excluded by every gate. Exclusions live in **one place per gate**: pyproject for interrogate, `.jscpd.json` for jscpd, `--exclude` flags for vulture/xenon. Cross-gate exclusion drift is the most common §16 failure mode; a PR that excludes a path in one gate but not another should fail at review.
+- Vendored dependencies (`vendor/`, `third_party/`) are excluded from G-1..G-5 unconditionally. G-6/G-7 never look at non-`src/stronghold/` paths.
+
+**16.6.4 Empty diffs and docs-only PRs.**
+- A docs-only PR that touches `*.md` only: G-1..G-5 see an empty changed-files list. Each gate must short-circuit to exit-0 instead of running over the empty input (mutmut and the LLM judge default to scanning *everything* when given an empty list — the wrapper guards against this).
+- Workflow-only PRs (touching `.github/workflows/*.yml`): same short-circuit, plus a hard requirement that the PR description names the rationale (catches accidental gate-disable PRs).
+
+**16.6.5 Mutation testing on async code.**
+- mutmut's "killed by tests" heuristic is unreliable on `async def` functions whose tests use `pytest-asyncio` because event-loop teardown order can mask reverted-operator mutants. The 5pp tolerance band in §16.4.6 is calibrated for this. Modules with >50% async surface area (currently `agents/base.py`, `api/routes/*`, `litellm_client.py`) get a 10pp tolerance recorded as a per-file override in `.mutation-baseline.json::tolerances`.
+
+**16.6.6 Judge non-determinism (G-7).**
+- Even at `temperature=0`, a model-server-side rolling update can shift verdicts. The dated-snapshot pin (`claude-haiku-4-5-20251001`) reduces but does not eliminate drift. The golden-set regression run (>2% drift blocks the prompt-change PR) catches the case where the *judge prompt* changes; a server-side model snapshot rotation is detected by a weekly cron that re-runs the golden set on `integration` and posts to the operator inbox.
+
+**16.6.7 Concurrent ratchets.**
+- Two PRs simultaneously raising `fail-under` (G-4) or shrinking the same baseline file (G-2): merge conflicts on the threshold/baseline are the correct outcome. Resolution is manual — neither PR auto-wins. Document in §16.10.
+
+**16.6.8 Cost-cap interaction with judge retries.**
+- G-7 retries are bounded: 1 retry per file on `429`/`5xx`. A PR with 200 changed test files at $0.0005/test exceeds the $0.10 cap; the script must process *new-or-modified-most-likely-to-be-BAD* files first (heuristic: most assertions, longest body) so a cost-truncated run still catches the highest-signal cases.
+
+**16.6.9 First-time baseline generation.**
+- A repo without a baseline file fails closed: gate refuses to run, prints `make baseline-<gate>` instructions. The first-time generation lands as a separate PR per gate (one baseline file, no other changes). This isolates the "we now believe the codebase looks like X" decision into a single reviewable diff.
+
+**16.6.10 Stale baselines after long-lived branches.**
+- A feature branch open for 2+ months on a baseline that has since shrunk on `integration`: the rebase produces a baseline file with entries `integration` no longer permits. G-8 correctly fails this PR — the entries appear as net-new from `integration`'s perspective. The fix is `make baseline-<gate>` post-rebase; this is the canonical "refresh the baseline" workflow.
