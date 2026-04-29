@@ -1790,3 +1790,99 @@ GitHub PR labels that toggle gate behaviour. Each is restricted to operator-tier
 | `judge-override`             | G-7 BAD-block             | `## Judge override` heading explaining why the verdict is wrong |
 
 The labels are *audit*, not *bypass*: they remain on the PR, are visible in the merge log, and are reported in the §16.10 quarterly review.
+
+### 16.8 CI Workflow Wiring
+
+The shape of the deltas to `.github/workflows/ci.yml`. This subsection is the *spec* — actual workflow edits land in implementation PRs, one gate per PR, per CLAUDE.md Build Rule #10 step 12.
+
+#### 16.8.1 Job topology
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│ ci.yml                                                          │
+│                                                                 │
+│  lint  ──┐                                                      │
+│          ├─► (existing: ruff, mypy, bandit)                     │
+│          ├─► G-1 xenon-with-baseline                            │
+│          ├─► G-2 vulture                                        │
+│          ├─► G-3 jscpd                                          │
+│          ├─► G-4 interrogate                                    │
+│          ├─► G-5 assertion-pattern-lint  (changed tests only)   │
+│          └─► G-8 baseline-freeze                                │
+│                                                                 │
+│  security ─► (existing: warden+sentinel+gate, adversarial, ...) │
+│  sast ────► (existing: bandit-r, semgrep, gitleaks, hadolint)   │
+│  test ────► (existing: tier-1/2/3 pytest + coverage)            │
+│                                                                 │
+│  ┌── only when base_ref ∈ {integration, main} ────────────────┐ │
+│  │  mutation ─► G-6 mutmut on changed src files               │ │
+│  │  judge ───► G-7 LLM assertion judge on changed test files  │ │
+│  └────────────────────────────────────────────────────────────┘ │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+G-1..G-5 + G-8 sit inside the existing `lint` job (single checkout, single Python install — the gates are cheap). G-6 and G-7 each get their own job because they have distinct setup costs (mutmut needs the full test environment; the judge needs `ROUTER_API_KEY`).
+
+#### 16.8.2 Step-shape (warn-only Phase 1)
+
+```yaml
+- name: "G-X <gate-name> (warn-only baseline)"
+  id: gate-X
+  continue-on-error: true
+  env:
+    GATE_REPORT_PATH: ${{ github.workspace }}/.gate-reports
+  run: |
+    mkdir -p "$GATE_REPORT_PATH"
+    python scripts/<gate>.py --baseline .<gate>-baseline.json <args>
+```
+
+#### 16.8.3 Step-shape (blocking Phase 2)
+
+```yaml
+- name: "G-X <gate-name>"
+  id: gate-X
+  env:
+    GATE_REPORT_PATH: ${{ github.workspace }}/.gate-reports
+  run: |
+    mkdir -p "$GATE_REPORT_PATH"
+    python scripts/<gate>.py --baseline .<gate>-baseline.json <args>
+```
+
+The only diff between Phase 1 and Phase 2 is `continue-on-error: true` — which is *exactly* the `|| true` anti-pattern §16.3.3 names, but explicit instead of implicit. Promotion to blocking is a one-line PR.
+
+#### 16.8.4 Report aggregation
+
+After all gates, a single step uploads `.gate-reports/*.json` as a workflow artifact:
+
+```yaml
+- name: "Upload gate reports"
+  if: always()
+  uses: actions/upload-artifact@v4
+  with:
+    name: gate-reports
+    path: .gate-reports/
+```
+
+A separate workflow (`gate-dashboard.yml`, runs on schedule + on `integration` push) collects historical reports and renders a per-gate trend dashboard. The dashboard is **read-only** — no enforcement decisions are made from it.
+
+#### 16.8.5 Label-driven step skips
+
+Steps that respect grow-labels read them via `${{ contains(github.event.pull_request.labels.*.name, 'X') }}`. Pattern:
+
+```yaml
+- name: "G-2 vulture (whitelist-shrink-only)"
+  if: "!contains(github.event.pull_request.labels.*.name, 'vulture-whitelist-grow')"
+  run: vulture src/stronghold/ .vulture_whitelist.py --min-confidence 100
+```
+
+When the label is present, the step is skipped *and* the G-8 baseline-freeze step's report records the suspension under `metrics.label_overrides`. Quarterly reviews (§16.10) read this field.
+
+#### 16.8.6 Concurrency and caching
+
+- `concurrency: ci-${{ github.ref }}` already cancels superseded runs (preserved).
+- `pip` cache is shared across jobs via `actions/setup-python@v5`'s built-in cache (already used).
+- mutmut has its own incremental cache — `~/.mutmut-cache` — keyed on the post-checkout SHA of `src/stronghold/`. Cache hit: skip files whose mutation results are still valid. Cache miss: full run within wall-time budget.
+
+#### 16.8.7 Local dev parity
+
+Pre-commit hook (`.pre-commit-config.yaml`) runs the T1 gates — G-1..G-5 and G-8 — using the same `make gate-*` targets CI invokes. T3 gates are explicitly not pre-commit-runnable (cost). Developers running `make gate-mutation` locally is a documented workflow but not enforced.
