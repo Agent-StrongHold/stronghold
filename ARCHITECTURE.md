@@ -1886,3 +1886,77 @@ When the label is present, the step is skipped *and* the G-8 baseline-freeze ste
 #### 16.8.7 Local dev parity
 
 Pre-commit hook (`.pre-commit-config.yaml`) runs the T1 gates — G-1..G-5 and G-8 — using the same `make gate-*` targets CI invokes. T3 gates are explicitly not pre-commit-runnable (cost). Developers running `make gate-mutation` locally is a documented workflow but not enforced.
+
+### 16.9 Code Smells / Anti-Patterns to Avoid in Implementation
+
+The §16 implementation is itself code; these are the smells the *implementation* PRs should not introduce. Each entry names the pattern, why it would fail us specifically, and the safer alternative.
+
+**16.9.1 Implicit `|| true` reintroduction.**
+- *Pattern:* "the gate is too noisy, add `|| true` for now".
+- *Why bad:* exactly what §16.3.3 names as decision-debt. There is no Phase 3 — once `|| true` lands, no one removes it.
+- *Instead:* add the entry to the gate's baseline file, get one reviewer signoff on the grow-label, and merge. The audit trail forces the conversation.
+
+**16.9.2 Threshold inlined in workflow YAML.**
+- *Pattern:* `--max-absolute B` hard-coded in `ci.yml` instead of reading from a config file.
+- *Why bad:* a PR that proposes ratcheting must edit YAML *and* prose; reviewers see the prose change buried in a workflow diff.
+- *Instead:* every threshold lives in a config file (pyproject, baseline JSON). Workflow YAML is plumbing.
+
+**16.9.3 Baseline regen runs in CI.**
+- *Pattern:* "if baseline drifts, CI rewrites it" via a `make baseline-<gate> && git commit` step.
+- *Why bad:* turns the gate into a no-op (anything that breaks "regenerates" the baseline). Removes human review.
+- *Instead:* baselines are *only* regenerated locally and reviewed in PR. CI runs `make gate-<gate>`, never `make baseline-<gate>`.
+
+**16.9.4 Cross-gate config duplication.**
+- *Pattern:* G-1's exclude list copy-pasted into G-3's config.
+- *Why bad:* drift over time produces "G-1 ignores `migrations/` but G-3 doesn't". Cf. §16.6.3.
+- *Instead:* a single `.codequality-exclude.yml` referenced by every gate. If a tool can't read it, the gate's wrapper script reads it and translates.
+
+**16.9.5 LLM-judge bypass via `# noqa`-style comments.**
+- *Pattern:* `# judge: ignore` magic comments in test files.
+- *Why bad:* attaches a permanent waiver to source where the rationale rots; the auditor in §0 of the audit doc is exactly the failure mode this would re-create.
+- *Instead:* per-PR `judge-override` label with a `## Judge override` heading that explains *why this specific verdict is wrong*. Source stays clean; the override is on the merge record.
+
+**16.9.6 "Just-in-time" gate authoring inside a feature PR.**
+- *Pattern:* a feature PR that adds tests *and* extends the gate scripts to allow a new pattern those tests need.
+- *Why bad:* mixes "what we believe quality looks like" with "what this feature ships". Reviewers can't separate.
+- *Instead:* gate-script changes land in their own PR (one gate per PR per Build Rule #10). Feature PRs consume the gate as-is.
+
+**16.9.7 Treating exit code 2 as a fail.**
+- *Pattern:* CI shows red on tool error; reviewer treats it as a quality verdict.
+- *Why bad:* trains reviewers to ignore the gate ("it errors all the time"). The gate's signal degrades to noise.
+- *Instead:* exit-2 is a *flake* (§16.7.2) — distinct status, rerun-button visible, not counted in dashboard regression metrics.
+
+**16.9.8 Coupling the judge prompt to the model snapshot.**
+- *Pattern:* prompt and model version pinned together but updated together.
+- *Why bad:* drift can't be attributed — if verdicts shift after a joint update, was it the prompt or the model?
+- *Instead:* version each independently (`prompts/assertion_judge_v2.md`, model dated snapshot). Golden-set regression runs on each axis change; the *combination* PR cannot land without both regressions green.
+
+**16.9.9 Importing gate scripts from `src/stronghold/`.**
+- *Pattern:* gate script reuses `src/stronghold/utils/foo.py`.
+- *Why bad:* couples test infrastructure to the SUT. A refactor of `utils/foo.py` can break CI before the new code is even reviewed.
+- *Instead:* `scripts/` is self-contained. Stdlib + the gate's tool dependency only. Treat `scripts/` as if it were a separate package.
+
+**16.9.10 Gate output that's not actionable.**
+- *Pattern:* `FAIL: 14 violations.` with no file:line list.
+- *Why bad:* sends developers to log diving. They learn to disable the gate.
+- *Instead:* every fail line is `<file>:<line>: <smell-id>: <one-sentence-fix>`. The format is a hard requirement, asserted by the gate's own test suite (yes, the gates have tests — TDD applies recursively).
+
+### 16.10 Open Questions
+
+Decisions deferred until §16 has 30+ days of warn-only data. Each is a §16.3.2 ratchet candidate.
+
+**OQ-1.** Whether G-3 (jscpd) should treat *similar-but-not-identical* clones (≥85% similarity, sub-token diff). Pro: catches near-duplicates from Mason output. Con: false-positive rate on idiomatic boilerplate (`if not auth: return 401`) is unknown.
+
+**OQ-2.** Whether G-6 (mutmut) should *also* run on `feature/*` PRs at a 1-min budget instead of T3-only. Trades faster feedback for higher CI cost. Decide after Phase-1 wall-time data.
+
+**OQ-3.** Whether G-7 (judge) should auto-retry WEAK verdicts with the model's own self-critique (a second pass with the verdict + reasoning as context, asking the model to confirm or reverse). Cheap (~doubles cost). Determinism implications for the golden set.
+
+**OQ-4.** Whether `judge-override` should require *two* operator approvals, given it's the only label that lets a `BAD`-classified test ship. Currently one — same as the others.
+
+**OQ-5.** Concurrent-ratchet conflicts (§16.6.7). Today: manual conflict resolution. Future: a conflict-aware ratchet bot that opens a single combined PR when two raise-`fail-under` PRs target the same release.
+
+**OQ-6.** Whether a quarterly review of grow-label usage should auto-revert labels added more than two quarters ago without follow-up. Aligns with §16.3.2 ratchet cadence; risks reverting legitimate long-term suspensions.
+
+**OQ-7.** Whether the dashboard (§16.8.4) should *itself* gate merges to `main` once the per-gate trend hits a regression alarm. Crosses the §16.8.4 read-only design rule; deferred until the trend data exists.
+
+---
