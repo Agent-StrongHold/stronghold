@@ -1325,3 +1325,140 @@ exclude = ["tests", "migrations", "src/stronghold/types", "src/stronghold/protoc
 - Floor never decreases. A PR that lowers coverage but stays above `fail-under` still warns in the PR comment.
 
 **Exit code.** Interrogate's native: `0` ≥ `fail-under`; `1` below; `2` tool error.
+
+#### 16.4.5 G-5 Assertion-Pattern Lint (Option A)
+
+**Purpose.** Catch the deterministic test smells from `docs/test-quality-audit-and-ci-gate-proposal.md` §3 Gate A. These are the patterns that produced 60-90% of Mason's WEAK/BAD tests pre-Wave-2B.
+
+**Detector. `scripts/check_assertion_patterns.py`** — AST walker that flags:
+1. `status_code in (...)` with len(tuple) > 1 — over-tolerant status assertion.
+2. `assert isinstance(x, T)` where `x` is the LHS of `x = T(...)` in the same function body — post-construct tautology.
+3. `assert hasattr(obj, "name")` not inside a `pytest.raises` block — trivial-type assertion.
+4. `def test_*` whose body has zero `assert` / `pytest.raises` / `await` of an expectation helper — no-assert test.
+5. `@patch("stronghold.<...>")` — patching internal modules instead of using `tests/fakes.py`.
+6. Sole assertion in body is `assert <name> is not None` — minimal-info assertion.
+
+**Tool & invocation.**
+```
+python scripts/check_assertion_patterns.py \
+       --baseline .assertion-pattern-baseline.json \
+       $(git diff --name-only --diff-filter=ACMR "$BASE" -- 'tests/**/*.py')
+```
+Scope is **changed test files only** — full-suite run is reserved for `make baseline-assertions`.
+
+**Baseline shape.** `.assertion-pattern-baseline.json` keyed by `(file, function, smell-id)`:
+```json
+{
+  "generated_at": "2026-04-29T00:00:00Z",
+  "permitted": [
+    {"file": "tests/foo/test_x.py", "function": "test_legacy_route", "smell": "TOLERANT_STATUS", "reason": "pre-audit"}
+  ]
+}
+```
+
+**Ratchet plan.** Set ratchet — baseline shrinks only.
+- Phase 1: snapshot today's offenders (target ≤ 50 entries; the audit closed most).
+- Q+1: shrink baseline by 50%.
+- Q+2: empty baseline; gate is unconditional.
+
+**Exit code.** `0` no net-new smells in changed tests; `1` net-new smells; `2` baseline malformed or script error.
+
+#### 16.4.6 G-6 Mutation Strength (Option B)
+
+**Purpose.** Catch tautologies pattern-lint can't see. A test that reverts a logic operator and still passes is the load-bearing failure mode (cf. §3 audit, B14/B16/B17).
+
+**Tool & invocation.** Tier-3 only (PR to `integration`/`main`):
+```
+mutmut run --paths-to-mutate=$CHANGED_SRC_FILES \
+           --runner='pytest -x --no-cov -q' \
+           --use-coverage
+mutmut results --json > .mutation-report.json
+scripts/check_mutation_score.py --threshold 0.60 \
+       --baseline .mutation-baseline.json .mutation-report.json
+```
+`$CHANGED_SRC_FILES` = `git diff --name-only ... -- 'src/stronghold/**/*.py'`. Wall-time cap **5 minutes**; if exceeded, gate emits a warn-only check and posts a PR comment listing un-mutated files. Wall-time exceedance is *not* a fail in Phase 1 — non-determinism in async paths and mutmut's known cost on large codebases makes a hard cap a flake source.
+
+**Baseline shape.** `.mutation-baseline.json`:
+```json
+{
+  "generated_at": "2026-04-29T00:00:00Z",
+  "per_file_score": {
+    "src/stronghold/router/selector.py": 0.71,
+    "src/stronghold/security/warden/regex.py": 0.83
+  }
+}
+```
+
+**Pass condition.** For each changed file `f`:
+- If `f` in baseline: PR's score(`f`) ≥ baseline(`f`) − 5pp tolerance.
+- If `f` not in baseline (new file): PR's score(`f`) ≥ 60%.
+
+**Ratchet plan.**
+- Phase 1: warn-only for 4 weeks; collect drift data on async modules.
+- Phase 2: blocking with the per-file rule above.
+- Q+1 onwards: tolerance shrinks 1pp/quarter; absolute floor rises 5pp/quarter to 75%.
+
+**Exit code.** `0` pass; `1` block (Phase 2+); `2` tool error or wall-time exceedance (Phase 1: `0`).
+
+#### 16.4.7 G-7 LLM Assertion Judge (Option C)
+
+**Purpose.** Catch semantic test smells pattern-lint and mutation can't see — BDD-comment-mismatch, AC-wording duplication, status-tolerance dressed as multiple assertions. Per the audit §0, the *primary fix* is spec-driven test authoring; G-7 is the safety net for code paths that skip the spec step.
+
+**Tool & invocation.** GitHub Action job (`.github/workflows/ci.yml` new job `assertion-judge`, T3 only):
+```
+python scripts/run_assertion_judge.py \
+       --model claude-haiku-4-5-20251001 \
+       --temperature 0 \
+       --golden-set tests/specs/assertion-judge-golden.jsonl \
+       --pr-files $(gh pr diff --name-only --files-only) \
+       --max-cost-usd 0.10 \
+       --output .judge-report.json
+```
+
+**Determinism guards.**
+- Model pinned to a dated snapshot (`claude-haiku-4-5-20251001`). Updates land via PR + golden-set regression.
+- `temperature=0`, fixed system prompt checked in at `prompts/assertion_judge_v1.md`.
+- Few-shot seeded from the master catalog (`docs/test-audit-2026-04-17.csv`).
+
+**Pass condition.**
+- Any `BAD` verdict in changed tests → block.
+- Any `WEAK` verdict → bot comment with the judge's reasoning, not a block, unless the file is also in the §16.4.5 baseline (compounding signal).
+- All `GOOD` → green check.
+
+**Cost guard.** Hard cap `$0.10/PR` enforced by `--max-cost-usd`. Exceedance emits a warn-only check; gate does not block on cost overruns (drives reviewers toward smaller test diffs without weaponizing the gate).
+
+**Baseline shape.** No persistent baseline (per-PR judgement). Golden set lives at `tests/specs/assertion-judge-golden.jsonl` — held-out examples whose expected verdicts pin the judge's calibration. CI runs the judge over the golden set on judge-prompt or model changes; >2% verdict drift blocks the prompt-change PR.
+
+**Ratchet plan.**
+- Phase 1 (warn-only, 4 weeks): collect verdicts, hand-audit 50 random PRs to validate calibration.
+- Phase 2: block on `BAD`.
+- Phase 3 (Q+2): block on `WEAK` if file is in §16.4.5 baseline.
+
+**Exit code.** `0` pass; `1` block; `2` cost-cap exceeded or model unreachable (Phase 1: `0`).
+
+#### 16.4.8 G-8 Quality-Baseline Freeze (cross-cutting)
+
+**Purpose.** Guarantee that no individual gate's baseline file is silently widened. G-8 reads the per-gate baseline files in the PR diff and fails if any grew without an authorizing label.
+
+**Tool & invocation.** `scripts/check_quality_baselines.py`:
+```
+python scripts/check_quality_baselines.py \
+       --base "$BASE" --head HEAD \
+       --label-allow-grow vulture-whitelist-grow,xenon-baseline-grow,jscpd-baseline-grow
+```
+
+**Pass condition.** For each baseline file in `[
+  .xenon-baseline.json,
+  .vulture_whitelist.py,
+  .jscpd-baseline.json,
+  .assertion-pattern-baseline.json,
+  .mutation-baseline.json,
+  pyproject.toml::tool.interrogate.fail-under (numeric: must not decrease)
+]`:
+- New entries added → fail unless the corresponding `*-grow` label is on the PR.
+- Removed entries → always pass (shrinking is the goal).
+- For numeric thresholds: PR may *raise* `fail-under`/scores; lowering requires the corresponding grow label.
+
+**Why a separate gate.** The individual gates (G-1..G-7) compare PR-state against their own baseline. G-8 compares the baseline file *itself* between base and head. Without G-8, a PR could lower G-4's `fail-under` from 65 to 50 to dodge the gate; G-1..G-7 wouldn't notice because their threshold reads the post-edit value.
+
+**Exit code.** `0` no unauthorized growth; `1` unauthorized growth; `2` script error.
