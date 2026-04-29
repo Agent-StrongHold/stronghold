@@ -6,6 +6,24 @@
 
 See [ARCHITECTURE.md](ARCHITECTURE.md) for the full system design.
 
+---
+
+## Project Turing — Research Track (Separate Branch)
+
+Project Turing is a **separate research project** that lives as a pseudo-fork on a dedicated research trunk. It is not part of the Stronghold `integration` branch and does not share `main`'s multi-tenant posture. All Turing-specific code, specs, and implementations live on the `project_Turing` branch.
+
+**→ Current state, specs, and implementation:** Check the `project_Turing` branch. That branch has 70+ individually reviewable specs (covering invariants, acceptance criteria, and edge cases across Tranches 1–10), a runnable SQLite sketch, DESIGN.md, and all implementation work.
+
+**→ Research context:** [project_turing.research.md](project_turing.research.md) — research arc across CoinSwarm, mAIstro, Stronghold, and Turing; the two principles the portfolio applies; and an honest read of where the Turing sketch breaks (with pointers to the 34-finding audit).
+
+**What it is:** An autonoetic Conduit — the central routing pipeline carries a persistent, self-indexed memory and routes from first-person experience (personality, mood, passions, skills, and todos) rather than stateless classification. One global self, no tenant scoping. 7-tier episodic memory (OBSERVATION → HYPOTHESIS → OPINION → LESSON → REGRET → AFFIRMATION → WISDOM) extended with a self-model: HEXACO-24 personality, activation graph, mood vector, and scheduler.
+
+**What it is not:** A roadmap item, a competitor to the enterprise codebase, or production-ready. Findings may feed back to `main` after redesign for multi-tenancy.
+
+**Lineage:** CoinSwarm (Nov 2025) → 7-tier crystallization (Jan 15, 2026) → Stronghold import (Mar 25, 2026) → Project Turing (Apr 2026).
+
+---
+
 ## Origin
 
 **Project Maistro** (a.k.a. Conductor, Feb 19, 2026 – present) is a parallel project — a more secure implementation of the autonomous agent harness popularized by OpenClaw. Maistro proved the core concepts: routing, memory, multi-agent orchestration, and functional security. It remains an active project.

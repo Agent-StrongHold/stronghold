@@ -195,11 +195,11 @@ class TestRlhfFeedback:
         )
         monkeypatch.setattr(
             "stronghold.agents.feedback.extractor.ReviewFeedbackExtractor",
-            lambda: SimpleNamespace(),
+            SimpleNamespace,
         )
         monkeypatch.setattr(
             "stronghold.agents.feedback.tracker.InMemoryViolationTracker",
-            lambda: SimpleNamespace(),
+            SimpleNamespace,
         )
 
         review = SimpleNamespace(findings=(), approved=True)

@@ -31,7 +31,7 @@ from stronghold.tools.executor import ToolDispatcher
 from stronghold.tools.registry import InMemoryToolRegistry
 from stronghold.tracing.noop import NoopTracingBackend
 from stronghold.types.agent import AgentIdentity
-from stronghold.types.auth import AuthContext, PermissionTable
+from stronghold.types.auth import AuthContext, IdentityKind, PermissionTable
 from stronghold.types.config import StrongholdConfig, TaskTypeConfig
 from stronghold.types.memory import Learning
 from tests.fakes import FakeAuthProvider, FakeLLMClient
@@ -111,7 +111,15 @@ def admin_app() -> FastAPI:
 
         return Container(
             config=config,
-            auth_provider=StaticKeyAuthProvider(api_key="sk-test", read_only=False),
+            auth_provider=FakeAuthProvider(
+                auth_context=AuthContext(
+                    user_id="system",
+                    username="admin",
+                    roles=frozenset({"admin", "user"}),
+                    org_id="__system__",
+                    kind=IdentityKind.SYSTEM,
+                )
+            ),
             permission_table=PermissionTable.from_config({"admin": ["*"]}),
             router=RouterEngine(InMemoryQuotaTracker()),
             classifier=ClassifierEngine(),
@@ -138,7 +146,7 @@ def admin_app() -> FastAPI:
             agents={"arbiter": default_agent},
         )
 
-    container = asyncio.get_event_loop().run_until_complete(setup())
+    container = asyncio.run(setup())
     app.state.container = container
     return app
 
@@ -220,7 +228,7 @@ class TestGetAuditLog:
         from stronghold.types.security import AuditEntry
 
         audit_log = admin_app.state.container.audit_log
-        asyncio.get_event_loop().run_until_complete(
+        asyncio.run(
             audit_log.log(
                 AuditEntry(
                     user_id="alice",
@@ -281,7 +289,7 @@ class TestGetQuota:
         import asyncio
 
         tracker = admin_app.state.container.quota_tracker
-        asyncio.get_event_loop().run_until_complete(
+        asyncio.run(
             tracker.record_usage("test", "monthly", 500, 300)
         )
         with TestClient(admin_app) as client:
@@ -334,7 +342,7 @@ class TestGetQuotaUsage:
         from stronghold.types.memory import Outcome
 
         store = admin_app.state.container.outcome_store
-        asyncio.get_event_loop().run_until_complete(
+        asyncio.run(
             store.record(
                 Outcome(
                     user_id="alice",
@@ -346,7 +354,7 @@ class TestGetQuotaUsage:
                 )
             )
         )
-        asyncio.get_event_loop().run_until_complete(
+        asyncio.run(
             store.record(
                 Outcome(
                     user_id="bob",
@@ -386,7 +394,7 @@ class TestGetQuotaUsage:
         from stronghold.types.memory import Outcome
 
         store = admin_app.state.container.outcome_store
-        asyncio.get_event_loop().run_until_complete(
+        asyncio.run(
             store.record(
                 Outcome(
                     user_id="alice",
@@ -451,7 +459,7 @@ class TestGetQuotaTimeseries:
         from stronghold.types.memory import Outcome
 
         store = admin_app.state.container.outcome_store
-        asyncio.get_event_loop().run_until_complete(
+        asyncio.run(
             store.record(
                 Outcome(
                     user_id="alice",
@@ -674,8 +682,7 @@ class TestStrikeEndpoints:
         tracker = InMemoryStrikeTracker()
         admin_app.state.container.strike_tracker = tracker
         # Pre-populate a strike
-        loop = asyncio.get_event_loop()
-        loop.run_until_complete(
+        asyncio.run(
             tracker.record_violation(
                 user_id="alice",
                 org_id="__system__",
@@ -778,7 +785,7 @@ class TestStrikeEndpoints:
         assert body["strike_count"] == strikes_before
 
         # Persisted state confirms the mutation.
-        post = asyncio.get_event_loop().run_until_complete(tracker.get("alice"))
+        post = asyncio.run(tracker.get("alice"))
         assert post is not None
         assert post.locked_until is None
         assert post.is_locked is False
@@ -816,7 +823,7 @@ class TestStrikeEndpoints:
         assert body["disabled"] is False
         assert body["strike_count"] == strikes_before
 
-        post = asyncio.get_event_loop().run_until_complete(tracker.get("alice"))
+        post = asyncio.run(tracker.get("alice"))
         assert post is not None
         assert post.disabled is False
         assert post.strike_count == strikes_before
@@ -839,8 +846,7 @@ class TestAppeals:
 
         tracker = InMemoryStrikeTracker()
         admin_app.state.container.strike_tracker = tracker
-        loop = asyncio.get_event_loop()
-        loop.run_until_complete(
+        asyncio.run(
             tracker.record_violation(
                 user_id="system",
                 org_id="__system__",
@@ -1007,7 +1013,7 @@ class TestQuotaAnalyzeDataGathering:
 
         store = admin_app.state.container.outcome_store
         for i in range(3):
-            asyncio.get_event_loop().run_until_complete(
+            asyncio.run(
                 store.record(
                     Outcome(
                         user_id=f"user-{i}",
@@ -1042,7 +1048,7 @@ class TestQuotaAnalyzeDataGathering:
         from stronghold.types.memory import Outcome
 
         store = admin_app.state.container.outcome_store
-        asyncio.get_event_loop().run_until_complete(
+        asyncio.run(
             store.record(
                 Outcome(
                     user_id="alice",
@@ -1085,7 +1091,7 @@ class TestProviderBurnRateCalculation:
         import asyncio
 
         tracker = admin_app.state.container.quota_tracker
-        asyncio.get_event_loop().run_until_complete(
+        asyncio.run(
             tracker.record_usage("test", "monthly", 100000, 50000)
         )
 
@@ -1112,7 +1118,7 @@ class TestProviderBurnRateCalculation:
             "overage_cost_per_1k_output": 0.03,
         }
         tracker = admin_app.state.container.quota_tracker
-        asyncio.get_event_loop().run_until_complete(
+        asyncio.run(
             tracker.record_usage("paygo", "monthly", 5000, 5000)
         )
 
@@ -1138,7 +1144,7 @@ class TestProviderBurnRateCalculation:
             "free_tokens": 100,
         }
         tracker = admin_app.state.container.quota_tracker
-        asyncio.get_event_loop().run_until_complete(
+        asyncio.run(
             tracker.record_usage("exhausted", "monthly", 200, 0)
         )
 
