@@ -74,8 +74,8 @@ async def test_discover_parses_prm_and_caches() -> None:
         b = await client.discover(CANONICAL_URI)
     assert a == b
     assert a.canonical_uri == CANONICAL_URI
-    assert "https://auth.example" in a.auth_servers
-    assert "read:issues" in a.scopes_supported
+    assert a.auth_servers == ("https://auth.example",)
+    assert a.scopes_supported == frozenset({"read:issues"})
 
 
 @pytest.mark.asyncio
