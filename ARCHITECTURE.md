@@ -1211,3 +1211,117 @@ A ratchet that's reverted within 30 days resets the cadence and triggers a §16.
 #### 16.3.3 The Anti-Pattern this Replaces
 
 Today's `ci.yml` carries `xenon ... || true` and `pip-audit ... || true`. Both are warn-only by accident, not by design — the suppression has no associated baseline, no ratchet, and no exit criterion. The §16.3 model formalizes the warn-only state into Phase 1 and gives it a path out. Phase-1 gates that sit in `|| true` for more than two quarters without a ratchet plan are flagged in §16.10 as decision-debt.
+
+### 16.4 Per-Gate Specifications
+
+Each subsection follows the same shape: **Purpose**, **Tool & invocation**, **Baseline shape**, **Ratchet plan**, **Exit code contract**.
+
+#### 16.4.1 G-1 Complexity (Xenon)
+
+**Purpose.** Block PRs that introduce new high-complexity blocks. Cyclomatic complexity ≥ rank D is a known correlate of defect density and a friction tax on every reviewer.
+
+**Tool & invocation.**
+```
+xenon --max-absolute <ABS> --max-modules <MOD> --max-average <AVG> \
+      --exclude-from .xenon-baseline.json src/stronghold/
+```
+The `--exclude-from` flag is *not* a stock Xenon feature; G-1 ships a wrapper (`scripts/xenon_with_baseline.py`) that reads the baseline JSON, runs Xenon over `src/stronghold/`, and post-filters the violations to net-new entries. Stock Xenon's behaviour ("fail any block above rank") is the wrong mode for §16.3.1.
+
+**Baseline shape.** `.xenon-baseline.json`:
+```json
+{
+  "generated_at": "2026-04-29T00:00:00Z",
+  "command": "make baseline-xenon",
+  "thresholds": {"absolute": "C", "modules": "C", "average": "C"},
+  "permitted_above_threshold": [
+    {"file": "src/stronghold/skills/fixer.py", "block": "FixerStrategy.fix", "rank": "E"},
+    {"file": "src/stronghold/agents/base.py", "block": "Agent.handle", "rank": "D"},
+    {"file": "src/stronghold/api/routes/admin.py", "block": "module", "rank": "D"}
+  ]
+}
+```
+
+**Ratchet plan.**
+- Q2 2026: capture baseline, drop `|| true`, threshold `C/C/C`.
+- Q3 2026: tighten to `B` for any block *not* in baseline (baseline still tolerated).
+- Q4 2026: shrink baseline by ≥ 30%, target `B` codebase-wide.
+- Q1 2027: zero-baseline `B/B/B`. Exit Phase 1.
+
+**Exit code.** `0` if no net-new offenders; `1` otherwise. `2` reserved for tool errors (Xenon crash, malformed baseline).
+
+#### 16.4.2 G-2 Dead Code (Vulture)
+
+**Purpose.** Block PRs that introduce unused functions/classes/imports/attributes. Already blocking today via `.vulture_whitelist.py`. §16.4.2 formalizes the **whitelist-shrink-only** policy.
+
+**Tool & invocation.** Unchanged from current `ci.yml`:
+```
+vulture src/stronghold/ .vulture_whitelist.py --min-confidence 100
+```
+
+**Baseline shape.** `.vulture_whitelist.py` (already extant). The header explains the regeneration command and the framework-indirection rationale. **New rule (§16):** every entry must carry an inline `# unused <kind> (<path>:<line>)` annotation (already enforced by `vulture --make-whitelist` output).
+
+**Whitelist-grow protocol.**
+- Default: a PR's diff against `.vulture_whitelist.py` must be **empty or a strict subset**. CI computes `diff(base, head)` over the whitelist and fails if any line was added.
+- Override: `vulture-whitelist-grow` PR label suspends the strict-subset check for that PR. The label is restricted to operator-tier reviewers in branch protection. Each grow event must (a) link the framework or DI-binding that justifies the entry and (b) appear in the PR body under a `## Whitelist additions` heading.
+
+**Ratchet plan.** No threshold ratchet (Vulture is binary). Cadence ratchet: monthly review of whitelist entries; entries whose justification has gone stale (e.g., framework migrated away) are deleted. Target: −10% entries per quarter.
+
+**Exit code.** `0` clean; `1` net-new dead code (including unauthorized whitelist growth); `2` tool error.
+
+#### 16.4.3 G-3 Duplication (jscpd)
+
+**Purpose.** Block PRs that copy-paste blocks ≥ 50 tokens / 10 lines across the codebase. Duplicate code is the #1 detected smell in `docs/code-smell-catalog-2026-04-23.md` and the cheapest to detect deterministically.
+
+**Tool & invocation.**
+```
+npx jscpd@4 --config .jscpd.json src/stronghold/
+```
+Node tooling acceptable here because (a) it's PR-time-only, not runtime; (b) jscpd is the most mature multi-language clone detector; (c) Python-native alternatives (`pylint --enable=duplicate-code`) are noisier and slower.
+
+**Baseline shape.** `.jscpd.json` config + `.jscpd-baseline.json` snapshot:
+```json
+{
+  "generated_at": "2026-04-29T00:00:00Z",
+  "duplication_pct": 2.4,
+  "tolerated_clones": [
+    {"a": "src/stronghold/api/routes/admin.py:120-140", "b": "src/stronghold/api/routes/dashboard.py:88-108", "tokens": 73}
+  ]
+}
+```
+
+**Ratchet plan.**
+- Phase 1 launch: capture baseline `duplication_pct` (estimate ≤ 5%); fail PRs that *increase* the pct or add new clone pairs.
+- Q+1: ratchet target to `floor(current) − 0.5pp`.
+- Q+2 onwards: −0.5pp per quarter until 1.0%.
+
+**Exit code.** `0` no net-new duplication; `1` net-new clones or pct above ceiling; `2` tool error.
+
+#### 16.4.4 G-4 Docstring Coverage (interrogate)
+
+**Purpose.** Block PRs that add public APIs without docstrings. Stronghold's protocol-driven DI (CLAUDE.md "Protocol-Driven DI") only works if the protocol surface is self-describing.
+
+**Tool & invocation.**
+```
+interrogate -c pyproject.toml src/stronghold/
+```
+
+**Config (`pyproject.toml [tool.interrogate]`).**
+```toml
+[tool.interrogate]
+fail-under = <FLOOR>           # captured at baseline freeze
+ignore-init-module = true
+ignore-init-method = true
+ignore-magic = true
+ignore-private = true
+ignore-property-decorators = true
+exclude = ["tests", "migrations", "src/stronghold/types", "src/stronghold/protocols"]
+```
+
+**Why exclude `types/` and `protocols/`.** Dataclasses in `types/` document themselves via field names + types. Protocol stubs in `protocols/` carry module-level docstrings on the protocol class; per-method `...` bodies don't need their own docstring. Including them inflates the metric without improving discoverability.
+
+**Ratchet plan.**
+- Phase 1: measure today's coverage, set `fail-under` to `floor(current)`.
+- +5pp per quarter until 80%.
+- Floor never decreases. A PR that lowers coverage but stays above `fail-under` still warns in the PR comment.
+
+**Exit code.** Interrogate's native: `0` ≥ `fail-under`; `1` below; `2` tool error.
