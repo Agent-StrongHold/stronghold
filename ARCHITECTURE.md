@@ -1462,3 +1462,198 @@ python scripts/check_quality_baselines.py \
 **Why a separate gate.** The individual gates (G-1..G-7) compare PR-state against their own baseline. G-8 compares the baseline file *itself* between base and head. Without G-8, a PR could lower G-4's `fail-under` from 65 to 50 to dodge the gate; G-1..G-7 wouldn't notice because their threshold reads the post-edit value.
 
 **Exit code.** `0` no unauthorized growth; `1` unauthorized growth; `2` script error.
+
+### 16.5 Acceptance Criteria (Gherkin)
+
+The criteria below are the testable contract for the §16 implementation. They are written in the form §16's *test stubs* will take, so a TDD-first land (CLAUDE.md Build Rule #2) can begin from this list directly.
+
+#### 16.5.1 G-1 Complexity
+
+```gherkin
+Feature: G-1 Xenon complexity gate
+  Scenario: PR adds a new rank-D function in a clean file
+    Given .xenon-baseline.json contains no entry for src/stronghold/foo/bar.py
+    And  the PR adds a function `bar.complicated_thing` with rank D
+    When the lint job runs
+    Then scripts/xenon_with_baseline.py exits 1
+    And  the failure message names the new offender and points at .xenon-baseline.json
+
+  Scenario: PR refactors a baselined rank-D function to rank-B
+    Given .xenon-baseline.json contains {file: "agents/base.py", block: "Agent.handle", rank: "D"}
+    And  the PR drops Agent.handle to rank B
+    When the lint job runs
+    Then scripts/xenon_with_baseline.py exits 0
+    And  the PR diff includes the baseline entry's removal
+
+  Scenario: PR raises an existing rank-D function to rank-E
+    Given .xenon-baseline.json contains {file: "agents/base.py", block: "Agent.handle", rank: "D"}
+    And  the PR pushes Agent.handle to rank E
+    When the lint job runs
+    Then scripts/xenon_with_baseline.py exits 1
+    And  the failure message says "regression: Agent.handle was D, now E"
+```
+
+#### 16.5.2 G-2 Vulture
+
+```gherkin
+Feature: G-2 Vulture dead-code gate
+  Scenario: PR adds a new unused function
+    Given the function did not exist on base
+    And  the PR has no `vulture-whitelist-grow` label
+    When the lint job runs
+    Then vulture exits 1
+    And  the report lists the new symbol
+
+  Scenario: PR adds a framework-mediated method to .vulture_whitelist.py
+    Given the PR has the `vulture-whitelist-grow` label
+    And  the PR body contains a `## Whitelist additions` heading with the new entry
+    When the lint job runs
+    Then vulture exits 0
+    And  the G-8 baseline-freeze gate also passes
+
+  Scenario: PR adds an entry to .vulture_whitelist.py without the grow label
+    Given the PR has no `vulture-whitelist-grow` label
+    When the lint job runs
+    Then G-8 baseline-freeze exits 1
+    And  the failure message names .vulture_whitelist.py and the offending diff lines
+```
+
+#### 16.5.3 G-3 Duplication
+
+```gherkin
+Feature: G-3 jscpd duplication gate
+  Scenario: PR introduces a new ≥50-token clone
+    Given baseline duplication_pct = 2.4
+    And  the PR copies a 60-token block from routes/admin.py to routes/dashboard.py
+    When the lint job runs
+    Then jscpd exits 1
+    And  the report shows the source/dest pair
+
+  Scenario: PR removes a baselined clone pair
+    Given .jscpd-baseline.json contains a clone pair (admin.py, dashboard.py)
+    And  the PR refactors both to call a shared helper
+    When the lint job runs
+    Then jscpd exits 0
+    And  the new baseline file is committed in the PR with the pair removed
+```
+
+#### 16.5.4 G-4 Docstring coverage
+
+```gherkin
+Feature: G-4 Interrogate docstring gate
+  Scenario: PR adds a public function with a docstring
+    Given current coverage = 62%
+    And  pyproject.toml fail-under = 60
+    And  the new function has a docstring
+    When the lint job runs
+    Then interrogate exits 0
+
+  Scenario: PR adds a public function with no docstring, dropping coverage below floor
+    Given current coverage = 60.2%
+    And  pyproject.toml fail-under = 60
+    And  the new function has no docstring, dropping coverage to 59.8%
+    When the lint job runs
+    Then interrogate exits 1
+    And  the report names the missing-docstring file:line
+
+  Scenario: PR adds a Protocol method stub with no docstring
+    Given the new method lives under src/stronghold/protocols/
+    When the lint job runs
+    Then interrogate exits 0
+    And  the file is excluded by pyproject [tool.interrogate].exclude
+```
+
+#### 16.5.5 G-5 Assertion-pattern lint
+
+```gherkin
+Feature: G-5 assertion-pattern AST gate
+  Scenario: PR adds a new test using `status_code in (200, 401)`
+    Given .assertion-pattern-baseline.json has no entry for the new test
+    When the lint job runs
+    Then scripts/check_assertion_patterns.py exits 1
+    And  the report names the file:line and smell-id TOLERANT_STATUS
+
+  Scenario: PR modifies a baselined test to a different smell
+    Given .assertion-pattern-baseline.json has {test_legacy_route: TOLERANT_STATUS}
+    And  the PR rewrites the test to use `assert hasattr(...)` instead
+    When the lint job runs
+    Then scripts/check_assertion_patterns.py exits 1
+    And  the failure message says "smell changed: TOLERANT_STATUS → TRIVIAL_HASATTR; baseline grants TOLERANT_STATUS only"
+
+  Scenario: PR removes a baselined test entirely
+    Given .assertion-pattern-baseline.json has {test_legacy_route: TOLERANT_STATUS}
+    And  the PR deletes test_legacy_route
+    When the lint job runs
+    Then scripts/check_assertion_patterns.py exits 0
+    And  the new baseline has the entry removed
+```
+
+#### 16.5.6 G-6 Mutation strength
+
+```gherkin
+Feature: G-6 mutation strength gate (T3)
+  Scenario: PR adds a tautological test
+    Given .mutation-baseline.json: {router/selector.py: 0.71}
+    And  the PR adds a test that always passes regardless of selector logic
+    When the test job runs against integration
+    Then mutmut for router/selector.py reports score < 0.66 (0.71 − 5pp)
+    And  scripts/check_mutation_score.py exits 1
+
+  Scenario: PR creates a new file with weak tests
+    Given the new file is not in .mutation-baseline.json
+    And  the new file's mutation score = 0.45
+    When the test job runs against integration
+    Then scripts/check_mutation_score.py exits 1 (below 60% floor for new files)
+
+  Scenario: mutmut wall-time exceeds 5 minutes (Phase 1)
+    Given mutmut is in Phase 1 (warn-only)
+    When wall-time exceeds 300s
+    Then the gate posts a warn comment
+    And  the gate exits 0
+```
+
+#### 16.5.7 G-7 LLM judge
+
+```gherkin
+Feature: G-7 LLM assertion judge (T3)
+  Scenario: PR adds a test the judge classifies BAD
+    Given the judge is in Phase 2 (blocking on BAD)
+    And  the new test is classified BAD with reasoning "BDD comment says 'rejects', body asserts 200"
+    When the assertion-judge job runs
+    Then it exits 1
+    And  a PR comment is posted with the classification + reasoning
+
+  Scenario: judge classifies WEAK on a file in §16.4.5 baseline
+    Given the judge is in Phase 3
+    And  the test file is in .assertion-pattern-baseline.json
+    And  the new test is classified WEAK
+    When the assertion-judge job runs
+    Then it exits 1 (compounding signal)
+
+  Scenario: cost cap exceeded
+    Given --max-cost-usd 0.10
+    When cost mid-run reaches $0.11
+    Then the script aborts pending classifications
+    And  it posts a warn comment and exits 0
+```
+
+#### 16.5.8 G-8 Baseline freeze
+
+```gherkin
+Feature: G-8 quality-baseline freeze
+  Scenario: PR shrinks a baseline
+    Given the PR removes 3 entries from .vulture_whitelist.py
+    When the lint job runs
+    Then G-8 exits 0
+
+  Scenario: PR adds 2 entries to .vulture_whitelist.py without grow label
+    Given the PR has no `vulture-whitelist-grow` label
+    When the lint job runs
+    Then G-8 exits 1
+    And  the report names .vulture_whitelist.py and the unauthorized lines
+
+  Scenario: PR lowers interrogate fail-under from 60 to 55
+    Given the PR has no `interrogate-floor-grow` label (or label disallows lowering)
+    When the lint job runs
+    Then G-8 exits 1
+```
