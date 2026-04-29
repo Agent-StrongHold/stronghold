@@ -144,6 +144,7 @@ class Emissary:
 
         self._registrations: dict[str, BackendRegistration] = {}
         self._sessions: dict[str, Session] = {}
+        self._session_client_info: dict[str, dict[str, object]] = {}
         self._affinity: dict[tuple[str, str], str] = {}
         self._idempotency: dict[tuple[str | None, str], _IdempotencyRecord] = {}
 
@@ -183,10 +184,16 @@ class Emissary:
             last_activity=now,
         )
         self._sessions[sid.value] = session
+        # client_info is recorded for audit correlation; the session itself
+        # is principal-scoped, but operators investigating an incident need
+        # to know which MCP client opened it.
+        if client_info:
+            self._session_client_info[sid.value] = dict(client_info)
         return session
 
     async def end_session(self, session: SessionId) -> None:
         self._sessions.pop(session.value, None)
+        self._session_client_info.pop(session.value, None)
         for key in list(self._affinity):
             if key[0] == session.value:
                 self._affinity.pop(key, None)
