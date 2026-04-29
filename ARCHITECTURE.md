@@ -1695,3 +1695,98 @@ The cases below are the failure modes the §16 Gherkin AC are likely to miss. Th
 
 **16.6.10 Stale baselines after long-lived branches.**
 - A feature branch open for 2+ months on a baseline that has since shrunk on `integration`: the rebase produces a baseline file with entries `integration` no longer permits. G-8 correctly fails this PR — the entries appear as net-new from `integration`'s perspective. The fix is `make baseline-<gate>` post-rebase; this is the canonical "refresh the baseline" workflow.
+
+### 16.7 Contracts
+
+The interface every §16 implementation must respect. Implementations are free in their internals but must conform here so workflows, scripts, and reviewers compose without surprises.
+
+#### 16.7.1 File layout
+
+| Path | Owner | Format | Regen command |
+|------|-------|--------|---------------|
+| `.xenon-baseline.json`             | G-1 | JSON (§16.4.1) | `make baseline-xenon` |
+| `.vulture_whitelist.py`            | G-2 | Python identifier list (vulture-native) | `make baseline-vulture` |
+| `.jscpd.json`                      | G-3 | jscpd config | hand-edited (rare) |
+| `.jscpd-baseline.json`             | G-3 | JSON (§16.4.3) | `make baseline-jscpd` |
+| `pyproject.toml [tool.interrogate]` | G-4 | TOML | hand-edited at ratchet |
+| `.assertion-pattern-baseline.json` | G-5 | JSON (§16.4.5) | `make baseline-assertions` |
+| `.mutation-baseline.json`          | G-6 | JSON (§16.4.6) | `make baseline-mutation` (T3 only) |
+| `tests/specs/assertion-judge-golden.jsonl` | G-7 | JSONL of `{test_src, expected_verdict, rationale}` | hand-curated |
+| `prompts/assertion_judge_v1.md`    | G-7 | Markdown system prompt | versioned by suffix `_vN.md` |
+| `scripts/xenon_with_baseline.py`   | G-1 | Python | — |
+| `scripts/check_assertion_patterns.py` | G-5 | Python | — |
+| `scripts/check_mutation_score.py`  | G-6 | Python | — |
+| `scripts/run_assertion_judge.py`   | G-7 | Python | — |
+| `scripts/check_quality_baselines.py` | G-8 | Python | — |
+| `Makefile` (or `justfile`)         | all | targets `baseline-<gate>` and `gate-<gate>` | — |
+
+#### 16.7.2 Exit-code grammar
+
+Every gate script obeys the same three-value grammar:
+
+| Code | Meaning | CI behaviour |
+|------|---------|--------------|
+| `0`  | Pass — no net-new violations vs. baseline. | Step succeeds. |
+| `1`  | Fail — at least one net-new violation. | Step fails; PR blocked (Phase 2+) or warned (Phase 1). |
+| `2`  | Tool/script error — malformed baseline, missing dependency, network failure. | Step fails *as a flake*; rerun-button visible; not a quality verdict. |
+
+Anything other than `0/1/2` is a script bug. Test stubs assert on the specific exit code, not just `!= 0`.
+
+#### 16.7.3 Output contract
+
+Each gate script emits two channels:
+
+1. **stdout** — human-readable summary, one line per offender plus a leading `OK:`/`FAIL:` banner. Suitable for CI log scanning.
+2. **`$GATE_REPORT_PATH/<gate-id>.json`** (if env var set) — machine-readable structured report for the dashboard collector and the §16.4.8 baseline-freeze cross-check. Schema:
+   ```json
+   {
+     "gate": "G-1",
+     "status": "pass|fail|error",
+     "phase": "warn|block",
+     "violations": [
+       {"file": "...", "line": 42, "kind": "RANK_D", "permitted_by_baseline": false, "detail": "..."}
+     ],
+     "metrics": {"total_blocks_scanned": 1842, "wall_time_s": 6.3}
+   }
+   ```
+
+Reports land in `$GITHUB_WORKSPACE/.gate-reports/` so a single artifact upload step in `ci.yml` collects them all.
+
+#### 16.7.4 Make targets
+
+```
+make baseline-xenon         # writes .xenon-baseline.json
+make baseline-vulture       # writes .vulture_whitelist.py
+make baseline-jscpd         # writes .jscpd-baseline.json
+make baseline-assertions    # writes .assertion-pattern-baseline.json
+make baseline-mutation      # writes .mutation-baseline.json (slow; T3)
+make baseline-all           # all of the above
+
+make gate-xenon             # runs the gate script locally with the same flags as CI
+make gate-vulture
+make gate-jscpd
+make gate-interrogate
+make gate-assertions
+make gate-mutation
+make gate-judge             # G-7; requires ROUTER_API_KEY env
+make gate-baselines         # G-8 cross-check
+make gates-all              # all gates, in CI's order
+```
+
+A pre-commit hook calls `make gates-all`, which short-circuits to T1-only if the working dir is on a `feature/*`-pointed branch.
+
+#### 16.7.5 Label contracts
+
+GitHub PR labels that toggle gate behaviour. Each is restricted to operator-tier reviewers via branch-protection rules (`Required reviews from CODEOWNERS`).
+
+| Label | Suspends | Required justification |
+|-------|----------|-----------------------|
+| `xenon-baseline-grow`        | G-1 baseline-grow check | Link to refactor PR scheduled within 30 days |
+| `vulture-whitelist-grow`     | G-2 whitelist-grow check + G-8 | `## Whitelist additions` heading in PR body |
+| `jscpd-baseline-grow`        | G-3 clone-pair-grow check + G-8 | Justification + dedup-PR linked |
+| `interrogate-floor-grow`     | G-4 floor-lower check + G-8 | Architectural rationale (rare; default deny) |
+| `assertion-pattern-baseline-grow` | G-5 baseline-grow check + G-8 | Linked rewrite issue |
+| `mutation-tolerance-grow`    | G-6 tolerance-grow check  | Async-surface justification |
+| `judge-override`             | G-7 BAD-block             | `## Judge override` heading explaining why the verdict is wrong |
+
+The labels are *audit*, not *bypass*: they remain on the PR, are visible in the merge log, and are reported in the §16.10 quarterly review.
