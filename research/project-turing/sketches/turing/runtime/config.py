@@ -75,6 +75,13 @@ class RuntimeConfig:
     # Self identity
     self_label: str = "default"
 
+    # Messaging (SignalWire SMS)
+    signalwire_space_url: str | None = None
+    signalwire_project_id: str | None = None
+    signalwire_api_token: str | None = None
+    signalwire_from_number: str | None = None
+    contacts_config_path: str | None = None
+
     def validate(self) -> None:
         if self.tick_rate_hz <= 0:
             raise ValueError("tick_rate_hz must be positive")
@@ -175,6 +182,16 @@ def load_config_from_env(
         cfg_kwargs["self_label"] = env["TURING_SELF_LABEL"]
     if "TURING_SKIP_EMBEDDING_REBUILD" in env:
         cfg_kwargs["skip_embedding_rebuild"] = _parse_bool(env["TURING_SKIP_EMBEDDING_REBUILD"])
+    if "TURING_SIGNALWIRE_SPACE_URL" in env:
+        cfg_kwargs["signalwire_space_url"] = env["TURING_SIGNALWIRE_SPACE_URL"]
+    if "TURING_SIGNALWIRE_PROJECT_ID" in env:
+        cfg_kwargs["signalwire_project_id"] = env["TURING_SIGNALWIRE_PROJECT_ID"]
+    if "TURING_SIGNALWIRE_API_TOKEN" in env:
+        cfg_kwargs["signalwire_api_token"] = env["TURING_SIGNALWIRE_API_TOKEN"]
+    if "TURING_SIGNALWIRE_FROM_NUMBER" in env:
+        cfg_kwargs["signalwire_from_number"] = env["TURING_SIGNALWIRE_FROM_NUMBER"]
+    if "TURING_CONTACTS_CONFIG" in env:
+        cfg_kwargs["contacts_config_path"] = env["TURING_CONTACTS_CONFIG"]
 
     cfg = RuntimeConfig(**cfg_kwargs)
     if overrides:

@@ -57,6 +57,18 @@ class EmbeddingIndex:
             if meta is not None:
                 self._meta[memory_id] = dict(meta)
 
+    def add_precomputed(
+        self, memory_id: str, vec: list[float], text: str, *, meta: dict[str, Any] | None = None
+    ) -> None:
+        with self._lock:
+            self._by_id[memory_id] = vec
+            if meta is not None:
+                self._meta[memory_id] = dict(meta)
+
+    def get_vector(self, memory_id: str) -> list[float] | None:
+        with self._lock:
+            return self._by_id.get(memory_id)
+
     def _embed_with_retry(
         self, text: str, label: str, *, max_retries: int = 2
     ) -> list[float] | None:

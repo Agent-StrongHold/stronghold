@@ -22,6 +22,8 @@ REWARD_SCHEDULE: dict[str, dict[str, int]] = {
     "blog": {"creation": 5, "thumbs_up": 100, "thumbs_down": -200},
     "hobby": {"creation": 5, "thumbs_up": 100, "thumbs_down": -200},
     "curiosity": {"creation": 5, "thumbs_up": 100, "thumbs_down": -200},
+    "skill_artifact": {"creation": 5, "thumbs_up": 50, "thumbs_down": -100},
+    "image": {"creation": 5, "thumbs_up": 50, "thumbs_down": -100},
 }
 
 DEFAULT_SCHEDULE: dict[str, int] = {"creation": 5, "thumbs_up": 100, "thumbs_down": -200}

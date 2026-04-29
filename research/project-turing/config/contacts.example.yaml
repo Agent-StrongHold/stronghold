@@ -1,0 +1,19 @@
+# Contacts whitelist — Tess can only message people listed here.
+# No message will be sent to a number not in this file.
+
+contacts:
+  - id: blake
+    name: Blake
+    phone: "+1XXXXXXXXXX"
+    relationship: operator
+    allowed: true
+    max_daily_messages: 5
+    allowed_hours: [8, 22]
+
+  # - id: daughter
+  #   name: "[name]"
+  #   phone: "+1XXXXXXXXXX"
+  #   relationship: family
+  #   allowed: true
+  #   max_daily_messages: 2
+  #   allowed_hours: [9, 20]

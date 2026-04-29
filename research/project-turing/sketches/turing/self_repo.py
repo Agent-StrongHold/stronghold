@@ -1064,6 +1064,15 @@ class SelfRepo:
         ).fetchone()
         return int(row[0])
 
+    def concept_memory_reference_count(self, self_id: str, concept_name: str) -> int:
+        row = self._conn.execute(
+            "SELECT COUNT(*) FROM episodic_memory "
+            "WHERE self_id = ? AND source = 'i_did' AND deleted = 0 "
+            "AND (intent_at_time LIKE ? OR content LIKE ?)",
+            (self_id, f"%{concept_name}%", f"%{concept_name}%"),
+        ).fetchone()
+        return int(row[0])
+
     # ------------------------------------------------ skill attempts ---------
 
     def insert_skill_artifact(

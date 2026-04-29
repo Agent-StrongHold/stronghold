@@ -33,28 +33,28 @@ def validate_name(name: str) -> bool:
     return bool(NAME_PATTERN.match(name))
 
 
-def naming_trigger_check(repo, self_id: str) -> bool:
-    current_name = repo.conn.execute(
+def naming_trigger_check(conn, self_id: str) -> bool:
+    current_name = conn.execute(
         "SELECT display_name FROM self_identity WHERE self_id = ?",
         (self_id,),
     ).fetchone()
     if current_name and current_name[0]:
         return False
-    pending = repo.conn.execute(
+    pending = conn.execute(
         "SELECT COUNT(*) FROM self_name_proposals WHERE self_id = ? AND status = 'pending'",
         (self_id,),
     ).fetchone()[0]
     if pending > 0:
         return False
-    durable_count = repo.conn.execute(
+    durable_count = conn.execute(
         "SELECT COUNT(*) FROM durable_memory WHERE self_id = ?",
         (self_id,),
     ).fetchone()[0]
     return durable_count >= DURABLE_MEMORY_THRESHOLD
 
 
-def insert_proposal(repo, proposal: NameProposal) -> None:
-    repo.conn.execute(
+def insert_proposal(conn, proposal: NameProposal) -> None:
+    conn.execute(
         "INSERT INTO self_name_proposals "
         "(proposal_id, self_id, proposed_name, rationale, status, proposed_at) "
         "VALUES (?, ?, ?, ?, ?, ?)",
@@ -67,31 +67,31 @@ def insert_proposal(repo, proposal: NameProposal) -> None:
             proposal.proposed_at,
         ),
     )
-    repo.conn.commit()
+    conn.commit()
 
 
 def ack_name(
-    repo, proposal_id: str, decision: str, reviewed_by: str, alternative: str | None = None
+    conn, proposal_id: str, decision: str, reviewed_by: str, alternative: str | None = None
 ) -> None:
     now = datetime.now(UTC).isoformat()
     final_name = alternative if decision == "approve" and alternative else None
-    row = repo.conn.execute(
+    row = conn.execute(
         "SELECT self_id, proposed_name FROM self_name_proposals WHERE proposal_id = ?",
         (proposal_id,),
     ).fetchone()
     if row is None:
         raise ValueError(f"no proposal with id={proposal_id}")
     self_id, proposed_name = row[0], row[1]
-    repo.conn.execute(
+    conn.execute(
         "UPDATE self_name_proposals SET status = ?, reviewed_by = ?, reviewed_at = ? "
         "WHERE proposal_id = ?",
         (decision, reviewed_by, now, proposal_id),
     )
     if decision == "approve":
         name = final_name or proposed_name
-        repo.conn.execute(
+        conn.execute(
             "UPDATE self_identity SET display_name = ?, named_at = ?, naming_source = 'ritual' "
             "WHERE self_id = ?",
             (name, now, self_id),
         )
-    repo.conn.commit()
+    conn.commit()

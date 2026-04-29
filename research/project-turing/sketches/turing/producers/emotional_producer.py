@@ -17,7 +17,7 @@ from ..motivation import BacklogItem, Motivation
 from ..reactor import Reactor
 from ..repo import Repo
 from ..runtime.providers.base import Provider
-from ..self_model import Mood, SelfTodo, TodoStatus
+from ..self_model import Mood
 from ..self_repo import SelfRepo, get_mood_or_default
 from ..types import EpisodicMemory, MemoryTier, SourceKind
 
@@ -145,19 +145,6 @@ class EmotionalResponseProducer:
                 created_at=datetime.now(UTC),
             )
             self._repo.insert(mem)
-
-            if intensity >= 0.7:
-                self._self_repo.insert_todo(
-                    SelfTodo(
-                        node_id=f"todo-{uuid4()}",
-                        self_id=self._self_id,
-                        text=f"Process: {content[:80]}",
-                        motivated_by_node_id=mem.memory_id,
-                        status=TodoStatus.ACTIVE,
-                        outcome_text=None,
-                        created_at=datetime.now(UTC),
-                    )
-                )
 
             mood.valence = max(
                 -1.0, min(1.0, mood.valence + 0.02 * (1 if mood.valence < 0 else -1))

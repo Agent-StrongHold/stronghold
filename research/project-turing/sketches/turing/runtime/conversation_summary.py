@@ -4,13 +4,14 @@ Refreshes every REFRESH_EVERY_N_TURNS turns via a short LLM call.
 Renders as: "I have been talking to {participants} about {topics}, with the
 most recent topic being {current_topic}."
 
-Thread-safe; keyed by conversation_id; lives entirely in memory.
+Thread-safe; keyed by conversation_id; persists to SQLite for restart survival.
 """
 
 from __future__ import annotations
 
 import json
 import logging
+import sqlite3
 import threading
 from dataclasses import dataclass, field
 from typing import Any
@@ -22,6 +23,8 @@ logger = logging.getLogger("turing.runtime.conversation_summary")
 
 REFRESH_EVERY_N_TURNS: int = 4
 
+_TABLE = "conversation_summaries"
+
 
 @dataclass
 class ConvSummary:
@@ -30,12 +33,78 @@ class ConvSummary:
     current_topic: str = ""
     turn_count_at_refresh: int = 0
 
+    def to_json(self) -> str:
+        return json.dumps(
+            {
+                "participants": self.participants,
+                "topics": self.topics,
+                "current_topic": self.current_topic,
+                "turn_count_at_refresh": self.turn_count_at_refresh,
+            }
+        )
+
+    @classmethod
+    def from_json(cls, data: str) -> ConvSummary:
+        try:
+            d = json.loads(data)
+            return cls(
+                participants=d.get("participants", ["the user"]),
+                topics=d.get("topics", []),
+                current_topic=d.get("current_topic", ""),
+                turn_count_at_refresh=d.get("turn_count_at_refresh", 0),
+            )
+        except Exception:
+            return cls()
+
 
 class ConversationSummaryCache:
-    def __init__(self, provider: Provider) -> None:
+    def __init__(self, provider: Provider, conn: sqlite3.Connection | None = None) -> None:
         self._provider = provider
         self._cache: dict[str, ConvSummary] = {}
         self._lock = threading.Lock()
+        self._conn = conn
+        if conn is not None:
+            conn.execute(
+                f"CREATE TABLE IF NOT EXISTS {_TABLE} ("
+                "conversation_id TEXT PRIMARY KEY, summary_json TEXT NOT NULL, updated_at TEXT NOT NULL)"
+            )
+            conn.execute(
+                f"CREATE INDEX IF NOT EXISTS idx_{_TABLE}_updated ON {_TABLE} (updated_at DESC)"
+            )
+            conn.commit()
+            self._load_from_db()
+
+    def _load_from_db(self) -> None:
+        if self._conn is None:
+            return
+        try:
+            rows = self._conn.execute(
+                f"SELECT conversation_id, summary_json FROM {_TABLE}"
+            ).fetchall()
+            for cid, sjson in rows:
+                self._cache[cid] = ConvSummary.from_json(sjson)
+            if rows:
+                logger.info("loaded %d conversation summaries from DB", len(rows))
+        except Exception:
+            logger.debug("failed to load conversation summaries from DB", exc_info=True)
+
+    def _persist(self, conversation_id: str, summary: ConvSummary) -> None:
+        if self._conn is None:
+            return
+        try:
+            from datetime import UTC, datetime
+
+            now = datetime.now(UTC).isoformat()
+            self._conn.execute(
+                f"INSERT OR REPLACE INTO {_TABLE} (conversation_id, summary_json, updated_at) "
+                "VALUES (?, ?, ?)",
+                (conversation_id, summary.to_json(), now),
+            )
+            self._conn.commit()
+        except Exception:
+            logger.debug(
+                "failed to persist conversation summary for %s", conversation_id, exc_info=True
+            )
 
     def maybe_refresh(
         self,
@@ -60,6 +129,7 @@ class ConversationSummaryCache:
 
         with self._lock:
             self._cache[conversation_id] = summary
+        self._persist(conversation_id, summary)
 
     def render(self, conversation_id: str) -> str | None:
         with self._lock:
@@ -74,12 +144,10 @@ class ConversationSummaryCache:
             f"with the most recent topic being {current}."
         )
 
-    def _generate(
-        self, history: list[dict[str, Any]], current_message: str
-    ) -> ConvSummary:
+    def _generate(self, history: list[dict[str, Any]], current_message: str) -> ConvSummary:
         tail = list(history[-8:]) + [{"role": "user", "content": current_message}]
         convo_text = "\n".join(
-            f'{t.get("role","user")}: {t.get("content","")[:300]}' for t in tail
+            f"{t.get('role', 'user')}: {t.get('content', '')[:300]}" for t in tail
         )
         prompt = (
             "Read this conversation excerpt and extract:\n"

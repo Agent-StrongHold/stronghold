@@ -49,7 +49,7 @@ class LiteLLMProvider:
         self._model = pool_config.model
         self._base_url = base_url.rstrip("/")
         self._virtual_key = virtual_key
-        self._client = client or httpx.Client(timeout=30.0)
+        self._client = client or httpx.Client(timeout=90.0)
 
         self._window_started_at: datetime = datetime.now(UTC)
         self._window_duration: timedelta = timedelta(seconds=pool_config.window_duration_seconds)

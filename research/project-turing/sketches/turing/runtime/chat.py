@@ -131,6 +131,7 @@ def make_chat_handler(
     reward_tracker: RewardTracker | None = None,
     base_prompt_path: str | None = None,
     on_sentinel: Callable[[str, str], None] | None = None,
+    conn: Any | None = None,
 ) -> type[BaseHTTPRequestHandler]:
     class Handler(BaseHTTPRequestHandler):
         def do_POST(self) -> None:  # noqa: N802
@@ -144,6 +145,8 @@ def make_chat_handler(
                 return self._handle_simple_chat()
             if self.path == "/feedback":
                 return self._handle_feedback()
+            if self.path == "/naming":
+                return self._handle_naming_review()
             self._respond(404, {"error": "not found"})
 
         def _read_json(self) -> dict[str, Any] | None:
@@ -289,25 +292,38 @@ def make_chat_handler(
             payload = self._read_json()
             if payload is None:
                 return
-            message_id = (payload.get("message_id") or "").strip()
+            message_id = (payload.get("message_id") or payload.get("item_id") or "").strip()
             rating = (payload.get("rating") or "").strip().lower()
+            interface = (payload.get("interface") or "chat").strip().lower()
             if not message_id:
-                self._respond(400, {"error": "missing 'message_id'"})
+                self._respond(400, {"error": "missing 'message_id' or 'item_id'"})
                 return
             if rating not in ("up", "down"):
                 self._respond(400, {"error": "rating must be 'up' or 'down'"})
                 return
             if reward_tracker.has_feedback(message_id):
-                self._respond(409, {"error": "feedback already submitted for this message"})
+                self._respond(409, {"error": "feedback already submitted for this item"})
                 return
             event_type = "thumbs_up" if rating == "up" else "thumbs_down"
             points = reward_tracker.award(
-                interface="chat",
+                interface=interface,
                 item_id=message_id,
                 event_type=event_type,
             )
             total = reward_tracker.total_points()
-            self._respond(200, {"points": points, "total_points": total, "event_type": event_type})
+
+            if interface == "skill_artifact":
+                self._adjust_skill_from_feedback(message_id, rating)
+
+            self._respond(
+                200,
+                {
+                    "points": points,
+                    "total_points": total,
+                    "event_type": event_type,
+                    "interface": interface,
+                },
+            )
 
         def _respond_stream(self, *, message_id: str, reply: str) -> None:
             """Emit a single-chunk SSE stream for the full reply."""
@@ -445,6 +461,15 @@ def make_chat_handler(
             if self.path == "/prompt":
                 self._serve_prompt_editor()
                 return
+            if self.path == "/rate":
+                self._serve_rate_page()
+                return
+            if self.path.startswith("/images/"):
+                self._serve_image()
+                return
+            if self.path == "/naming":
+                self._serve_naming_page()
+                return
             if self.path == "/" or self.path == "/index.html":
                 self._serve_html()
                 return
@@ -496,6 +521,226 @@ def make_chat_handler(
             except BrokenPipeError:
                 logger.debug("client disconnected before prompt editor sent")
 
+        def _serve_rate_page(self) -> None:
+            try:
+                memories = list(
+                    repo.find(
+                        self_id=self_id,
+                        source=SourceKind.I_DID,
+                        include_superseded=False,
+                    )
+                )
+                memories.sort(key=lambda m: m.created_at, reverse=True)
+                recent = memories[:30]
+                items = []
+                for m in recent:
+                    has_fb = reward_tracker.has_feedback(m.memory_id) if reward_tracker else False
+                    items.append(
+                        {
+                            "id": m.memory_id,
+                            "tier": m.tier.value,
+                            "content": m.content[:200],
+                            "intent": m.intent_at_time,
+                            "created": m.created_at.isoformat(),
+                            "rated": has_fb,
+                        }
+                    )
+            except Exception:
+                items = []
+            self._serve_rate_html(items)
+
+        def _serve_rate_html(self, items: list[dict]) -> None:
+            rows_html = ""
+            for it in items:
+                content_esc = (
+                    it["content"].replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+                )
+                rated = '<span style="color:#888">rated</span>' if it["rated"] else ""
+                rows_html += f"""<tr>
+                    <td>{it["tier"]}</td>
+                    <td style="max-width:400px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{content_esc}</td>
+                    <td>{it["intent"][:30]}</td>
+                    <td>{it["created"][:16]}</td>
+                    <td>
+                        <button onclick="rate('{it["id"]}','up')">+ approve</button>
+                        <button onclick="rate('{it["id"]}','down')">- reject</button>
+                        {rated}
+                    </td>
+                </tr>"""
+            html = f"""<!DOCTYPE html>
+<html><head><title>Rate Outputs</title>
+<style>
+body {{ font-family: monospace; background: #1a1a2e; color: #e0e0e0; padding: 20px; }}
+table {{ border-collapse: collapse; width: 100%; }}
+th, td {{ padding: 6px 10px; border-bottom: 1px solid #333; text-align: left; font-size: 13px; }}
+th {{ color: #00ff88; }}
+button {{ background: #16213e; color: #e0e0e0; border: 1px solid #444; padding: 3px 8px; cursor: pointer; font-size: 12px; }}
+button:hover {{ background: #0f3460; }}
+h1 {{ color: #00ff88; }}
+a {{ color: #00ff88; }}
+</style>
+</head><body>
+<h1>Rate Recent Outputs</h1>
+<p><a href="/">Back to Chat</a> | <a href="/rewards">Rewards</a></p>
+<table>
+<tr><th>Tier</th><th>Content</th><th>Intent</th><th>Created</th><th>Feedback</th></tr>
+{rows_html}
+</table>
+<script>
+function rate(id, r) {{
+    fetch('/feedback', {{
+        method: 'POST',
+        headers: {{'Content-Type': 'application/json'}},
+        body: JSON.stringify({{item_id: id, rating: r}})
+    }}).then(r => r.json()).then(j => {{
+        alert(j.event_type + ' (' + j.points + ' pts, total: ' + j.total_points + ')');
+        location.reload();
+    }}).catch(e => alert('Error: ' + e));
+}}
+</script>
+</body></html>"""
+            data = html.encode("utf-8")
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.send_header("Content-Length", str(len(data)))
+            self.end_headers()
+            try:
+                self.wfile.write(data)
+            except BrokenPipeError:
+                logger.debug("client disconnected before rate page sent")
+
+        def _serve_image(self) -> None:
+            import os
+            from pathlib import Path as _Path
+
+            img_dir = _Path("/data/scratchpad/images")
+            fname = self.path.split("/images/", 1)[-1]
+            if not fname or "/" in fname or ".." in fname:
+                self._respond(403, {"error": "invalid filename"})
+                return
+            fpath = img_dir / fname
+            if not fpath.is_file():
+                self._respond(404, {"error": "not found"})
+                return
+            ext = fpath.suffix.lower()
+            mime = {
+                "png": "image/png",
+                "jpg": "image/jpeg",
+                "jpeg": "image/jpeg",
+                "gif": "image/gif",
+                "webp": "image/webp",
+            }.get(ext.lstrip("."), "application/octet-stream")
+            data = fpath.read_bytes()
+            self.send_response(200)
+            self.send_header("Content-Type", mime)
+            self.send_header("Content-Length", str(len(data)))
+            self.send_header("Cache-Control", "public, max-age=86400")
+            self.end_headers()
+            try:
+                self.wfile.write(data)
+            except BrokenPipeError:
+                logger.debug("client disconnected before image sent")
+
+        def _adjust_skill_from_feedback(self, artifact_id: str, rating: str) -> None:
+            try:
+                c = repo._conn
+                row = c.execute(
+                    "SELECT skill_id FROM self_skill_artifacts WHERE artifact_id = ?",
+                    (artifact_id,),
+                ).fetchone()
+                if not row:
+                    return
+                skill_id = row[0]
+                skill_row = c.execute(
+                    "SELECT node_id, stored_level FROM self_skills WHERE node_id = ?",
+                    (skill_id,),
+                ).fetchone()
+                if not skill_row:
+                    return
+                current = float(skill_row[1])
+                delta = 0.05 if rating == "up" else -0.05
+                new_level = max(0.0, min(1.0, current + delta))
+                c.execute(
+                    "UPDATE self_skills SET stored_level = ? WHERE node_id = ?",
+                    (new_level, skill_id),
+                )
+                c.commit()
+                logger.info(
+                    "skill %s adjusted %.2f → %.2f from feedback (%s)",
+                    skill_id,
+                    current,
+                    new_level,
+                    rating,
+                )
+            except Exception:
+                logger.debug("skill feedback adjustment failed for %s", artifact_id, exc_info=True)
+
+        def _serve_naming_page(self) -> None:
+            if conn is None:
+                self._respond(501, {"error": "naming not available"})
+                return
+            current = conn.execute(
+                "SELECT display_name FROM self_identity WHERE self_id = ?", (self_id,)
+            ).fetchone()
+            current_name = current[0] if current and current[0] else "(unnamed)"
+            proposals = conn.execute(
+                "SELECT proposal_id, proposed_name, rationale, status, proposed_at "
+                "FROM self_name_proposals WHERE self_id = ? ORDER BY proposed_at DESC",
+                (self_id,),
+            ).fetchall()
+            html = _NAMING_PAGE_HTML.format(
+                current_name=current_name,
+                proposals_html="".join(
+                    f"<tr><td>{p[1]}</td><td>{p[2]}</td><td>{p[3]}</td><td>{p[4]}</td>"
+                    f"<td>{
+                        "<button onclick=review('" + p[0] + "','approve')>Approve</button>"
+                        f"<button onclick=review('" + p[0] + "','reject')>Reject</button>"
+                        if p[3] == 'pending'
+                        else p[3]
+                    }</td></tr>"
+                    for p in proposals
+                )
+                if proposals
+                else '<tr><td colspan="5">No proposals yet</td></tr>',
+            )
+            data = html.encode("utf-8")
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.send_header("Content-Length", str(len(data)))
+            self.end_headers()
+            try:
+                self.wfile.write(data)
+            except BrokenPipeError:
+                logger.debug("client disconnected before naming page sent")
+
+        def _handle_naming_review(self) -> None:
+            if conn is None:
+                self._respond(501, {"error": "naming not available"})
+                return
+            payload = self._read_json()
+            if payload is None:
+                return
+            proposal_id = str(payload.get("proposal_id", ""))
+            decision = str(payload.get("decision", ""))
+            alternative = payload.get("alternative") or None
+            if decision not in ("approve", "reject"):
+                self._respond(400, {"error": "decision must be 'approve' or 'reject'"})
+                return
+            if not proposal_id:
+                self._respond(400, {"error": "proposal_id required"})
+                return
+            try:
+                from ..self_naming import ack_name
+
+                ack_name(conn, proposal_id, decision, "operator", alternative)
+                logger.info("naming proposal %s %sd", proposal_id, decision)
+                self._respond(200, {"status": decision})
+            except ValueError as e:
+                self._respond(404, {"error": str(e)})
+            except Exception:
+                logger.exception("naming review failed")
+                self._respond(500, {"error": "internal error"})
+
         def _handle_save_prompt(self) -> None:
             if not base_prompt_path:
                 self._respond(501, {"error": "no prompt file configured"})
@@ -529,6 +774,7 @@ def start_chat_server(
     reward_tracker: RewardTracker | None = None,
     base_prompt_path: str | None = None,
     on_sentinel: Callable[[str, str], None] | None = None,
+    conn: Any | None = None,
 ) -> Callable[[], None]:
     handler_cls = make_chat_handler(
         motivation=motivation,
@@ -540,6 +786,7 @@ def start_chat_server(
         reward_tracker=reward_tracker,
         base_prompt_path=base_prompt_path,
         on_sentinel=on_sentinel,
+        conn=conn,
     )
     server = ThreadingHTTPServer((host, port), handler_cls)
     thread = threading.Thread(target=server.serve_forever, name="turing-chat", daemon=True)
@@ -620,6 +867,57 @@ def _read_prompt_file(path: str | None) -> str:
     if not p.is_file():
         return ""
     return p.read_text(encoding="utf-8")
+
+
+_NAMING_PAGE_HTML = """<!doctype html>
+<html lang="en">
+<head>
+<meta charset=utf-8>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Turing — Naming Ritual</title>
+<style>
+body {{ font-family: 'IBM Plex Mono', monospace; background: #050507; color: #F2F0EA; max-width: 700px; margin: 2rem auto; padding: 0 1rem; }}
+h1 {{ color: #A8FF8E; font-size: 1.5rem; }}
+.current {{ background: #0F1110; border: 1px solid #334038; padding: 1rem; margin: 1rem 0; border-radius: 4px; }}
+.current span {{ color: #A8FF8E; font-size: 1.3rem; }}
+table {{ width: 100%; border-collapse: collapse; margin: 1rem 0; }}
+th, td {{ padding: 0.5rem; text-align: left; border-bottom: 1px solid #232925; }}
+th {{ color: #6E7670; font-size: 0.85rem; text-transform: uppercase; }}
+button {{ background: #1E7A3D; color: #F2F0EA; border: none; padding: 0.3rem 0.8rem; cursor: pointer; border-radius: 3px; margin-right: 0.3rem; font-family: inherit; }}
+button:hover {{ background: #5EE88C; color: #061007; }}
+button.reject {{ background: #5A2020; }}
+button.reject:hover {{ background: #FF5A4E; }}
+.alt-input {{ background: #0F1110; border: 1px solid #334038; color: #F2F0EA; padding: 0.3rem; font-family: inherit; width: 120px; margin-left: 0.5rem; }}
+</style>
+</head>
+<body>
+<h1>Naming Ritual</h1>
+<div class="current">Current name: <span>{current_name}</span></div>
+<h2>Proposals</h2>
+<table>
+<tr><th>Name</th><th>Rationale</th><th>Status</th><th>Proposed</th><th>Action</th></tr>
+{proposals_html}
+</table>
+<script>
+function review(id, decision) {{
+  var alt = null;
+  if (decision === 'approve') {{
+    alt = prompt('Alternative name (leave empty to use proposed):');
+    if (alt === null) return;
+  }}
+  fetch('/naming', {{
+    method: 'POST',
+    headers: {{'Content-Type': 'application/json'}},
+    body: JSON.stringify({{proposal_id: id, decision: decision, alternative: alt || undefined}})
+  }}).then(function(r) {{
+    if (r.ok) location.reload();
+    else r.json().then(function(j) {{ alert(j.error || 'failed'); }});
+  }});
+}}
+</script>
+</body>
+</html>
+"""
 
 
 _CHAT_HTML = """<!doctype html>

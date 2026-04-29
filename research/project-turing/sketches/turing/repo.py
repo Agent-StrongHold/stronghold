@@ -76,6 +76,11 @@ class Repo:
         ]:
             if col not in existing:
                 self._conn.execute(f"ALTER TABLE self_identity ADD COLUMN {col} {typedef}")
+        conv_cols = {
+            r[1] for r in self._conn.execute("PRAGMA table_info(conversation_turn)").fetchall()
+        }
+        if "chat_user" not in conv_cols:
+            self._conn.execute("ALTER TABLE conversation_turn ADD COLUMN chat_user TEXT")
         skill_cols = {r[1] for r in self._conn.execute("PRAGMA table_info(self_skills)").fetchall()}
         if "decay_rate_per_day" in skill_cols:
             self._conn.executescript("""
@@ -123,6 +128,22 @@ class Repo:
         self._conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_skill_artifacts_skill "
             "ON self_skill_artifacts (skill_id, version DESC)"
+        )
+        episodic_cols = {
+            r[1] for r in self._conn.execute("PRAGMA table_info(episodic_memory)").fetchall()
+        }
+        if "embedding" not in episodic_cols:
+            self._conn.execute("ALTER TABLE episodic_memory ADD COLUMN embedding BLOB")
+        self._conn.execute(
+            "CREATE TABLE IF NOT EXISTS self_producer_prompts ("
+            "prompt_id TEXT PRIMARY KEY, self_id TEXT NOT NULL, "
+            "producer TEXT NOT NULL, prompt_text TEXT NOT NULL, "
+            "active INTEGER NOT NULL DEFAULT 1, "
+            "created_at TEXT NOT NULL, updated_at TEXT NOT NULL)"
+        )
+        self._conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_producer_prompts "
+            "ON self_producer_prompts (self_id, producer, active)"
         )
         self._conn.commit()
 

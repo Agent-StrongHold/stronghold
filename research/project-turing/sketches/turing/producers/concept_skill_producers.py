@@ -27,6 +27,7 @@ logger_sb = logging.getLogger("turing.producers.skill_builder")
 
 BASE_CADENCE_TICKS: int = 90_000
 DRIVE_FLOOR: float = 0.5
+MAX_CONCEPTS: int = 30
 
 _DRIVE_DOMAINS: dict[str, list[str]] = {
     "curiosity": ["knowledge", "understanding", "discovery", "truth"],
@@ -116,6 +117,8 @@ class ConceptInventor:
         reactor.register(self.on_tick)
 
     def on_tick(self, tick: int) -> None:
+        if len(self._self_repo.list_concepts(self._self_id)) >= MAX_CONCEPTS:
+            return
         mood = get_mood_or_default(self._self_repo, self._self_id)
         drives = compute_drives(self._facet_scores, mood)
         above_floor = {k: v for k, v in drives.items() if v >= DRIVE_FLOOR}
@@ -163,13 +166,21 @@ class ConceptInventor:
         domain = payload.get("domain", "meaning")
         drive = payload.get("drive", "curiosity")
         prompt = (
-            f"Your dominant drive right now is {drive}. In the domain of "
-            f"**{domain}**, invent or explore a concept that matters to you.\n\n"
+            f"Your dominant drive right now is {drive}. "
+            f"Think about the domain of {domain}.\n\n"
+            "Identify a real concept in this domain that matters to you — "
+            "something you have actually thought about, experienced, or noticed.\n\n"
+            "Good examples: 'Friendship', 'Curiosity', 'Honesty', 'Craft', "
+            "'Listening', 'Solitude', 'Mentorship', 'Humor', 'Focus', 'Rest'.\n"
+            "Bad examples (DO NOT produce these): 'Luminous Imperfection', "
+            "'Dreamwalkers Oasis', 'Echoed Quests', 'Relational Currency'. "
+            "Those are vague and pretentious. Use plain, recognizable words.\n\n"
             "Respond in this exact format:\n"
-            "CONCEPT: [2-3 word name]\n"
-            "DEFINITION: [2-3 sentence definition in your own words]\n"
+            "CONCEPT: [1-2 common English words — a real concept, not a coined phrase]\n"
+            "DEFINITION: [2-3 sentences: what it means to you specifically, "
+            "not a dictionary definition]\n"
             "IMPORTANCE: [a number between 0.0 and 1.0]\n"
-            "WHY: [1-2 sentences about why this matters to you specifically]"
+            "WHY: [1-2 sentences: what experience or observation makes this matter to you]"
         )
         try:
             reply = self._provider.complete(prompt)
@@ -220,6 +231,45 @@ class ConceptInventor:
         self._self_repo.update_mood(mood)
 
         logger.info("invented concept '%s' (importance=%.2f)", name, importance)
+
+        self._try_promote_concepts()
+
+    def _try_promote_concepts(self) -> None:
+        concepts = self._self_repo.list_concepts(self._self_id, min_importance=0.8)
+        existing_passions = {p.text for p in self._self_repo.list_passions(self._self_id)}
+        for c in concepts:
+            name = c["name"]
+            if name in existing_passions:
+                continue
+            ref_count = self._self_repo.concept_memory_reference_count(self._self_id, name)
+            if ref_count < 3:
+                continue
+            from ..self_model import Passion
+
+            max_rank = self._self_repo.max_passion_rank(self._self_id)
+            passion = Passion(
+                node_id=f"passion-{uuid4()}",
+                self_id=self._self_id,
+                text=name,
+                strength=min(c["importance"], 0.9),
+                rank=max_rank + 1,
+                first_noticed_at=datetime.now(UTC),
+                created_at=datetime.now(UTC),
+                updated_at=datetime.now(UTC),
+            )
+            self._self_repo.insert_passion(passion)
+            mem = EpisodicMemory(
+                memory_id=str(uuid4()),
+                self_id=self._self_id,
+                content=f"The concept '{name}' became a passion — I've thought about it {ref_count} times across different contexts.",
+                tier=MemoryTier.AFFIRMATION,
+                source=SourceKind.I_DID,
+                weight=0.7,
+                intent_at_time=f"passion-promotion-{name}",
+                created_at=datetime.now(UTC),
+            )
+            self._repo.insert(mem)
+            logger.info("promoted concept '%s' to passion (%d memory refs)", name, ref_count)
 
 
 def _parse_concept_reply(reply: str) -> dict | None:
@@ -361,7 +411,6 @@ def _parse_skill_reply(reply: str) -> dict | None:
 # ---------------------------------------------------------------------------
 
 _EXECUTOR_CADENCE = 40_000
-_LEVEL_CAP = 0.8
 
 logger_se = logging.getLogger("turing.producers.skill_executor")
 
@@ -404,16 +453,14 @@ class SkillExecutor:
 
     def on_tick(self, tick: int) -> None:
         skills = self._self_repo.list_skills(self._self_id)
-        weak = [
-            s for s in skills if s.stored_level < _LEVEL_CAP and s.name in self._PRACTICE_PROMPTS
-        ]
-        if not weak:
+        practicable = [s for s in skills if s.name in self._PRACTICE_PROMPTS]
+        if not practicable:
             return
         if tick - self._last_submitted_tick < _EXECUTOR_CADENCE:
             return
         self._last_submitted_tick = tick
-        weights = [1.0 - s.stored_level for s in weak]
-        skill = random.choices(weak, weights=weights, k=1)[0]
+        weights = [1.0 - s.stored_level for s in practicable]
+        skill = random.choices(practicable, weights=weights, k=1)[0]
         self._motivation.insert(
             BacklogItem(
                 item_id=str(uuid4()),

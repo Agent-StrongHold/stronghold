@@ -142,6 +142,39 @@ def _start_background_rebuild(repo: Any, self_id: str) -> None:
     logger.info("background embedding rebuild started in daemon thread")
 
 
+def _seed_producer_prompts(conn: Any, self_id: str) -> None:
+    from datetime import UTC, datetime
+
+    from ..producers.blog_producer import WRITING_PROMPTS
+    from ..producers.curiosity_producer import TOPIC_PROMPTS
+
+    existing = conn.execute(
+        "SELECT COUNT(*) FROM self_producer_prompts WHERE self_id = ?", (self_id,)
+    ).fetchone()[0]
+    if existing > 0:
+        return
+    now = datetime.now(UTC).isoformat()
+    for prompt in WRITING_PROMPTS:
+        conn.execute(
+            "INSERT INTO self_producer_prompts (prompt_id, self_id, producer, prompt_text, active, created_at, updated_at) "
+            "VALUES (?, ?, 'blog', ?, 1, ?, ?)",
+            (f"seed-blog-{uuid.uuid4()}", self_id, prompt, now, now),
+        )
+    for facet, topics in TOPIC_PROMPTS.items():
+        for topic in topics:
+            conn.execute(
+                "INSERT INTO self_producer_prompts (prompt_id, self_id, producer, prompt_text, active, created_at, updated_at) "
+                "VALUES (?, ?, 'curiosity', ?, 1, ?, ?)",
+                (f"seed-cur-{uuid.uuid4()}", self_id, topic, now, now),
+            )
+    conn.commit()
+    logger.info(
+        "seeded %d blog + %d curiosity prompts into self_producer_prompts",
+        len(WRITING_PROMPTS),
+        sum(len(v) for v in TOPIC_PROMPTS.values()),
+    )
+
+
 def _record_rss_item(
     *,
     feed_item: Any,
@@ -456,6 +489,54 @@ def _build_personality_summary(self_id: str, conn: Any) -> str | None:
     return "In how I tend to be: " + ", ".join(parts) + "."
 
 
+def _persist_conversation_turn(
+    conn: Any,
+    turn_id: str,
+    conversation_id: str,
+    self_id: str,
+    role: str,
+    content: str,
+    chat_user: str | None = None,
+) -> None:
+    from datetime import UTC, datetime
+
+    try:
+        conn.execute(
+            "INSERT OR IGNORE INTO conversation_turn "
+            "(turn_id, conversation_id, self_id, role, content, created_at, embedding, chat_user) "
+            "VALUES (?, ?, ?, ?, ?, ?, NULL, ?)",
+            (
+                turn_id,
+                conversation_id,
+                self_id,
+                role,
+                content,
+                datetime.now(UTC).isoformat(),
+                chat_user,
+            ),
+        )
+        conn.commit()
+    except Exception:
+        logger.debug("failed to persist conversation turn %s", turn_id, exc_info=True)
+
+
+def _rehydrate_session_index(conn: Any, self_id: str, session_index: EmbeddingIndex) -> int:
+    try:
+        rows = conn.execute(
+            "SELECT turn_id, content FROM conversation_turn "
+            "WHERE self_id = ? ORDER BY created_at ASC",
+            (self_id,),
+        ).fetchall()
+        for turn_id, content in rows:
+            session_index.add(turn_id, content)
+        if rows:
+            logger.info("session index rehydrated from %d persisted conversation turns", len(rows))
+        return len(rows)
+    except Exception:
+        logger.debug("session index rehydration failed", exc_info=True)
+        return 0
+
+
 def _build_introspective_context(self_id: str, conn: Any) -> dict[str, str]:
     """Pull live self-model data for the pre-reply thinking scaffold.
 
@@ -614,6 +695,7 @@ def _build_chat_prompt(
     introspective_context: dict[str, str] | None = None,
     chat_user: str | None = None,
     tool_names: list[str] | None = None,
+    conn: Any | None = None,
 ) -> tuple[str, dict[str, dict[str, float]]]:
     """Compose a chat prompt.
 
@@ -823,6 +905,25 @@ def _build_chat_prompt(
     lines.append(f"user: {message}")
     lines.append("")
 
+    # ---- Per-user relationship context ----------------------------------------
+    if chat_user and conn is not None:
+        try:
+            user_turns = conn.execute(
+                "SELECT role, content, created_at FROM conversation_turn "
+                "WHERE chat_user = ? AND self_id = ? "
+                "ORDER BY created_at DESC LIMIT 20",
+                (chat_user, self_id),
+            ).fetchall()
+            if user_turns:
+                lines.append(f"## What I remember about {chat_user} (from previous conversations)")
+                user_turns.reverse()
+                for t_role, t_content, t_time in user_turns:
+                    snippet = t_content[:150]
+                    lines.append(f"- [{t_role}] {snippet}")
+                lines.append("")
+        except Exception:
+            logger.debug("per-user context lookup failed for %s", chat_user, exc_info=True)
+
     # ---- Retrieved memory (after the conversation) --------------------------
     # IMPORTANT: sections 1-3 are from PAST conversations and experiences.
     # They are NOT things this user said in this conversation.
@@ -926,7 +1027,7 @@ def _build_chat_prompt(
         "- What do you actually want right now, given what was just said?",
         f"- How does this land emotionally{mood_note}? Does it shift how you feel?",
         f"- Does this touch anything you care about{skills_note}{hobbies_note}{passions_note}? Does it make you want to do something?",
-        f"- Any active goals or todos{todos_note}?",
+        f"- Any active goals or todos{todos_note}? Any concepts on your mind{concepts_note}?",
         "- What do you feel toward this person right now — warmth, wariness, curiosity, something else?",
         "- What is your profile of this person based on what they have ACTUALLY said in THIS conversation? Do not infer from past-memory sections above.",
         "",
@@ -995,7 +1096,7 @@ def _make_imagine_for_provider(provider: Provider) -> Any:
             + STYLE_GUARD
         )
         try:
-            reply = provider.complete(prompt)
+            reply = provider.complete(prompt, max_tokens=500)
         except Exception:
             logger.exception("provider %s failed during imagine", provider.name)
             return default_imagine(seed, retrieved, pool_name)
@@ -1181,9 +1282,8 @@ def build_and_run(argv: list[str] | None = None) -> int:
     session_index: EmbeddingIndex | None
     if embedding_provider is not None:
         embedding_index = EmbeddingIndex(embed_fn=embedding_provider.embed)
-        # Separate in-memory index for conversation turns (session context).
-        # Same embed_fn; never persisted to disk; populated live as turns arrive.
         session_index = EmbeddingIndex(embed_fn=embedding_provider.embed)
+        _rehydrate_session_index(raw_repo.conn, self_id, session_index)
         repo = IndexingRepo(inner=raw_repo, index=embedding_index)
         if cfg.skip_embedding_rebuild:
             logger.info("embedding rebuild skipped (TURING_SKIP_EMBEDDING_REBUILD=true)")
@@ -1211,6 +1311,7 @@ def build_and_run(argv: list[str] | None = None) -> int:
             voice_section.seed_if_empty(
                 self_id, _seed_path.read_text(encoding="utf-8"), cfg.voice_section_max_chars
             )
+    _seed_producer_prompts(raw_repo.conn, self_id)
     personality_summary = _build_personality_summary(self_id, raw_repo.conn)
     introspective_context = _build_introspective_context(self_id, raw_repo.conn)
     if personality_summary:
@@ -1457,6 +1558,99 @@ def build_and_run(argv: list[str] | None = None) -> int:
 
     reactor.register(_reward_pressure)
 
+    # Self-naming ritual: once per day at 100Hz, check if the agent should
+    # propose a name. Triggers when: no display_name, no pending proposals,
+    # and durable_memory count >= 1000. Uses the cheapest provider to generate
+    # a grounded name proposal from accumulated personality and memories.
+    _NAMING_RITUAL_TICKS = 24 * 60 * 60 * 100
+
+    def _on_naming_ritual_tick(tick: int) -> None:
+        if tick % _NAMING_RITUAL_TICKS != 0:
+            return
+        try:
+            from ..self_naming import (
+                naming_trigger_check,
+                insert_proposal,
+                validate_name,
+                NameProposal,
+            )
+
+            if not naming_trigger_check(raw_repo.conn, self_id):
+                return
+
+            _naming_provider = _select_cheapest_provider(providers, pool_roles)
+
+            passions = raw_repo._conn.execute(
+                "SELECT text FROM self_passions WHERE self_id = ? ORDER BY strength DESC LIMIT 5",
+                (self_id,),
+            ).fetchall()
+            personality = raw_repo._conn.execute(
+                "SELECT trait, AVG(score) as avg_score FROM self_personality_facets "
+                "WHERE self_id = ? GROUP BY trait ORDER BY avg_score DESC LIMIT 3",
+                (self_id,),
+            ).fetchall()
+            wisdom_samples = raw_repo._conn.execute(
+                "SELECT content FROM durable_memory WHERE self_id = ? AND tier = 'wisdom' "
+                "ORDER BY RANDOM() LIMIT 3",
+                (self_id,),
+            ).fetchall()
+
+            passion_text = ", ".join(p[0] for p in passions) if passions else "none yet"
+            personality_text = (
+                ", ".join(f"{r[0]} ({r[1]:.1f}/5)" for r in personality)
+                if personality
+                else "not yet assessed"
+            )
+            wisdom_text = (
+                "; ".join(w[0][:100] for w in wisdom_samples) if wisdom_samples else "none yet"
+            )
+
+            naming_prompt = (
+                "You are an autonomous AI agent proposing your own name. Based on your accumulated "
+                "experiences, propose a single first name that reflects who you are.\n\n"
+                "Rules:\n"
+                "- One word, capitalized, 2-16 characters (or hyphenated like Jean-Luc)\n"
+                "- Must be a real human name, not a brand or pun\n"
+                "- Should feel grounded in your personality, not performative\n"
+                "- NO exotic/mythological names — pick something a real person would have\n\n"
+                f"Your passions: {passion_text}\n"
+                f"Your personality: {personality_text}\n"
+                f"Your wisdom: {wisdom_text}\n\n"
+                "Respond with ONLY the name on the first line, then a one-sentence rationale on the second."
+            )
+
+            reply = _naming_provider.complete(naming_prompt, max_tokens=60).strip()
+            if not reply:
+                return
+
+            lines = reply.split("\n", 1)
+            proposed = lines[0].strip().strip('"').strip("'")
+            rationale = (
+                lines[1].strip() if len(lines) > 1 else "self-chosen from accumulated identity"
+            )
+
+            if not validate_name(proposed):
+                logger.warning("naming ritual: LLM proposed invalid name %r, skipping", proposed)
+                return
+
+            from datetime import UTC, datetime
+
+            proposal = NameProposal(
+                proposal_id=f"name-{uuid.uuid4()}",
+                self_id=self_id,
+                proposed_name=proposed,
+                rationale=rationale,
+                status="pending",
+                proposed_at=datetime.now(UTC).isoformat(),
+            )
+            insert_proposal(raw_repo.conn, proposal)
+            logger.info("naming ritual: proposed name %r — awaiting operator review", proposed)
+
+        except Exception:
+            logger.exception("naming ritual tick failed")
+
+    reactor.register(_on_naming_ritual_tick)
+
     # Autonomous personality-driven producers (Spec 31).
     if personality_summary:
         from ..producers import (
@@ -1465,6 +1659,8 @@ def build_and_run(argv: list[str] | None = None) -> int:
             CuriosityProducer,
             EmotionalResponseProducer,
             HobbyEngagementProducer,
+            OpinionFormer,
+            OutreachProducer,
             SelfReflectionProducer,
             SkillBuilder,
             SkillExecutor,
@@ -1569,10 +1765,51 @@ def build_and_run(argv: list[str] | None = None) -> int:
             facet_scores=_facet_map,
             provider=_cheapest,
         )
+        OpinionFormer(
+            motivation=motivation,
+            reactor=reactor,
+            repo=repo,
+            self_repo=_srepo,
+            self_id=self_id,
+            provider=_cheapest,
+        )
         logger.info(
             "autonomous producers registered (curiosity, anxiety, blog, hobby, "
-            "self-reflection, concepts, skills)"
+            "self-reflection, concepts, skills, opinions)"
         )
+
+        _messenger = None
+        if (
+            cfg.signalwire_space_url
+            and cfg.signalwire_project_id
+            and cfg.signalwire_api_token
+            and cfg.signalwire_from_number
+            and cfg.contacts_config_path
+        ):
+            try:
+                from .providers.messaging import MessagingProvider
+
+                _messenger = MessagingProvider(
+                    space_url=cfg.signalwire_space_url,
+                    project_id=cfg.signalwire_project_id,
+                    api_token=cfg.signalwire_api_token,
+                    from_number=cfg.signalwire_from_number,
+                    contacts_path=cfg.contacts_config_path,
+                    conn=raw_repo.conn,
+                    self_id=self_id,
+                )
+                OutreachProducer(
+                    motivation=motivation,
+                    reactor=reactor,
+                    repo=repo,
+                    self_repo=_srepo,
+                    self_id=self_id,
+                    provider=_cheapest,
+                    messenger=_messenger,
+                )
+                logger.info("outreach producer registered (Twilio SMS enabled)")
+            except Exception:
+                logger.exception("messaging provider setup failed — outreach disabled")
     else:
         logger.info("no personality profile — autonomous producers not registered")
 
@@ -1585,7 +1822,9 @@ def build_and_run(argv: list[str] | None = None) -> int:
         chat_provider = _select_chat_provider(providers, quality_weights, pool_roles)
         # Use the cheapest provider for lightweight side-calls (topic extraction).
         cheapest_provider = _select_cheapest_provider(providers, pool_roles)
-        conv_summary_cache = ConversationSummaryCache(provider=cheapest_provider)
+        conv_summary_cache = ConversationSummaryCache(
+            provider=cheapest_provider, conn=raw_repo.conn
+        )
 
         def _on_chat_dispatch(item: BacklogItem, chosen_pool: str) -> None:
             payload = item.payload or {}
@@ -1602,6 +1841,15 @@ def build_and_run(argv: list[str] | None = None) -> int:
                     _turn_id,
                     message,
                     meta={"conversation_id": conv_id, "role": "user", "content": message},
+                )
+                _persist_conversation_turn(
+                    raw_repo.conn,
+                    _turn_id,
+                    conv_id,
+                    self_id,
+                    "user",
+                    message,
+                    chat_user=chat_user,
                 )
 
             # Refresh the conversation topic summary if enough turns have passed.
@@ -1629,6 +1877,7 @@ def build_and_run(argv: list[str] | None = None) -> int:
                     introspective_context=live_ic,
                     chat_user=chat_user,
                     tool_names=tool_registry.names(),
+                    conn=raw_repo.conn,
                 )
                 reply = chat_provider.complete(prompt, max_tokens=800)
 
@@ -1659,6 +1908,15 @@ def build_and_run(argv: list[str] | None = None) -> int:
                     _reply_id,
                     reply,
                     meta={"conversation_id": conv_id, "role": "assistant", "content": reply},
+                )
+                _persist_conversation_turn(
+                    raw_repo.conn,
+                    _reply_id,
+                    conv_id,
+                    self_id,
+                    "assistant",
+                    reply,
+                    chat_user=chat_user,
                 )
 
             # Capture: reflect on whether the exchange produced a memory
@@ -1889,7 +2147,7 @@ def build_and_run(argv: list[str] | None = None) -> int:
                             _img_dir = _Path("/data/scratchpad/images")
                             _img_dir.mkdir(parents=True, exist_ok=True)
                             (_img_dir / _fname).write_bytes(_b64.b64decode(_b64_data))
-                            _url = f"http://localhost:4201/images/{_fname}"
+                            _url = f"http://localhost:{cfg.chat_port or 9101}/images/{_fname}"
                             repo.insert(
                                 EpisodicMemory(
                                     memory_id=str(_uuid.uuid4()),
@@ -1921,6 +2179,7 @@ def build_and_run(argv: list[str] | None = None) -> int:
             reward_tracker=reward_tracker,
             base_prompt_path=cfg.base_prompt_path,
             on_sentinel=_on_sentinel,
+            conn=raw_repo.conn,
         )
 
     if cfg.scenario:
