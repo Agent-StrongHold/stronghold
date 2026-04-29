@@ -1154,3 +1154,24 @@ Recommended sequence: **CFM-1 → CFM-2 → (CFM-3 || CFM-4) → CFM-5**. Reacto
 - Replacing the existing tiered pytest gates (Tier-1/2/3 in `ci.yml`). Coverage and test count are orthogonal to the quality dimensions §16 covers.
 - Catching every code smell. The `docs/code-smell-catalog-2026-04-23.md` catalog is the *full* taxonomy; §16 picks the subset that has a cheap-and-deterministic detector. Smells without one stay manual-review territory.
 - Replacing Auditor's existing rubric (presence + pytest-green + ruff/mypy/bandit). §16 sits *after* Auditor in the pipeline and adds the dimensions Auditor doesn't measure (cf. §16.4.5–7 and `docs/test-quality-audit-and-ci-gate-proposal.md` §4).
+
+### 16.2 Gate Inventory
+
+Eight gates organized by *what they catch* and *when they run*. The first column is the canonical gate ID used in commit messages, baseline filenames, and ratchet log entries.
+
+| ID  | Gate | Catches | Tool | Tier | Initial state | Eventual state |
+|-----|------|---------|------|------|---------------|----------------|
+| G-1 | **Complexity** | Functions/modules above rank C cyclomatic complexity. | `xenon` (radon) | T1 — every PR | warn-only (today: `\|\| true`) | blocking, `--max-absolute B` |
+| G-2 | **Dead code** | Unused functions, classes, attributes, imports not in `.vulture_whitelist.py`. | `vulture` | T1 | blocking (today) | blocking + monotonically-shrinking-whitelist enforcement |
+| G-3 | **Duplication** | Copy-pasted blocks ≥ 50 tokens / 10 lines across `src/stronghold/`. | `jscpd` | T1 | disabled (new) | blocking, ≤5% codebase ratchet to ≤2% |
+| G-4 | **Docstring coverage** | Public functions/classes missing docstrings. | `interrogate` | T1 | disabled (new) | blocking, fail-under set to current floor, ratchet +5pp/quarter |
+| G-5 | **Assertion-pattern lint** | Test smells with deterministic detectors: tolerant status tuples, post-construct `isinstance`, sole-`is not None`, no-assert tests, internal-module `@patch`. | custom AST walker (`scripts/check_assertion_patterns.py`) | T1, scope = changed test files | disabled (new) | blocking on net-new violations vs. baseline |
+| G-6 | **Mutation strength** | Tautological tests on changed src files (mutation score < threshold). | `mutmut` (or `cosmic-ray`) | T3 — PR to `integration`/`main` only | disabled (new) | warn-only → blocking when ≥60% on changed files for 4 consecutive weeks |
+| G-7 | **LLM assertion judge** | Semantic test smells pattern-lint can't see (BDD-mismatch, AC-wording duplication). | Claude Haiku 4.5 (`claude-haiku-4-5-20251001`) classifier | T3 | disabled (new) | block on `BAD`, comment-only on `WEAK` |
+| G-8 | **Quality-baseline freeze** | Cross-cutting: enforces "PR may not regress G-1..G-7 baselines". | `scripts/check_quality_baselines.py` (orchestrator) | T1 | warn-only | blocking once G-1..G-5 are individually blocking |
+
+**Tier semantics.**
+- **T1** — runs on `push` to working branches and on every PR. Must finish inside the lint job's wall-time budget (currently ~3 min total).
+- **T3** — runs only when `github.base_ref` is `integration` or `main`. Mirrors the existing `Tier 3: Full test suite + 90% coverage` step gating.
+
+**Why eight, not three.** The `docs/test-quality-audit-and-ci-gate-proposal.md` §3-4 design proposes Pattern (A) + Mutation (B) + LLM (C) as the *test-quality* gates. §16 keeps all three (G-5/G-6/G-7) and adds four production-code gates (G-1/G-2/G-3/G-4) plus the cross-cutting baseline-freeze (G-8). Test quality and production-code quality are independent regression vectors — a PR can fail G-3 (dup) without touching tests, and fail G-7 (judge) without touching `src/`.
