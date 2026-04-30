@@ -72,14 +72,18 @@ jobs:
 
       # Quality gates (issue #1035, #1036 — CI debt closeout)
 
-      - name: "Xenon complexity (warn-only baseline)"
-        # Rationale (#1036): current state has rank-E blocks (skills/fixer.py)
-        # and rank-D modules (agents/base.py, api/routes/admin.py). Shipping
-        # as warn-only for v1 rollout so CI goes green on merge; follow-up
-        # refactors will progressively tighten to --max-absolute C, then B.
-        # This mirrors pip-audit (also warn-only) and the staged rollout
-        # pattern in docs/test-quality-audit-and-ci-gate-proposal.md.
-        run: xenon --max-absolute C --max-modules C --max-average C src/stronghold/ || true
+      - name: "G-1 Xenon complexity (baseline-aware, blocking)"
+        # ARCHITECTURE.md §16.4.1. Replaces the previous '|| true' warn-only
+        # state (§16.3.3 anti-pattern) with a baseline-freeze that blocks
+        # only on net-new offenders or rank regressions vs. .xenon-baseline.json.
+        # Ratchet plan in §16.4.1 — current threshold C/C/C, baseline holds
+        # 16 known offenders. To shrink, refactor an offender then run
+        # `make baseline-xenon` and commit the smaller baseline.
+        run: |
+          python scripts/xenon_with_baseline.py \
+            --baseline .xenon-baseline.json \
+            --max-absolute C --max-modules C --max-average C \
+            src/stronghold/
 
       - name: "Vulture dead-code (min confidence 100)"
         # Rationale (#1035): Protocol method parameters are "unused" by definition.
