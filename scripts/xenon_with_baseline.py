@@ -12,8 +12,11 @@ Stdlib + subprocess only — never imports from src/stronghold (§16.9.9).
 
 from __future__ import annotations
 
+import argparse
 import json
 import re
+import subprocess
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -114,3 +117,106 @@ def compare(
         elif v.is_worse_than(baselined_rank):
             regressions.append(v)
     return net_new, regressions
+
+
+def run_xenon(
+    path: str, max_absolute: str, max_modules: str, max_average: str
+) -> tuple[int, str]:
+    """Invoke xenon, return (returncode, combined_stderr_stdout).
+
+    xenon writes ERROR lines to stderr and exits non-zero on any rank
+    violation. Both streams are captured because the format may shift
+    between xenon versions, and we'd rather over-collect than miss a
+    violation line.
+    """
+    proc = subprocess.run(  # noqa: S603 — fixed argv, no shell
+        [
+            "xenon",
+            "--max-absolute",
+            max_absolute,
+            "--max-modules",
+            max_modules,
+            "--max-average",
+            max_average,
+            path,
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    return proc.returncode, proc.stderr + proc.stdout
+
+
+def _format_failures(net_new: list[Violation], regressions: list[Violation]) -> str:
+    lines: list[str] = []
+    if net_new:
+        lines.append("FAIL: net-new offenders (not permitted by .xenon-baseline.json):")
+        for v in net_new:
+            lines.append(f"  {v.file}: {v.block} (rank {v.rank})")
+    if regressions:
+        lines.append("FAIL: rank regressions vs. .xenon-baseline.json:")
+        for v in regressions:
+            lines.append(f"  {v.file}: {v.block} (now rank {v.rank})")
+    lines.append(
+        "Either fix the offenders, or — if intentional — regenerate the "
+        "baseline via `make baseline-xenon` and add a justification in the PR body."
+    )
+    return "\n".join(lines)
+
+
+def main(argv: list[str] | None = None) -> int:
+    """Entrypoint. Returns the exit code (0/1/2 per §16.7.2)."""
+    parser = argparse.ArgumentParser(
+        description="Run xenon and filter violations against .xenon-baseline.json (G-1).",
+    )
+    parser.add_argument("--baseline", required=True, type=Path)
+    parser.add_argument("--max-absolute", default="C")
+    parser.add_argument("--max-modules", default="C")
+    parser.add_argument("--max-average", default="C")
+    parser.add_argument(
+        "--input",
+        type=Path,
+        help=(
+            "Read xenon-format output from FILE instead of running xenon. "
+            "Hermetic-test hook; CI never sets this."
+        ),
+    )
+    parser.add_argument("path", help="Source path to scan (e.g. src/stronghold/)")
+    args = parser.parse_args(argv)
+
+    try:
+        baseline = load_baseline(args.baseline)
+    except BaselineError as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 2
+
+    if args.input is not None:
+        try:
+            text = args.input.read_text()
+        except OSError as exc:
+            print(f"ERROR: --input file unreadable: {exc}", file=sys.stderr)
+            return 2
+    else:
+        rc, text = run_xenon(
+            args.path, args.max_absolute, args.max_modules, args.max_average
+        )
+        # xenon: 0 = clean, 1 = violations found. Anything else is a tool error.
+        if rc not in (0, 1):
+            print(f"ERROR: xenon exited {rc}\n{text}", file=sys.stderr)
+            return 2
+
+    violations = parse_xenon_output(text)
+    net_new, regressions = compare(violations, baseline)
+
+    if not net_new and not regressions:
+        print(
+            f"OK: {len(violations)} violation(s), all permitted by baseline."
+        )
+        return 0
+
+    print(_format_failures(net_new, regressions))
+    return 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())
