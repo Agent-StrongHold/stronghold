@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
 
@@ -72,3 +73,56 @@ def parse_jscpd_report(report_text: str) -> tuple[float, list[ClonePair]]:
             )
         )
     return pct, pairs
+
+
+class BaselineError(Exception):
+    """Raised when the baseline file is missing, unreadable, or malformed.
+
+    main() converts this into exit code 2 — a tool/contract error, not
+    a quality verdict (§16.7.2).
+    """
+
+
+def load_baseline(path: Path) -> dict[str, Any]:
+    """Read and minimally validate .jscpd-baseline.json.
+
+    Validation is shallow — `make baseline-jscpd` produces well-formed
+    output; this guards against hand-edits that drop required keys.
+    """
+    if not path.exists():
+        raise BaselineError(f"baseline file not found: {path}")
+    try:
+        data: Any = json.loads(path.read_text())
+    except json.JSONDecodeError as exc:
+        raise BaselineError(f"baseline file is not valid JSON: {exc}") from exc
+    if not isinstance(data, dict):
+        raise BaselineError("baseline must be a JSON object at top level")
+    if "max_duplication_pct" not in data:
+        raise BaselineError("baseline must declare max_duplication_pct")
+    if not isinstance(data.get("permitted_clone_pairs", []), list):
+        raise BaselineError("permitted_clone_pairs must be a list")
+    return data
+
+
+def compare(
+    pct: float, pairs: list[ClonePair], baseline: dict[str, Any]
+) -> tuple[float | None, list[ClonePair]]:
+    """Split jscpd output into (pct_overrun, net_new_pairs).
+
+    pct_overrun is None when current ≤ baseline ceiling, otherwise the
+    overrun amount (current − ceiling) for the failure message.
+
+    net_new_pairs is the list of clone pairs whose file pair is not in
+    baseline['permitted_clone_pairs']. The baseline's pairs are stored
+    as 2-element lists; we normalise them the same way the parser does.
+    """
+    ceiling = float(baseline["max_duplication_pct"])
+    pct_overrun = pct - ceiling if pct > ceiling else None
+
+    permitted_keys: set[tuple[str, str]] = set()
+    for entry in baseline.get("permitted_clone_pairs", []):
+        if isinstance(entry, list | tuple) and len(entry) == 2:
+            permitted_keys.add(_normalize_pair(entry[0], entry[1]))
+
+    net_new = [p for p in pairs if p.key not in permitted_keys]
+    return pct_overrun, net_new
