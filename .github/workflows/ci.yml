@@ -91,6 +91,18 @@ jobs:
         # while still catching real dead code (unused helpers, imports, classes).
         run: vulture src/stronghold/ .vulture_whitelist.py --min-confidence 100
 
+      - name: "G-2 Vulture whitelist shrink-only"
+        # ARCHITECTURE.md §16.4.2. Vulture itself runs above; this step
+        # additionally enforces that .vulture_whitelist.py does not GROW
+        # without operator approval. Skipped when the PR carries the
+        # 'vulture-whitelist-grow' label (§16.7.5).
+        if: |
+          github.event_name == 'pull_request' &&
+          !contains(github.event.pull_request.labels.*.name, 'vulture-whitelist-grow')
+        run: |
+          python scripts/check_vulture_whitelist.py \
+            --base "origin/${GITHUB_BASE_REF}"
+
   security:
     name: Security Tests
     runs-on: k3s-runners

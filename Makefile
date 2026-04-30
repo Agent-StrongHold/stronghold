@@ -34,8 +34,18 @@ gate-xenon:
 		$(XENON_THRESHOLDS) \
 		$(SRC)
 
+# ── G-2: Vulture whitelist shrink-only ─────────────────────────────────────
+
+# Defaults to comparing against origin/integration; override via VULTURE_BASE
+# for stacked PRs (e.g. `make gate-vulture-whitelist VULTURE_BASE=origin/foo`).
+VULTURE_BASE ?= origin/integration
+
+.PHONY: gate-vulture-whitelist
+gate-vulture-whitelist:
+	@$(PYTHON) scripts/check_vulture_whitelist.py --base $(VULTURE_BASE)
+
 # ── Aggregate ──────────────────────────────────────────────────────────────
 
 .PHONY: gates-all
-gates-all: gate-xenon
+gates-all: gate-xenon gate-vulture-whitelist
 	@echo "All implemented gates passed."
