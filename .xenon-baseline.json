@@ -1,0 +1,91 @@
+{
+  "generated_at": "2026-04-30T03:33:07Z",
+  "command": "make baseline-xenon",
+  "thresholds": {
+    "absolute": "C",
+    "modules": "C",
+    "average": "C"
+  },
+  "permitted_above_threshold": [
+    {
+      "file": "src/stronghold/agents/artificer/strategy.py",
+      "block": "reason",
+      "rank": "E"
+    },
+    {
+      "file": "src/stronghold/agents/base.py",
+      "block": "Agent",
+      "rank": "E"
+    },
+    {
+      "file": "src/stronghold/agents/base.py",
+      "block": "handle",
+      "rank": "F"
+    },
+    {
+      "file": "src/stronghold/agents/base.py",
+      "block": "module",
+      "rank": "D"
+    },
+    {
+      "file": "src/stronghold/agents/context_builder.py",
+      "block": "ContextBuilder",
+      "rank": "D"
+    },
+    {
+      "file": "src/stronghold/agents/context_builder.py",
+      "block": "build",
+      "rank": "D"
+    },
+    {
+      "file": "src/stronghold/agents/strategies/react.py",
+      "block": "reason",
+      "rank": "D"
+    },
+    {
+      "file": "src/stronghold/api/routes/admin.py",
+      "block": "analyze_quota",
+      "rank": "D"
+    },
+    {
+      "file": "src/stronghold/api/routes/admin.py",
+      "block": "get_quota",
+      "rank": "D"
+    },
+    {
+      "file": "src/stronghold/api/routes/mcp.py",
+      "block": "deploy_server",
+      "rank": "D"
+    },
+    {
+      "file": "src/stronghold/conduit.py",
+      "block": "Conduit",
+      "rank": "D"
+    },
+    {
+      "file": "src/stronghold/conduit.py",
+      "block": "route_request",
+      "rank": "F"
+    },
+    {
+      "file": "src/stronghold/config/loader.py",
+      "block": "load_config",
+      "rank": "E"
+    },
+    {
+      "file": "src/stronghold/orchestrator/pipeline.py",
+      "block": "execute",
+      "rank": "E"
+    },
+    {
+      "file": "src/stronghold/playbooks/github/list_repo_activity.py",
+      "block": "list_repo_activity",
+      "rank": "D"
+    },
+    {
+      "file": "src/stronghold/skills/fixer.py",
+      "block": "fix_content",
+      "rank": "E"
+    }
+  ]
+}
