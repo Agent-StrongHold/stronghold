@@ -46,3 +46,14 @@ def parse_whitelist(text: str) -> set[str]:
         if m:
             entries.add(m["entry"])
     return entries
+
+
+def diff_entries(base_text: str, head_text: str) -> tuple[set[str], set[str]]:
+    """Return (added, removed) entry sets between two whitelist contents.
+
+    Pure set-difference. The shrink-only policy fails on `added` being
+    non-empty; `removed` is informational (the goal — celebrate it).
+    """
+    base = parse_whitelist(base_text)
+    head = parse_whitelist(head_text)
+    return head - base, base - head
