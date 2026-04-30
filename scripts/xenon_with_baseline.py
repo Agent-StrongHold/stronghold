@@ -28,9 +28,7 @@ _BLOCK_RE = re.compile(
     r'^ERROR:xenon:block "(?P<file>[^"]+):\d+ (?P<block>[^"]+)" '
     r"has a rank of (?P<rank>[A-F])\s*$"
 )
-_MODULE_RE = re.compile(
-    r"^ERROR:xenon:module '(?P<file>[^']+)' has a rank of (?P<rank>[A-F])\s*$"
-)
+_MODULE_RE = re.compile(r"^ERROR:xenon:module '(?P<file>[^']+)' has a rank of (?P<rank>[A-F])\s*$")
 
 
 @dataclass(frozen=True)
@@ -89,9 +87,7 @@ def load_baseline(path: Path) -> dict[str, Any]:
         raise BaselineError("permitted_above_threshold must be a list")
     for entry in permitted:
         if not isinstance(entry, dict) or {"file", "block", "rank"} - entry.keys():
-            raise BaselineError(
-                "each permitted entry must have file/block/rank keys"
-            )
+            raise BaselineError("each permitted entry must have file/block/rank keys")
     return data
 
 
@@ -119,9 +115,7 @@ def compare(
     return net_new, regressions
 
 
-def run_xenon(
-    path: str, max_absolute: str, max_modules: str, max_average: str
-) -> tuple[int, str]:
+def run_xenon(path: str, max_absolute: str, max_modules: str, max_average: str) -> tuple[int, str]:
     """Invoke xenon, return (returncode, combined_stderr_stdout).
 
     xenon writes ERROR lines to stderr and exits non-zero on any rank
@@ -197,9 +191,7 @@ def main(argv: list[str] | None = None) -> int:
             print(f"ERROR: --input file unreadable: {exc}", file=sys.stderr)
             return 2
     else:
-        rc, text = run_xenon(
-            args.path, args.max_absolute, args.max_modules, args.max_average
-        )
+        rc, text = run_xenon(args.path, args.max_absolute, args.max_modules, args.max_average)
         # xenon: 0 = clean, 1 = violations found. Anything else is a tool error.
         if rc not in (0, 1):
             print(f"ERROR: xenon exited {rc}\n{text}", file=sys.stderr)
@@ -209,9 +201,7 @@ def main(argv: list[str] | None = None) -> int:
     net_new, regressions = compare(violations, baseline)
 
     if not net_new and not regressions:
-        print(
-            f"OK: {len(violations)} violation(s), all permitted by baseline."
-        )
+        print(f"OK: {len(violations)} violation(s), all permitted by baseline.")
         return 0
 
     print(_format_failures(net_new, regressions))

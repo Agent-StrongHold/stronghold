@@ -9,10 +9,7 @@ from xenon_with_baseline import Violation, parse_xenon_output
 
 
 def test_parse_block_violation_extracts_file_block_and_rank() -> None:
-    line = (
-        'ERROR:xenon:block "src/stronghold/agents/base.py:185 handle" '
-        "has a rank of F"
-    )
+    line = 'ERROR:xenon:block "src/stronghold/agents/base.py:185 handle" has a rank of F'
     assert parse_xenon_output(line) == [
         Violation(file="src/stronghold/agents/base.py", block="handle", rank="F")
     ]
@@ -26,10 +23,7 @@ def test_parse_module_violation_marks_block_as_literal_module() -> None:
 
 
 def test_parse_handles_class_method_block_names_with_dot() -> None:
-    line = (
-        'ERROR:xenon:block "src/stronghold/conduit.py:140 Conduit.__init__" '
-        "has a rank of D"
-    )
+    line = 'ERROR:xenon:block "src/stronghold/conduit.py:140 Conduit.__init__" has a rank of D'
     [v] = parse_xenon_output(line)
     assert v.block == "Conduit.__init__"
 

@@ -8,10 +8,9 @@ rank on a baselined offender is a fail.
 from __future__ import annotations
 
 import json
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pytest
-
 from xenon_with_baseline import (
     BaselineError,
     Violation,
@@ -19,15 +18,16 @@ from xenon_with_baseline import (
     load_baseline,
 )
 
+if TYPE_CHECKING:
+    from pathlib import Path
+
 
 def _baseline(*entries: tuple[str, str, str]) -> dict[str, object]:
     return {
         "generated_at": "2026-04-30T00:00:00Z",
         "command": "make baseline-xenon",
         "thresholds": {"absolute": "C", "modules": "C", "average": "C"},
-        "permitted_above_threshold": [
-            {"file": f, "block": b, "rank": r} for f, b, r in entries
-        ],
+        "permitted_above_threshold": [{"file": f, "block": b, "rank": r} for f, b, r in entries],
     }
 
 
@@ -69,9 +69,7 @@ def test_load_baseline_permitted_must_be_list(tmp_path: Path) -> None:
 
 def test_load_baseline_entry_missing_required_key(tmp_path: Path) -> None:
     p = tmp_path / "b.json"
-    p.write_text(
-        json.dumps({"permitted_above_threshold": [{"file": "x", "rank": "D"}]})
-    )
+    p.write_text(json.dumps({"permitted_above_threshold": [{"file": "x", "rank": "D"}]}))
     with pytest.raises(BaselineError, match="file/block/rank"):
         load_baseline(p)
 

@@ -16,8 +16,6 @@ import subprocess
 import sys
 from pathlib import Path
 
-import pytest
-
 REPO_ROOT = Path(__file__).resolve().parents[2]
 SCRIPT = REPO_ROOT / "scripts" / "xenon_with_baseline.py"
 
@@ -68,9 +66,7 @@ def test_exit_0_when_xenon_output_is_empty(tmp_path: Path) -> None:
 
 def test_exit_0_when_violations_match_baseline_exactly(tmp_path: Path) -> None:
     baseline = _baseline_file(tmp_path, ("src/a.py", "foo", "D"))
-    inp = _input_file(
-        tmp_path, 'ERROR:xenon:block "src/a.py:1 foo" has a rank of D\n'
-    )
+    inp = _input_file(tmp_path, 'ERROR:xenon:block "src/a.py:1 foo" has a rank of D\n')
     result = _run("--baseline", str(baseline), "--input", str(inp), "src/")
     assert result.returncode == 0, result.stderr
 
@@ -80,9 +76,7 @@ def test_exit_0_when_violations_match_baseline_exactly(tmp_path: Path) -> None:
 
 def test_exit_1_when_unbaselined_violation_appears(tmp_path: Path) -> None:
     baseline = _baseline_file(tmp_path)
-    inp = _input_file(
-        tmp_path, 'ERROR:xenon:block "src/new.py:1 bad" has a rank of D\n'
-    )
+    inp = _input_file(tmp_path, 'ERROR:xenon:block "src/new.py:1 bad" has a rank of D\n')
     result = _run("--baseline", str(baseline), "--input", str(inp), "src/")
     assert result.returncode == 1
     assert "net-new" in result.stdout
@@ -91,9 +85,7 @@ def test_exit_1_when_unbaselined_violation_appears(tmp_path: Path) -> None:
 
 def test_exit_1_when_baselined_block_regresses(tmp_path: Path) -> None:
     baseline = _baseline_file(tmp_path, ("src/a.py", "foo", "D"))
-    inp = _input_file(
-        tmp_path, 'ERROR:xenon:block "src/a.py:1 foo" has a rank of E\n'
-    )
+    inp = _input_file(tmp_path, 'ERROR:xenon:block "src/a.py:1 foo" has a rank of E\n')
     result = _run("--baseline", str(baseline), "--input", str(inp), "src/")
     assert result.returncode == 1
     assert "regression" in result.stdout
@@ -103,9 +95,7 @@ def test_exit_1_failure_message_mentions_remediation(tmp_path: Path) -> None:
     """The failure output must tell developers what to do — §16.9.10
     requires gate output be actionable."""
     baseline = _baseline_file(tmp_path)
-    inp = _input_file(
-        tmp_path, 'ERROR:xenon:block "src/x.py:1 y" has a rank of D\n'
-    )
+    inp = _input_file(tmp_path, 'ERROR:xenon:block "src/x.py:1 y" has a rank of D\n')
     result = _run("--baseline", str(baseline), "--input", str(inp), "src/")
     assert "make baseline-xenon" in result.stdout
 
@@ -115,9 +105,7 @@ def test_exit_1_failure_message_mentions_remediation(tmp_path: Path) -> None:
 
 def test_exit_2_when_baseline_file_missing(tmp_path: Path) -> None:
     inp = _input_file(tmp_path, "")
-    result = _run(
-        "--baseline", str(tmp_path / "nope.json"), "--input", str(inp), "src/"
-    )
+    result = _run("--baseline", str(tmp_path / "nope.json"), "--input", str(inp), "src/")
     assert result.returncode == 2
     assert "not found" in result.stderr
 
@@ -133,9 +121,7 @@ def test_exit_2_when_baseline_is_malformed(tmp_path: Path) -> None:
 
 def test_exit_2_when_input_file_unreadable(tmp_path: Path) -> None:
     baseline = _baseline_file(tmp_path)
-    result = _run(
-        "--baseline", str(baseline), "--input", str(tmp_path / "no.out"), "src/"
-    )
+    result = _run("--baseline", str(baseline), "--input", str(tmp_path / "no.out"), "src/")
     assert result.returncode == 2
 
 

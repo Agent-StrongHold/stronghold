@@ -59,9 +59,7 @@ def regen(src_path: str, output: Path) -> int:
         key=lambda e: (e["file"], e["block"]),
     )
     payload = {
-        "generated_at": _dt.datetime.now(_dt.timezone.utc).strftime(
-            "%Y-%m-%dT%H:%M:%SZ"
-        ),
+        "generated_at": _dt.datetime.now(_dt.UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
         "command": "make baseline-xenon",
         "thresholds": THRESHOLDS,
         "permitted_above_threshold": entries,
