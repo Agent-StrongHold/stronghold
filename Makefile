@@ -44,8 +44,21 @@ VULTURE_BASE ?= origin/integration
 gate-vulture-whitelist:
 	@$(PYTHON) scripts/check_vulture_whitelist.py --base $(VULTURE_BASE)
 
+# ── G-3: jscpd duplication ─────────────────────────────────────────────────
+
+.PHONY: baseline-jscpd
+baseline-jscpd:
+	@$(PYTHON) scripts/regen_jscpd_baseline.py $(SRC)
+	@echo "Wrote .jscpd-baseline.json. Review the diff before committing."
+
+.PHONY: gate-jscpd
+gate-jscpd:
+	@$(PYTHON) scripts/check_jscpd_baseline.py \
+		--baseline .jscpd-baseline.json \
+		$(SRC)
+
 # ── Aggregate ──────────────────────────────────────────────────────────────
 
 .PHONY: gates-all
-gates-all: gate-xenon gate-vulture-whitelist
+gates-all: gate-xenon gate-vulture-whitelist gate-jscpd
 	@echo "All implemented gates passed."

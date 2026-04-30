@@ -10,7 +10,6 @@ Either failure → exit 1. Both clean → exit 0.
 from __future__ import annotations
 
 import json
-from pathlib import Path
 from typing import TYPE_CHECKING
 
 import pytest
@@ -22,7 +21,7 @@ from check_jscpd_baseline import (
 )
 
 if TYPE_CHECKING:
-    pass
+    from pathlib import Path
 
 
 def _baseline(ceiling: float = 5.0, *pairs: tuple[str, str]) -> dict[str, object]:

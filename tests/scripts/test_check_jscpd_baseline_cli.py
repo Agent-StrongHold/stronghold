@@ -22,9 +22,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 SCRIPT = REPO_ROOT / "scripts" / "check_jscpd_baseline.py"
 
 
-def _baseline_file(
-    tmp_path: Path, ceiling: float, *pairs: tuple[str, str]
-) -> Path:
+def _baseline_file(tmp_path: Path, ceiling: float, *pairs: tuple[str, str]) -> Path:
     p = tmp_path / ".jscpd-baseline.json"
     p.write_text(
         json.dumps(
@@ -39,9 +37,7 @@ def _baseline_file(
     return p
 
 
-def _input_file(
-    tmp_path: Path, pct: float, *clones: tuple[str, str, int, int]
-) -> Path:
+def _input_file(tmp_path: Path, pct: float, *clones: tuple[str, str, int, int]) -> Path:
     p = tmp_path / "report.json"
     p.write_text(
         json.dumps(
@@ -165,9 +161,7 @@ def test_exit_2_when_baseline_lacks_required_ceiling(tmp_path: Path) -> None:
 
 def test_exit_2_when_input_unreadable(tmp_path: Path) -> None:
     baseline = _baseline_file(tmp_path, 5.0)
-    result = _run(
-        "--baseline", str(baseline), "--input", str(tmp_path / "no.json"), "src/"
-    )
+    result = _run("--baseline", str(baseline), "--input", str(tmp_path / "no.json"), "src/")
     assert result.returncode == 2
 
 

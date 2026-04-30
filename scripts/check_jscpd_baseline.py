@@ -169,9 +169,7 @@ def run_jscpd(path: str, min_tokens: int = 50, min_lines: int = 10) -> str:
         return report_path.read_text()
 
 
-def _format_failure(
-    pct: float, pct_overrun: float | None, net_new: list[ClonePair]
-) -> str:
+def _format_failure(pct: float, pct_overrun: float | None, net_new: list[ClonePair]) -> str:
     lines: list[str] = []
     if pct_overrun is not None:
         lines.append(
@@ -179,9 +177,7 @@ def _format_failure(
             f"by {pct_overrun:.2f} percentage points."
         )
     if net_new:
-        lines.append(
-            f"FAIL: {len(net_new)} new clone pair(s) not in .jscpd-baseline.json:"
-        )
+        lines.append(f"FAIL: {len(net_new)} new clone pair(s) not in .jscpd-baseline.json:")
         for cp in net_new:
             a, b = cp.file_pair
             lines.append(f"  + {a}  ↔  {b}  ({cp.lines} lines, {cp.tokens} tokens)")
@@ -240,10 +236,7 @@ def main(argv: list[str] | None = None) -> int:
     pct_overrun, net_new = compare(pct, pairs, baseline)
 
     if pct_overrun is None and not net_new:
-        print(
-            f"OK: {pct:.2f}% duplication, {len(pairs)} clone(s), "
-            f"all permitted by baseline."
-        )
+        print(f"OK: {pct:.2f}% duplication, {len(pairs)} clone(s), all permitted by baseline.")
         return 0
 
     print(_format_failure(pct, pct_overrun, net_new))

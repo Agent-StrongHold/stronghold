@@ -103,6 +103,21 @@ jobs:
           python scripts/check_vulture_whitelist.py \
             --base "origin/${GITHUB_BASE_REF}"
 
+      - name: "G-3 jscpd duplication (baseline-aware, blocking)"
+        # ARCHITECTURE.md §16.4.3. Dual-axis: fails if duplication% rises
+        # above .jscpd-baseline.json's ceiling OR if a new clone pair
+        # appears between files not in permitted_clone_pairs. Skipped on
+        # 'jscpd-baseline-grow' label (§16.7.5).
+        if: |
+          !contains(github.event.pull_request.labels.*.name, 'jscpd-baseline-grow')
+        run: |
+          if ! command -v jscpd >/dev/null; then
+            npm install -g jscpd@4 >/dev/null 2>&1
+          fi
+          python scripts/check_jscpd_baseline.py \
+            --baseline .jscpd-baseline.json \
+            src/stronghold/
+
   security:
     name: Security Tests
     runs-on: k3s-runners
