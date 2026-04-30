@@ -13,7 +13,11 @@ Stdlib + subprocess only. scripts/ stays src-isolated per §16.9.9.
 
 from __future__ import annotations
 
+import argparse
 import json
+import subprocess
+import sys
+import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -126,3 +130,125 @@ def compare(
 
     net_new = [p for p in pairs if p.key not in permitted_keys]
     return pct_overrun, net_new
+
+
+def run_jscpd(path: str, min_tokens: int = 50, min_lines: int = 10) -> str:
+    """Invoke jscpd, return its JSON-report contents.
+
+    jscpd's `--reporters json` writes to a directory we control with
+    --output. We use a temp dir so the caller never has to clean up.
+    """
+    with tempfile.TemporaryDirectory(prefix="jscpd-g3-") as tmp:
+        proc = subprocess.run(  # noqa: S603 — fixed argv, no shell
+            [
+                "jscpd",
+                "--min-tokens",
+                str(min_tokens),
+                "--min-lines",
+                str(min_lines),
+                "--reporters",
+                "json",
+                "--output",
+                tmp,
+                path,
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        # jscpd exits 0 when no clones above threshold and 1 when clones
+        # exist or under various flag conditions. We don't use its exit
+        # code — we read the report. Anything else (≥ 2) is a tool error.
+        if proc.returncode not in (0, 1):
+            raise subprocess.CalledProcessError(
+                proc.returncode, proc.args, output=proc.stdout, stderr=proc.stderr
+            )
+        report_path = Path(tmp) / "jscpd-report.json"
+        if not report_path.exists():
+            raise FileNotFoundError(f"jscpd did not produce a report at {report_path}")
+        return report_path.read_text()
+
+
+def _format_failure(
+    pct: float, pct_overrun: float | None, net_new: list[ClonePair]
+) -> str:
+    lines: list[str] = []
+    if pct_overrun is not None:
+        lines.append(
+            f"FAIL: duplication is {pct:.2f}%, exceeds baseline ceiling "
+            f"by {pct_overrun:.2f} percentage points."
+        )
+    if net_new:
+        lines.append(
+            f"FAIL: {len(net_new)} new clone pair(s) not in .jscpd-baseline.json:"
+        )
+        for cp in net_new:
+            a, b = cp.file_pair
+            lines.append(f"  + {a}  ↔  {b}  ({cp.lines} lines, {cp.tokens} tokens)")
+    lines.append(
+        "Either remove the duplication, or — if intentional — regenerate "
+        "the baseline via `make baseline-jscpd` and add a justification in the PR body."
+    )
+    return "\n".join(lines)
+
+
+def main(argv: list[str] | None = None) -> int:
+    """Entrypoint. Returns the exit code (0/1/2 per §16.7.2)."""
+    parser = argparse.ArgumentParser(
+        description=(
+            "G-3: enforce that .jscpd-baseline.json's duplication ceiling "
+            "and clone-pair set are not exceeded."
+        )
+    )
+    parser.add_argument("--baseline", required=True, type=Path)
+    parser.add_argument(
+        "--input",
+        type=Path,
+        help=(
+            "Read jscpd JSON report from FILE instead of running jscpd. "
+            "Hermetic-test hook; CI never sets this."
+        ),
+    )
+    parser.add_argument("path", help="Source path to scan (e.g. src/stronghold/)")
+    args = parser.parse_args(argv)
+
+    try:
+        baseline = load_baseline(args.baseline)
+    except BaselineError as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 2
+
+    if args.input is not None:
+        try:
+            report_text = args.input.read_text()
+        except OSError as exc:
+            print(f"ERROR: --input file unreadable: {exc}", file=sys.stderr)
+            return 2
+    else:
+        try:
+            report_text = run_jscpd(args.path)
+        except (subprocess.CalledProcessError, FileNotFoundError) as exc:
+            print(f"ERROR: jscpd failed: {exc}", file=sys.stderr)
+            return 2
+
+    try:
+        pct, pairs = parse_jscpd_report(report_text)
+    except (ValueError, json.JSONDecodeError) as exc:
+        print(f"ERROR: jscpd report malformed: {exc}", file=sys.stderr)
+        return 2
+
+    pct_overrun, net_new = compare(pct, pairs, baseline)
+
+    if pct_overrun is None and not net_new:
+        print(
+            f"OK: {pct:.2f}% duplication, {len(pairs)} clone(s), "
+            f"all permitted by baseline."
+        )
+        return 0
+
+    print(_format_failure(pct, pct_overrun, net_new))
+    return 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())
