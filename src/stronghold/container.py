@@ -6,6 +6,8 @@ import logging
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
+import httpx
+
 from stronghold.agents.context_builder import ContextBuilder
 from stronghold.agents.factory import create_agents
 from stronghold.agents.intents import IntentRegistry
@@ -88,6 +90,19 @@ class Container:
     agents: dict[str, Agent] = field(default_factory=dict)
     coin_ledger: Any = None
     tournament: Any = None
+    # Emissary MCP gateway plane (wired by create_container; opt-in via DI).
+    # The fields are typed Any to keep the Container dataclass independent of
+    # the security/mcp module imports — the actual instances are constructed
+    # in create_container and surfaced here for callers (chat handler, admin
+    # routes, agent runtimes) that need them.
+    mcp_tool_catalog: Any = None  # security.tool_catalog.InMemoryToolCatalog
+    keyward: Any = None  # security.keyward.Keyward
+    composer: Any = None  # mcp.composer.Composer
+    mcp_client: Any = None  # mcp.client.MCPClient
+    emissary: Any = None  # mcp.emissary.Emissary
+    tool_declaration_validator: Any = (
+        None  # security.sentinel.tool_declarations.ToolDeclarationValidator
+    )
     canary_manager: Any = None
     orchestrator: Any = None  # OrchestratorEngine, set in app.py lifespan
     learning_approval_gate: Any = None
@@ -318,10 +333,11 @@ async def create_container(config: StrongholdConfig) -> Container:
         permission_table=permission_table,
         audit_log=audit_log,
     )
-    if config.phoenix_endpoint:
-        tracer: TracingBackend = PhoenixTracingBackend(endpoint=config.phoenix_endpoint)
-    else:
-        tracer: TracingBackend = NoopTracingBackend()
+    tracer: TracingBackend = (
+        PhoenixTracingBackend(endpoint=config.phoenix_endpoint)
+        if config.phoenix_endpoint
+        else NoopTracingBackend()
+    )
     context_builder = ContextBuilder()
     intent_registry = IntentRegistry()
 
@@ -488,6 +504,67 @@ async def create_container(config: StrongholdConfig) -> Container:
     except Exception:
         logger.info("MCP: K8s deployer unavailable (no cluster access)")
 
+    # ── Emissary MCP gateway plane ──
+    # Catalog / Keyward / Composer / MCPClient / Emissary are wired here so
+    # the chat handler, admin routes, and agent runtimes can reach them via
+    # the Container. Backend registrations themselves are populated by a
+    # separate loader (follow-up); the gateway accepts traffic only after
+    # backends are registered, so wiring here is safe with an empty catalog.
+    from stronghold.mcp.client import MCPClient  # noqa: PLC0415
+    from stronghold.mcp.composer import Composer  # noqa: PLC0415
+    from stronghold.mcp.emissary import Emissary  # noqa: PLC0415
+    from stronghold.mcp.invokers import (  # noqa: PLC0415
+        make_local_host_invoker,
+        make_remote_invoker,
+    )
+    from stronghold.security.keyward import Keyward, KeywardConfig  # noqa: PLC0415
+    from stronghold.security.sentinel.tool_declarations import (  # noqa: PLC0415
+        ToolDeclarationValidator,
+    )
+    from stronghold.security.tool_catalog import InMemoryToolCatalog  # noqa: PLC0415
+    from stronghold.types.security import TargetKind  # noqa: PLC0415
+
+    mcp_tool_catalog = InMemoryToolCatalog()
+    keyward = Keyward(
+        catalog=mcp_tool_catalog,
+        # Reuse jwt_secret for Keyward signing — config/loader.py already
+        # validates ≥32 chars. A dedicated keyward signing key with rotation
+        # is a follow-up.
+        config=KeywardConfig(signing_key=config.jwt_secret),
+    )
+    composer = Composer()
+    mcp_http = httpx.AsyncClient(timeout=30)
+    mcp_client = MCPClient(http=mcp_http)
+
+    invokers: dict[Any, Any] = {
+        TargetKind.REMOTE_PROXY: make_remote_invoker(mcp_client),
+    }
+    # LOCAL_HOST requires a deployer that implements McpDeployerClient
+    # (deploy_tool_mcp/stop_tool_mcp/health). The current K8sDeployer uses
+    # a richer per-server interface (deploy(server)/stop(server)/...) and
+    # does not match — wiring waits for a McpDeployerClient adapter.
+    from stronghold.protocols.mcp import McpDeployerClient  # noqa: PLC0415
+
+    if mcp_deployer is not None and isinstance(mcp_deployer, McpDeployerClient):
+        invokers[TargetKind.LOCAL_HOST] = make_local_host_invoker(
+            deployer=mcp_deployer,
+            registry=mcp_registry,
+            http=mcp_http,
+        )
+
+    emissary = Emissary(
+        catalog=mcp_tool_catalog,
+        keyward=keyward,
+        warden=warden,
+        composer=composer,
+        invokers=invokers,
+    )
+    tool_declaration_validator = ToolDeclarationValidator(catalog=mcp_tool_catalog)
+    logger.info(
+        "Emissary plane wired (invokers=%s)",
+        sorted(str(k) for k in invokers),
+    )
+
     container = Container(
         config=config,
         auth_provider=auth_provider,
@@ -531,6 +608,12 @@ async def create_container(config: StrongholdConfig) -> Container:
         prompt_cache=prompt_cache,
         mcp_registry=mcp_registry,
         mcp_deployer=mcp_deployer,
+        mcp_tool_catalog=mcp_tool_catalog,
+        keyward=keyward,
+        composer=composer,
+        mcp_client=mcp_client,
+        emissary=emissary,
+        tool_declaration_validator=tool_declaration_validator,
     )
 
     # Conduit pipeline is auto-wired via __post_init__

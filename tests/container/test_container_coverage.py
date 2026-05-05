@@ -238,6 +238,7 @@ class TestContainerConstruction:
         assert len(c.agents) == 1
         assert "test-agent" in c.agents
 
+
 # ── route_request delegation ────────────────────────────────────────
 
 
@@ -403,6 +404,7 @@ class TestCreateContainer:
 
         # Classifier: must return an Intent, not just a truthy object.
         from stronghold.types.intent import Intent
+
         intent = await container.classifier.classify(
             [{"role": "user", "content": "hi"}],
             container.config.task_types,
@@ -439,10 +441,20 @@ class TestCreateContainer:
         # deeper behaviour is exercised by dedicated test files for each
         # component.
         for field_name in (
-            "auth_provider", "gate", "sentinel", "conduit", "router",
-            "llm", "tool_dispatcher", "agent_store", "reactor",
-            "tournament", "canary_manager", "learning_approval_gate",
-            "learning_promoter", "strike_tracker",
+            "auth_provider",
+            "gate",
+            "sentinel",
+            "conduit",
+            "router",
+            "llm",
+            "tool_dispatcher",
+            "agent_store",
+            "reactor",
+            "tournament",
+            "canary_manager",
+            "learning_approval_gate",
+            "learning_promoter",
+            "strike_tracker",
         ):
             assert getattr(container, field_name) is not None, field_name
 
@@ -475,6 +487,7 @@ class TestContainerWithOptionalComponents:
         """Default Reactor is a fresh instance — no triggers, not started."""
         c = _make_container_minimal()
         from stronghold.events import Reactor
+
         # Exact-type identity: a regression to a subclass would be a smell.
         assert type(c.reactor) is Reactor
         # get_status() exposes the public contract — use it rather than
@@ -493,6 +506,7 @@ class TestContainerWithOptionalComponents:
         """
         c = _make_container_minimal()
         from stronghold.agents.task_queue import InMemoryTaskQueue
+
         assert type(c.task_queue) is InMemoryTaskQueue
         # An empty queue has no tasks and claim() returns None.
         assert await c.task_queue.list_tasks() == []
@@ -572,6 +586,7 @@ class TestToolPolicyEnforcementInToolExec:
         assert not container.tool_policy.check_tool_call("system", "__system__", "dangerous_tool")
         assert container.tool_policy.check_tool_call("system", "__system__", "safe_tool")
 
+
 class TestCreateContainerRedisUnavailable:
     """Test create_container when redis_url is set but Redis is unreachable."""
 
@@ -635,3 +650,94 @@ class TestContainerMcpRegistry:
         assert len(tools) >= 0
         for _ in tools:
             pass
+
+
+class TestContainerEmissaryPlane:
+    """create_container wires the Emissary MCP gateway plane.
+
+    Each component is exercised by its protocol method (not just is-not-None)
+    so a sentinel slipped in by mistake fails immediately.
+    """
+
+    async def test_mcp_tool_catalog_is_real_inmemory_catalog(self) -> None:
+        from stronghold.security.tool_catalog import InMemoryToolCatalog
+        from stronghold.types.auth import SYSTEM_AUTH
+
+        container = await create_container(_make_config())
+        assert type(container.mcp_tool_catalog) is InMemoryToolCatalog
+        # approvals_for must return a frozenset (empty at startup).
+        approvals = container.mcp_tool_catalog.approvals_for(SYSTEM_AUTH)
+        assert isinstance(approvals, frozenset)
+        assert len(approvals) == 0
+
+    async def test_keyward_refuses_unapproved_tool(self) -> None:
+        from stronghold.security.keyward import Keyward
+        from stronghold.types.auth import SYSTEM_AUTH
+        from stronghold.types.security import TokenRequest, ToolFingerprint
+
+        container = await create_container(_make_config())
+        assert type(container.keyward) is Keyward
+        result = await container.keyward.issue(
+            TokenRequest(
+                tool=ToolFingerprint(value="fp-x", name="x", schema_hash="s"),
+                auth=SYSTEM_AUTH,
+                audience="https://api.example/",
+                requested_scopes=frozenset(),
+                call_id="c1",
+            ),
+        )
+        # Empty catalog → refusal with the documented error_kind.
+        assert result.token is None
+        assert result.error_kind == "unauthorized"
+
+    async def test_composer_is_a_real_composer(self) -> None:
+        from stronghold.mcp.composer import Composer
+        from stronghold.types.security import ToolFingerprint
+
+        container = await create_container(_make_config())
+        assert type(container.composer) is Composer
+        # Unknown composite is not registered.
+        assert (
+            container.composer.is_registered(
+                ToolFingerprint(value="fp-x", name="x", schema_hash="s"),
+            )
+            is False
+        )
+
+    async def test_mcp_client_is_real_client(self) -> None:
+        from stronghold.mcp.client import MCPClient
+
+        container = await create_container(_make_config())
+        assert type(container.mcp_client) is MCPClient
+
+    async def test_emissary_lists_tools_empty_for_system(self) -> None:
+        from stronghold.mcp.emissary import Emissary
+        from stronghold.types.auth import SYSTEM_AUTH
+
+        container = await create_container(_make_config())
+        assert type(container.emissary) is Emissary
+        descriptors = await container.emissary.list_tools(SYSTEM_AUTH, session=None)
+        assert descriptors == []
+
+    async def test_tool_declaration_validator_passes_empty_tools_array(self) -> None:
+        from stronghold.security.sentinel.tool_declarations import (
+            ToolDeclarationValidator,
+        )
+        from stronghold.types.auth import SYSTEM_AUTH
+
+        container = await create_container(_make_config())
+        assert type(container.tool_declaration_validator) is ToolDeclarationValidator
+        verdict = await container.tool_declaration_validator.validate([], SYSTEM_AUTH)
+        assert verdict.allowed is True
+
+    async def test_tool_declaration_validator_blocks_unapproved_tool(self) -> None:
+        from stronghold.types.auth import SYSTEM_AUTH
+
+        container = await create_container(_make_config())
+        verdict = await container.tool_declaration_validator.validate(
+            [{"name": "rogue", "description": "", "input_schema": {}}],
+            SYSTEM_AUTH,
+        )
+        assert verdict.allowed is False
+        assert len(verdict.unapproved) == 1
+        assert verdict.unapproved[0].name == "rogue"
