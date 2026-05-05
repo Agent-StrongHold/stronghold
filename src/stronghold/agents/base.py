@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
+from stronghold.tracing.pipeline import PipelineTrace
 from stronghold.types.agent import AgentResponse
 
 # Tool schemas — proper OpenAI function definitions for each tool
@@ -212,8 +213,7 @@ class Agent:
         status_callback: Any = None,
     ) -> AgentResponse:
         """The full agent pipeline — fully traced."""
-        # Create per-agent trace (or use noop if no tracer)
-        trace = (
+        trace = PipelineTrace(
             self._tracer.create_trace(
                 user_id=auth.user_id,
                 session_id=session_id or "",
@@ -240,19 +240,15 @@ class Agent:
                     )
                 break
 
-        # 2. Warden scan — traced
-        if trace:
-            with trace.span("warden.user_input") as ws:
-                ws.set_input({"text_length": len(user_text)})
-                warden_verdict = await self._warden.scan(user_text, "user_input")
-                ws.set_output({"clean": warden_verdict.clean, "flags": warden_verdict.flags})
-        else:
+        # 2. Warden scan
+        with trace.span("warden.user_input") as ws:
+            ws.set_input({"text_length": len(user_text)})
             warden_verdict = await self._warden.scan(user_text, "user_input")
+            ws.set_output({"clean": warden_verdict.clean, "flags": warden_verdict.flags})
 
         if not warden_verdict.clean:
-            if trace:
-                trace.score("blocked", 1.0, comment=f"flags: {warden_verdict.flags}")
-                trace.end()
+            trace.score("blocked", 1.0, comment=f"flags: {warden_verdict.flags}")
+            trace.end()
             return AgentResponse.blocked_response(
                 f"Blocked by Warden: {', '.join(warden_verdict.flags)}",
             )
@@ -269,26 +265,9 @@ class Agent:
                 else:
                     messages = [*history, *messages]
 
-        # 4. Build context (soul + learnings + episodic) — traced
-        if trace:
-            with trace.span("prompt.build") as ps:
-                ps.set_input({"message_count": len(messages)})
-                context_messages, injected_learning_ids = await self._context_builder.build(
-                    messages,
-                    self.identity,
-                    prompt_manager=self._prompt_manager,
-                    learning_store=self._learning_store,
-                    agent_id=self.identity.name,
-                    org_id=auth.org_id,
-                    team_id=auth.team_id,
-                )
-                ps.set_output(
-                    {
-                        "context_message_count": len(context_messages),
-                        "learnings_injected": len(injected_learning_ids),
-                    }
-                )
-        else:
+        # 4. Build context (soul + learnings + episodic)
+        with trace.span("prompt.build") as ps:
+            ps.set_input({"message_count": len(messages)})
             context_messages, injected_learning_ids = await self._context_builder.build(
                 messages,
                 self.identity,
@@ -297,6 +276,12 @@ class Agent:
                 agent_id=self.identity.name,
                 org_id=auth.org_id,
                 team_id=auth.team_id,
+            )
+            ps.set_output(
+                {
+                    "context_message_count": len(context_messages),
+                    "learnings_injected": len(injected_learning_ids),
+                }
             )
 
         # 5. Build tool definitions from identity.tools
@@ -307,42 +292,22 @@ class Agent:
                 for name in self.identity.tools
             ]
 
-        # 6. Run strategy (use model_override from router, or identity default)
+        # 6. Run strategy
         model = model_override or self.identity.model
-        # Build strategy kwargs (trace, warden, status_callback passed if strategy supports them)
-        strategy_kwargs: dict[str, Any] = {}
-        if trace:
-            strategy_kwargs["trace"] = trace
-        # Pass Warden so strategies can scan tool results before re-injection
-        strategy_kwargs["warden"] = self._warden
-        # Pass auth + sentinel so strategies can do pre/post call validation
-        strategy_kwargs["auth"] = auth
+        strategy_kwargs: dict[str, Any] = {
+            "trace": trace,
+            "warden": self._warden,
+            "auth": auth,
+            "identity": self.identity,
+        }
         if self._sentinel is not None:
             strategy_kwargs["sentinel"] = self._sentinel
         if status_callback:
             strategy_kwargs["status_callback"] = status_callback
-        strategy_kwargs["identity"] = self.identity
 
         try:
-            if trace:
-                with trace.span("strategy.reason") as ss:
-                    ss.set_input({"model": model, "tools": len(tool_defs) if tool_defs else 0})
-                    result = await self._strategy.reason(
-                        context_messages,
-                        model,
-                        self._llm,
-                        tools=tool_defs,
-                        tool_executor=self._tool_executor,
-                        **strategy_kwargs,
-                    )
-                    ss.set_output(
-                        {
-                            "done": result.done,
-                            "tool_rounds": len(result.tool_history) if result.tool_history else 0,
-                            "response_length": len(result.response or ""),
-                        }
-                    )
-            else:
+            with trace.span("strategy.reason") as ss:
+                ss.set_input({"model": model, "tools": len(tool_defs) if tool_defs else 0})
                 result = await self._strategy.reason(
                     context_messages,
                     model,
@@ -350,6 +315,13 @@ class Agent:
                     tools=tool_defs,
                     tool_executor=self._tool_executor,
                     **strategy_kwargs,
+                )
+                ss.set_output(
+                    {
+                        "done": result.done,
+                        "tool_rounds": len(result.tool_history) if result.tool_history else 0,
+                        "response_length": len(result.response or ""),
+                    }
                 )
         except (ValueError, RuntimeError, TimeoutError, OSError) as exc:
             import logging as _log  # noqa: PLC0415
@@ -360,9 +332,8 @@ class Agent:
                 model,
                 type(exc).__name__,
             )
-            if trace:
-                trace.score("strategy_error", 0.0, "Strategy raised an exception")
-                trace.end()
+            trace.score("strategy_error", 0.0, "Strategy raised an exception")
+            trace.end()
             return AgentResponse(
                 content="I encountered an internal error. Please try again.",
                 agent_name=self.identity.name,
@@ -383,65 +354,34 @@ class Agent:
             and self._learning_store
             and result.tool_history
         ):
-            if trace:
-                with trace.span("rca.extraction") as rs:
-                    rca = await self._rca_extractor.extract_rca(
-                        user_text,
-                        result.tool_history,
-                    )
-                    if rca:
-                        rca.agent_id = self.identity.name
-                        rca.org_id = auth.org_id
-                        rca.team_id = auth.team_id
-                        await self._learning_store.store(rca)
-                        rs.set_output({"rca": rca.learning[:200]})
-                    else:
-                        rs.set_output({"rca": "none"})
-            else:
-                rca = await self._rca_extractor.extract_rca(
-                    user_text,
-                    result.tool_history,
-                )
+            with trace.span("rca.extraction") as rs:
+                rca = await self._rca_extractor.extract_rca(user_text, result.tool_history)
                 if rca:
                     rca.agent_id = self.identity.name
+                    rca.org_id = auth.org_id
+                    rca.team_id = auth.team_id
                     await self._learning_store.store(rca)
+                    rs.set_output({"rca": rca.learning[:200]})
+                else:
+                    rs.set_output({"rca": "none"})
 
-        # 8. Post-turn: learning extraction — traced
+        # 8. Post-turn: learning extraction
         if result.tool_history and self._learning_extractor and self._learning_store:
-            if trace:
-                with trace.span("learning.extraction") as ls:
-                    corrections = self._learning_extractor.extract_corrections(
-                        user_text,
-                        result.tool_history,
-                    )
-                    positives = self._learning_extractor.extract_positive_patterns(
-                        user_text,
-                        result.tool_history,
-                    )
-                    all_learnings = corrections + positives
-                    for learning in all_learnings:
-                        learning.agent_id = self.identity.name
-                        learning.org_id = auth.org_id
-                        learning.team_id = auth.team_id
-                        await self._learning_store.store(learning)
-                    ls.set_output(
-                        {
-                            "corrections": len(corrections),
-                            "positives": len(positives),
-                        }
-                    )
-            else:
+            with trace.span("learning.extraction") as ls:
                 corrections = self._learning_extractor.extract_corrections(
-                    user_text,
-                    result.tool_history,
+                    user_text, result.tool_history
                 )
-                for learning in corrections:
+                positives = self._learning_extractor.extract_positive_patterns(
+                    user_text, result.tool_history
+                )
+                for learning in corrections + positives:
                     learning.agent_id = self.identity.name
                     learning.org_id = auth.org_id
                     learning.team_id = auth.team_id
                     await self._learning_store.store(learning)
+                ls.set_output({"corrections": len(corrections), "positives": len(positives)})
 
-        # 9. Post-turn: auto-promotion check + skill mutation
+        # 9. Auto-promotion check
         if self._learning_promoter and injected_learning_ids:
             await self._learning_promoter.check_and_promote(org_id=auth.org_id)
 
@@ -453,14 +393,11 @@ class Agent:
             save_msgs.append({"role": "assistant", "content": result.response})
             await self._session_store.append_messages(session_id, save_msgs)
 
-        # 11. Record outcome for task completion rate tracking
+        # 11. Record outcome
         if self._outcome_store:
             from stronghold.types.memory import Outcome
 
-            charge_info = {
-                "charged_microchips": 0,
-                "pricing_version": "",
-            }
+            charge_info: dict[str, object] = {"charged_microchips": 0, "pricing_version": ""}
             if self._coin_ledger:
                 charge_info = await self._coin_ledger.charge_usage(
                     request_id=session_id or "",
@@ -475,9 +412,9 @@ class Agent:
 
             outcome = Outcome(
                 request_id=session_id or "",
-                task_type="",  # populated by caller/router
+                task_type="",
                 model_used=model,
-                provider="",  # populated by caller/router
+                provider="",
                 tool_calls=[
                     {
                         "name": str(h.get("tool_name", "")),
@@ -507,32 +444,31 @@ class Agent:
             )
 
         # 12. Finalize trace
-        if trace:
-            tool_success_count = 0
-            tool_fail_count = 0
-            tools_used: list[str] = []
-            for th in result.tool_history or []:
-                r = str(th.get("result", ""))
-                tools_used.append(str(th.get("tool_name", "")))
-                if r.startswith("Error") or "error" in r[:50].lower():
-                    tool_fail_count += 1
-                else:
-                    tool_success_count += 1
+        tool_success_count = 0
+        tool_fail_count = 0
+        tools_used: list[str] = []
+        for th in result.tool_history or []:
+            r = str(th.get("result", ""))
+            tools_used.append(str(th.get("tool_name", "")))
+            if r.startswith("Error") or "error" in r[:50].lower():
+                tool_fail_count += 1
+            else:
+                tool_success_count += 1
 
-            trace.update(
-                {
-                    "agent": self.identity.name,
-                    "model": model,
-                    "response_length": str(len(result.response or "")),
-                    "tool_calls_total": str(len(result.tool_history) if result.tool_history else 0),
-                    "tool_calls_success": str(tool_success_count),
-                    "tool_calls_failed": str(tool_fail_count),
-                    "tools_used": ",".join(dict.fromkeys(tools_used)),
-                    "session_history_injected": str(session_history_count),
-                    "learnings_injected": str(len(injected_learning_ids)),
-                }
-            )
-            trace.end()
+        trace.update(
+            {
+                "agent": self.identity.name,
+                "model": model,
+                "response_length": str(len(result.response or "")),
+                "tool_calls_total": str(len(result.tool_history) if result.tool_history else 0),
+                "tool_calls_success": str(tool_success_count),
+                "tool_calls_failed": str(tool_fail_count),
+                "tools_used": ",".join(dict.fromkeys(tools_used)),
+                "session_history_injected": str(session_history_count),
+                "learnings_injected": str(len(injected_learning_ids)),
+            }
+        )
+        trace.end()
 
         return AgentResponse(
             content=result.response or "",
