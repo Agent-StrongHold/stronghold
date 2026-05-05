@@ -40,7 +40,7 @@ class PlaybookExecutor(Protocol):
     @property
     def definition(self) -> PlaybookDefinition:
         """Static metadata describing this playbook."""
-        ...
+        pass
 
     async def execute(
         self,
