@@ -565,6 +565,27 @@ async def create_container(config: StrongholdConfig) -> Container:
         sorted(str(k) for k in invokers),
     )
 
+    # Bootstrap approved tools from a YAML file if configured. The loader
+    # populates both the catalog and the Emissary backends from a single
+    # source of truth so the two stay in sync.
+    if config.mcp_tools_file:
+        from stronghold.mcp.registration_loader import (  # noqa: PLC0415
+            RegistrationFileError,
+            load_registrations,
+        )
+
+        try:
+            count = load_registrations(
+                path=config.mcp_tools_file,
+                catalog=mcp_tool_catalog,
+                emissary=emissary,
+            )
+            logger.info("Emissary backends loaded from %s: %d", config.mcp_tools_file, count)
+        except RegistrationFileError as exc:
+            # Fail hard at startup — partial registration is worse than not
+            # starting at all.
+            raise ConfigError(f"mcp_tools_file load failed: {exc}") from exc
+
     container = Container(
         config=config,
         auth_provider=auth_provider,

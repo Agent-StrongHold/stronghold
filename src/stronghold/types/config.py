@@ -122,3 +122,8 @@ class StrongholdConfig(BaseModel):
     max_request_body_bytes: int = 1_048_576  # 1 MB
     webhook_secret: str = ""
     cache_breakpoints_enabled: bool = False
+    # Path to a YAML file declaring approved Emissary tools. Each entry is
+    # both approved in the catalog and registered with the Emissary as a
+    # backend (REMOTE_PROXY / LOCAL_HOST / FIRST_PARTY). Empty = no
+    # registrations; the gateway accepts no traffic until tools are loaded.
+    mcp_tools_file: str = ""
