@@ -1232,3 +1232,29 @@ class DocumentVersion:
     @property
     def is_snapshot(self) -> bool:
         return self.snapshot is not None
+
+
+# ---------------------------------------------------------------------------
+# Style drift score (spec §09)
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class StyleDriftScore:
+    """Vision-LLM (or mock) comparison of a layer against a StyleLock."""
+
+    layer_id: str
+    page_id: str
+    lock_id: str
+    lock_version: int
+    score: float
+    components: dict[str, float] = field(default_factory=dict)
+    reasoning: str = ""
+    computed_at: datetime = field(default_factory=lambda: datetime.now(UTC))
+
+    def __post_init__(self) -> None:
+        if not 0.0 <= self.score <= 1.0:
+            raise ConfigError(
+                f"StyleDriftScore.score must be in [0, 1], got {self.score}",
+                code="DRIFT_SCORE_INVALID",
+            )

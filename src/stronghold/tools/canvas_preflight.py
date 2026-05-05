@@ -305,6 +305,51 @@ class EmptyDocumentRule(_RuleBase):
         return ()
 
 
+class StyleLockDriftRule(_RuleBase):
+    """Optional per-doc rule. Constructed with a resolved StyleLock + a
+    map of layer_id → drift_score; emits WARN where score > threshold.
+
+    The rule does NOT run vision-LLM scans itself — those are async +
+    expensive. Callers compute scores out-of-band (`style_lock_check_layer`)
+    and pass them in; the rule's job is to surface findings consistently.
+    """
+
+    rule_id = "style_lock_drift"
+
+    def __init__(
+        self,
+        *,
+        scores: dict[str, float] | None = None,
+        threshold: float | None = None,
+    ) -> None:
+        self._scores = dict(scores or {})
+        self._threshold = threshold
+
+    async def check(self, document_id: str, *, tenant_id: str) -> tuple[CheckResult, ...]:
+        doc = _ctx_for(document_id).document
+        if not self._scores:
+            return ()
+        threshold = self._threshold if self._threshold is not None else 0.25
+        results: list[CheckResult] = []
+        for page in doc.pages:
+            for layer in page.layers:
+                score = self._scores.get(layer.id)
+                if score is None:
+                    continue
+                if score > threshold:
+                    results.append(
+                        CheckResult(
+                            rule_id=self.rule_id,
+                            scope=CheckScope.LAYER,
+                            scope_id=layer.id,
+                            level=ReportLevel.WARN,
+                            message=(f"Layer drift score {score:.2f} > threshold {threshold:.2f}"),
+                            detail={"score": score, "threshold": threshold, "page_id": page.id},
+                        )
+                    )
+        return tuple(results)
+
+
 # ---------------------------------------------------------------------------
 # Checker
 # ---------------------------------------------------------------------------
