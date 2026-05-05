@@ -1191,3 +1191,44 @@ class Document:
             if m.id == master_id:
                 return m
         return None
+
+
+# ---------------------------------------------------------------------------
+# Versioning (spec §23)
+# ---------------------------------------------------------------------------
+
+
+class AuthorKind(StrEnum):
+    """Origin of a DocumentVersion's mutation (spec §23)."""
+
+    USER = "user"
+    AGENT = "agent"
+    SYSTEM = "system"
+
+
+@dataclass(frozen=True)
+class DocumentVersion:
+    """One entry in the append-only DocumentVersion log (spec §23)."""
+
+    id: str
+    document_id: str
+    ordinal: int
+    author_id: str
+    author_kind: AuthorKind
+    delta: dict[str, Any]
+    parent_version_id: str | None = None
+    snapshot: dict[str, Any] | None = None
+    message: str = ""
+    pinned: bool = False
+    created_at: datetime = field(default_factory=lambda: datetime.now(UTC))
+
+    def __post_init__(self) -> None:
+        if self.ordinal < 1:
+            raise ConfigError(
+                f"version ordinal must be >= 1, got {self.ordinal}",
+                code="VERSION_ORDINAL_INVALID",
+            )
+
+    @property
+    def is_snapshot(self) -> bool:
+        return self.snapshot is not None
