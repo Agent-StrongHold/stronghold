@@ -935,3 +935,259 @@ class PreflightReport:
     checks: tuple[CheckResult, ...]
     summary: PreflightSummary
     generated_at: datetime = field(default_factory=lambda: datetime.now(UTC))
+
+
+# ---------------------------------------------------------------------------
+# Compound types: LayerSource variants, Layer, Page, Document (specs §01, §02)
+# ---------------------------------------------------------------------------
+
+
+class LayerSourceKind(StrEnum):
+    """Discriminator for the LayerSource tagged union (spec §01)."""
+
+    RASTER = "raster"
+    SHAPE = "shape"
+    TEXT = "text"
+    GROUP = "group"
+    VIDEO = "video"
+
+
+@dataclass(frozen=True)
+class RasterSource:
+    """Raster image bytes referenced by a Layer (spec §01)."""
+
+    kind: LayerSourceKind = LayerSourceKind.RASTER
+    blob_id: str = ""
+    width: int = 0
+    height: int = 0
+    inline_bytes: bytes | None = None  # used only for in-process composition
+
+    def __post_init__(self) -> None:
+        if self.kind is not LayerSourceKind.RASTER:
+            raise ConfigError(
+                f"RasterSource.kind must be RASTER, got {self.kind}",
+                code="LAYER_SOURCE_KIND_MISMATCH",
+            )
+        if self.width < 0 or self.height < 0:
+            raise ConfigError(
+                f"RasterSource dims must be non-negative: {self.width}x{self.height}",
+                code="LAYER_SOURCE_DIMS_INVALID",
+            )
+
+
+@dataclass(frozen=True)
+class ShapeSource:
+    """Vector geometry source for a shape Layer (spec §06)."""
+
+    shape_kind: ShapeKind
+    geometry: dict[str, Any]
+    fill: dict[str, Any] = field(default_factory=lambda: {"kind": "none"})
+    stroke: ShapeStroke | None = None
+    corner_radius: int = 0
+    kind: LayerSourceKind = LayerSourceKind.SHAPE
+
+    def __post_init__(self) -> None:
+        if self.kind is not LayerSourceKind.SHAPE:
+            raise ConfigError(
+                f"ShapeSource.kind must be SHAPE, got {self.kind}",
+                code="LAYER_SOURCE_KIND_MISMATCH",
+            )
+        if self.corner_radius < 0:
+            raise ConfigError(
+                f"corner_radius must be >= 0, got {self.corner_radius}",
+                code="SHAPE_CORNER_RADIUS_INVALID",
+            )
+
+
+@dataclass(frozen=True)
+class TextSource:
+    """Text content + style + layout for a text Layer (spec §05)."""
+
+    content: str
+    style: TextStyle = field(default_factory=TextStyle)
+    layout: TextLayout = field(default_factory=TextLayout)
+    kind: LayerSourceKind = LayerSourceKind.TEXT
+
+    def __post_init__(self) -> None:
+        if self.kind is not LayerSourceKind.TEXT:
+            raise ConfigError(
+                f"TextSource.kind must be TEXT, got {self.kind}",
+                code="LAYER_SOURCE_KIND_MISMATCH",
+            )
+
+
+@dataclass(frozen=True)
+class GroupSource:
+    """A group Layer composed of N child Layers by id (spec §01)."""
+
+    child_layer_ids: tuple[str, ...] = ()
+    kind: LayerSourceKind = LayerSourceKind.GROUP
+
+    def __post_init__(self) -> None:
+        if self.kind is not LayerSourceKind.GROUP:
+            raise ConfigError(
+                f"GroupSource.kind must be GROUP, got {self.kind}",
+                code="LAYER_SOURCE_KIND_MISMATCH",
+            )
+        if len(set(self.child_layer_ids)) != len(self.child_layer_ids):
+            raise ConfigError(
+                "GroupSource child_layer_ids must be unique",
+                code="GROUP_DUPLICATE_CHILD",
+            )
+
+
+# Tagged union — a Layer's source is exactly one of these.
+LayerSource = RasterSource | ShapeSource | TextSource | GroupSource
+
+
+@dataclass(frozen=True)
+class Layer:
+    """One element on a Page (spec §01).
+
+    Frozen + non-destructive: edits produce a new Layer with bumped state.
+    """
+
+    id: str
+    name: str
+    source: LayerSource
+    effects: tuple[Effect, ...] = ()
+    mask: Mask | None = None
+    blend_mode: BlendMode = BlendMode.NORMAL
+    opacity: float = 1.0
+    transform: LayerTransform = field(default_factory=LayerTransform)
+    z_index: int = 0
+    visible: bool = True
+    locked: bool = False
+    slot_id: str | None = None
+    placeholder_slot: str | None = None
+    metadata: dict[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        if not 0.0 <= self.opacity <= 1.0:
+            raise ConfigError(
+                f"opacity must be in [0, 1], got {self.opacity}",
+                code="LAYER_OPACITY_INVALID",
+            )
+        if len(self.effects) > MAX_EFFECTS_PER_LAYER:
+            raise ConfigError(
+                f"layer effect stack exceeded {MAX_EFFECTS_PER_LAYER}: got {len(self.effects)}",
+                code="EFFECT_STACK_OVERFLOW",
+            )
+        # Effect ids must be unique within a layer
+        ids = [e.id for e in self.effects]
+        if len(set(ids)) != len(ids):
+            raise ConfigError(
+                "Layer effect ids must be unique within the stack",
+                code="EFFECT_ID_DUPLICATE",
+            )
+
+
+@dataclass(frozen=True)
+class Page:
+    """A single page in a Document (spec §02).
+
+    Layers are sorted on render by (z_index, ordering); ordering breaks ties.
+    """
+
+    id: str
+    ordering: int
+    print_spec: PrintSpec
+    name: str = ""
+    layout_kind: LayoutKind | None = None
+    layout_options: dict[str, Any] = field(default_factory=dict)
+    background: Color = field(default_factory=lambda: Color("#FFFFFF"))
+    master_id: str | None = None
+    is_master: bool = False
+    layers: tuple[Layer, ...] = ()
+
+    def __post_init__(self) -> None:
+        if self.ordering < 0:
+            raise ConfigError(
+                f"page ordering must be >= 0, got {self.ordering}",
+                code="PAGE_ORDERING_INVALID",
+            )
+        # Layer ids unique on a page
+        ids = [layer.id for layer in self.layers]
+        if len(set(ids)) != len(ids):
+            raise ConfigError(
+                "Page layer ids must be unique within the page",
+                code="LAYER_ID_DUPLICATE",
+            )
+
+    @property
+    def is_verso(self) -> bool:
+        """Even-ordering pages are verso (left side of spread)."""
+        return self.ordering % 2 == 0
+
+    @property
+    def is_recto(self) -> bool:
+        """Odd-ordering pages are recto (right side of spread)."""
+        return self.ordering % 2 == 1
+
+
+@dataclass(frozen=True)
+class Document:
+    """Top-level container (spec §02).
+
+    Pages and master_pages are tuple-stored for frozen invariance.
+    Edits produce a new Document with `version + 1` and updated_at bumped.
+    """
+
+    id: str
+    tenant_id: str
+    owner_id: str
+    name: str
+    kind: DocumentKind
+    pages: tuple[Page, ...] = ()
+    master_pages: tuple[Page, ...] = ()
+    brand_kit_id: str | None = None
+    style_lock_id: str | None = None
+    version: int = 1
+    archived: bool = False
+    metadata: dict[str, Any] = field(default_factory=dict)
+    created_at: datetime = field(default_factory=lambda: datetime.now(UTC))
+    updated_at: datetime = field(default_factory=lambda: datetime.now(UTC))
+
+    def __post_init__(self) -> None:
+        if self.version < 1:
+            raise ConfigError(
+                f"version must be >= 1, got {self.version}",
+                code="DOCUMENT_VERSION_INVALID",
+            )
+        # Page ordering must be a gapless 0..N-1 run.
+        orderings = sorted(p.ordering for p in self.pages)
+        if orderings and orderings != list(range(len(orderings))):
+            raise ConfigError(
+                f"document pages must have gapless 0..N orderings, got {orderings}",
+                code="PAGE_ORDERING_NOT_GAPLESS",
+            )
+        # Master ids unique
+        master_ids = [m.id for m in self.master_pages]
+        if len(set(master_ids)) != len(master_ids):
+            raise ConfigError(
+                "Document master_pages ids must be unique",
+                code="MASTER_ID_DUPLICATE",
+            )
+        # Page ids unique across pages + masters
+        all_ids = [p.id for p in self.pages] + master_ids
+        if len(set(all_ids)) != len(all_ids):
+            raise ConfigError(
+                "Document page+master ids must be unique",
+                code="PAGE_ID_DUPLICATE",
+            )
+
+    @property
+    def page_count(self) -> int:
+        return len(self.pages)
+
+    def get_page(self, page_id: str) -> Page | None:
+        for p in self.pages:
+            if p.id == page_id:
+                return p
+        return None
+
+    def get_master(self, master_id: str) -> Page | None:
+        for m in self.master_pages:
+            if m.id == master_id:
+                return m
+        return None

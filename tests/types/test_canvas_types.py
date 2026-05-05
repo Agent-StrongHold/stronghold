@@ -38,6 +38,7 @@ from stronghold.types.canvas_design import (
     CorrectionKind,
     CorrectionSource,
     CostForecast,
+    Document,
     DocumentKind,
     Effect,
     EffectKind,
@@ -45,6 +46,9 @@ from stronghold.types.canvas_design import (
     FontRef,
     FontWeight,
     FontWidth,
+    GroupSource,
+    Layer,
+    LayerSourceKind,
     LayerTransform,
     LayerType,
     LayoutKind,
@@ -57,15 +61,19 @@ from stronghold.types.canvas_design import (
     Mask,
     MaskOrigin,
     MoodTag,
+    Page,
     PreflightReport,
     PreflightSummary,
     PrintSpec,
+    RasterSource,
     ReportLevel,
     ShapeKind,
+    ShapeSource,
     ShapeStroke,
     StrokePosition,
     StyleLock,
     TextLayout,
+    TextSource,
     TextStyle,
     TextTransform,
     VerticalAlignment,
@@ -753,3 +761,254 @@ class TestFrozen:
         f = FontRef(family="Inter")
         with pytest.raises(FrozenInstanceError):
             f.family = "Roboto"  # type: ignore[misc]
+
+
+# ───────────────────────────── LayerSource ─────────────────────────────
+
+
+class TestRasterSource:
+    def test_defaults(self) -> None:
+        s = RasterSource()
+        assert s.kind is LayerSourceKind.RASTER
+        assert s.blob_id == ""
+        assert s.width == 0
+        assert s.height == 0
+        assert s.inline_bytes is None
+
+    def test_with_dims(self) -> None:
+        s = RasterSource(blob_id="b1", width=100, height=200)
+        assert s.width == 100
+
+    def test_negative_dims_rejected(self) -> None:
+        with pytest.raises(ConfigError):
+            RasterSource(width=-1, height=10)
+        with pytest.raises(ConfigError):
+            RasterSource(width=10, height=-1)
+
+
+class TestShapeSource:
+    def test_defaults(self) -> None:
+        s = ShapeSource(shape_kind=ShapeKind.RECTANGLE, geometry={"width": 100, "height": 50})
+        assert s.kind is LayerSourceKind.SHAPE
+        assert s.shape_kind is ShapeKind.RECTANGLE
+        assert s.fill["kind"] == "none"
+        assert s.stroke is None
+        assert s.corner_radius == 0
+
+    def test_negative_corner_radius_rejected(self) -> None:
+        with pytest.raises(ConfigError):
+            ShapeSource(
+                shape_kind=ShapeKind.RECTANGLE,
+                geometry={},
+                corner_radius=-1,
+            )
+
+
+class TestTextSource:
+    def test_defaults(self) -> None:
+        s = TextSource(content="Hello")
+        assert s.kind is LayerSourceKind.TEXT
+        assert s.content == "Hello"
+        assert s.style.font_family == "Inter"
+        assert s.layout.alignment is Alignment.LEFT
+
+
+class TestGroupSource:
+    def test_defaults(self) -> None:
+        s = GroupSource()
+        assert s.kind is LayerSourceKind.GROUP
+        assert s.child_layer_ids == ()
+
+    def test_duplicate_children_rejected(self) -> None:
+        with pytest.raises(ConfigError):
+            GroupSource(child_layer_ids=("a", "b", "a"))
+
+
+# ───────────────────────────── Layer ─────────────────────────────
+
+
+class TestLayer:
+    def _raster_layer(self, **overrides: object) -> Layer:
+        defaults: dict[str, object] = {
+            "id": "L1",
+            "name": "test",
+            "source": RasterSource(blob_id="b1", width=100, height=100),
+        }
+        defaults.update(overrides)
+        return Layer(**defaults)  # type: ignore[arg-type]
+
+    def test_defaults(self) -> None:
+        layer = self._raster_layer()
+        assert layer.opacity == 1.0
+        assert layer.blend_mode is BlendMode.NORMAL
+        assert layer.effects == ()
+        assert layer.mask is None
+        assert layer.visible is True
+        assert layer.locked is False
+        assert layer.transform.x == 0
+
+    @pytest.mark.parametrize("opacity", [-0.01, 1.01, 2.0])
+    def test_opacity_bounds(self, opacity: float) -> None:
+        with pytest.raises(ConfigError):
+            self._raster_layer(opacity=opacity)
+
+    def test_effect_stack_overflow(self) -> None:
+        effects = tuple(
+            Effect(id=f"e{i}", kind=EffectKind.INVERT, params={})
+            for i in range(MAX_EFFECTS_PER_LAYER + 1)
+        )
+        with pytest.raises(ConfigError):
+            self._raster_layer(effects=effects)
+
+    def test_effect_id_duplicate_rejected(self) -> None:
+        effects = (
+            Effect(id="e1", kind=EffectKind.INVERT, params={}),
+            Effect(id="e1", kind=EffectKind.INVERT, params={}),
+        )
+        with pytest.raises(ConfigError):
+            self._raster_layer(effects=effects)
+
+    def test_layer_with_text_source(self) -> None:
+        layer = Layer(id="t", name="title", source=TextSource(content="Hi"))
+        assert isinstance(layer.source, TextSource)
+
+    def test_layer_with_shape_source(self) -> None:
+        shape = ShapeSource(shape_kind=ShapeKind.RECTANGLE, geometry={"width": 50, "height": 50})
+        layer = Layer(id="s", name="rect", source=shape)
+        assert isinstance(layer.source, ShapeSource)
+
+    def test_layer_with_group_source(self) -> None:
+        layer = Layer(id="g", name="group", source=GroupSource(child_layer_ids=("a", "b")))
+        assert isinstance(layer.source, GroupSource)
+
+
+# ───────────────────────────── Page ─────────────────────────────
+
+
+class TestPage:
+    def _make(self, **overrides: object) -> Page:
+        defaults: dict[str, object] = {
+            "id": "P1",
+            "ordering": 0,
+            "print_spec": PrintSpec(trim_size=(100, 100)),
+        }
+        defaults.update(overrides)
+        return Page(**defaults)  # type: ignore[arg-type]
+
+    def test_defaults(self) -> None:
+        page = self._make()
+        assert page.layers == ()
+        assert page.master_id is None
+        assert page.is_master is False
+        assert page.layout_kind is None
+        assert page.background.value == "#FFFFFF"
+
+    def test_negative_ordering_rejected(self) -> None:
+        with pytest.raises(ConfigError):
+            self._make(ordering=-1)
+
+    def test_layer_id_uniqueness(self) -> None:
+        layer_a = Layer(id="L", name="a", source=RasterSource())
+        layer_b = Layer(id="L", name="b", source=RasterSource())
+        with pytest.raises(ConfigError):
+            self._make(layers=(layer_a, layer_b))
+
+    @pytest.mark.parametrize(("ordering", "verso"), [(0, True), (1, False), (2, True), (3, False)])
+    def test_verso_recto(self, ordering: int, verso: bool) -> None:
+        page = self._make(ordering=ordering)
+        assert page.is_verso is verso
+        assert page.is_recto is not verso
+
+
+# ───────────────────────────── Document ─────────────────────────────
+
+
+class TestDocument:
+    def _page(self, ordering: int, page_id: str | None = None) -> Page:
+        return Page(
+            id=page_id or f"P{ordering}",
+            ordering=ordering,
+            print_spec=PrintSpec(trim_size=(100, 100)),
+        )
+
+    def _make(self, **overrides: object) -> Document:
+        defaults: dict[str, object] = {
+            "id": "D1",
+            "tenant_id": "T1",
+            "owner_id": "U1",
+            "name": "Book",
+            "kind": DocumentKind.PICTURE_BOOK,
+        }
+        defaults.update(overrides)
+        return Document(**defaults)  # type: ignore[arg-type]
+
+    def test_defaults(self) -> None:
+        doc = self._make()
+        assert doc.pages == ()
+        assert doc.master_pages == ()
+        assert doc.brand_kit_id is None
+        assert doc.style_lock_id is None
+        assert doc.version == 1
+        assert doc.archived is False
+        assert doc.page_count == 0
+
+    def test_page_count(self) -> None:
+        pages = (self._page(0), self._page(1), self._page(2))
+        doc = self._make(pages=pages)
+        assert doc.page_count == 3
+
+    def test_get_page(self) -> None:
+        page = self._page(0, page_id="hero")
+        doc = self._make(pages=(page,))
+        assert doc.get_page("hero") is page
+        assert doc.get_page("missing") is None
+
+    def test_get_master(self) -> None:
+        master = Page(
+            id="M1",
+            ordering=0,
+            print_spec=PrintSpec(trim_size=(100, 100)),
+            is_master=True,
+        )
+        doc = self._make(master_pages=(master,))
+        assert doc.get_master("M1") is master
+        assert doc.get_master("missing") is None
+
+    def test_pages_must_be_gapless(self) -> None:
+        with pytest.raises(ConfigError):
+            self._make(pages=(self._page(0), self._page(2)))
+
+    def test_pages_starting_at_one_rejected(self) -> None:
+        with pytest.raises(ConfigError):
+            self._make(pages=(self._page(1), self._page(2)))
+
+    def test_master_id_uniqueness(self) -> None:
+        m1 = Page(
+            id="M",
+            ordering=0,
+            print_spec=PrintSpec(trim_size=(1, 1)),
+            is_master=True,
+        )
+        m2 = Page(
+            id="M",
+            ordering=1,
+            print_spec=PrintSpec(trim_size=(1, 1)),
+            is_master=True,
+        )
+        with pytest.raises(ConfigError):
+            self._make(master_pages=(m1, m2))
+
+    def test_page_master_id_collision_rejected(self) -> None:
+        page = self._page(0, page_id="X")
+        master = Page(
+            id="X",
+            ordering=0,
+            print_spec=PrintSpec(trim_size=(1, 1)),
+            is_master=True,
+        )
+        with pytest.raises(ConfigError):
+            self._make(pages=(page,), master_pages=(master,))
+
+    def test_version_must_be_positive(self) -> None:
+        with pytest.raises(ConfigError):
+            self._make(version=0)
