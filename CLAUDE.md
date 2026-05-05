@@ -48,8 +48,15 @@ mypy src/stronghold/ --strict
 # Security scanning
 bandit -r src/stronghold/ -ll
 
+# Dead-code scan (blocking gate — must pass before merge)
+vulture src/stronghold/ .vulture_whitelist.py --min-confidence 100
+
+# Complexity gate (module/average — blocking; block-level is informational)
+xenon --max-modules D --max-average B src/stronghold/
+xenon --max-absolute C src/stronghold/ || true
+
 # All checks (CI equivalent)
-pytest tests/ -v && ruff check src/stronghold/ && ruff format --check src/stronghold/ && mypy src/stronghold/ --strict && bandit -r src/stronghold/ -ll
+pytest tests/ -v && ruff check src/stronghold/ && ruff format --check src/stronghold/ && mypy src/stronghold/ --strict && bandit -r src/stronghold/ -ll && vulture src/stronghold/ .vulture_whitelist.py --min-confidence 100 && xenon --max-modules D --max-average B src/stronghold/
 
 # Pre-commit hooks
 pre-commit install
