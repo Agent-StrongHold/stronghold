@@ -162,6 +162,33 @@ class NoopTrace:
         pass
 
 
+class RecordingTrace:
+    """Trace fake that records every call for assertion in tests."""
+
+    def __init__(self) -> None:
+        self.spans: list[str] = []
+        self.scores: list[tuple[str, float, str]] = []
+        self.updates: list[dict[str, Any]] = []
+        self.ended: bool = False
+
+    @property
+    def trace_id(self) -> str:
+        return "recording-trace-id"
+
+    def span(self, name: str) -> NoopSpan:
+        self.spans.append(name)
+        return NoopSpan()
+
+    def score(self, name: str, value: float, comment: str = "") -> None:
+        self.scores.append((name, value, comment))
+
+    def update(self, metadata: dict[str, Any]) -> None:
+        self.updates.append(metadata)
+
+    def end(self) -> None:
+        self.ended = True
+
+
 class NoopTracingBackend:
     """No-op tracing backend for testing."""
 
