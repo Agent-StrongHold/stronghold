@@ -91,10 +91,12 @@ behaviour change to legacy `tool_dispatcher` traffic.
   credentials (MCP04), confused deputy (MCP07), context injection (MCP10)
 - [OWASP-AGENTIC-TOP-10-2026] — ASI01 goal hijack, ASI02 tool misuse,
   ASI03 identity & privilege abuse, ASI04 supply chain
-- [ARCHESTRA-DUAL-LLM] — separation pattern adapted into the Warden
+- [DUAL-LLM-PATTERN] — separation pattern (output-scanning sub-agent
+  isolating tool output from main agent) adapted into the Warden
   output-scan + composite-runtime indirection
-- [MICROSOFT-MCP-GATEWAY] — two-plane (data + control) reference
-  architecture; rejected its open-by-default reads
+- [REFERENCE-MCP-GATEWAY] — public two-plane (data + control) reference
+  architecture inspired the structure; we rejected its open-by-default
+  reads in favour of explicit allowlist semantics
 
 ## Files Touched
 
