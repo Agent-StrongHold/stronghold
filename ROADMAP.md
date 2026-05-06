@@ -680,6 +680,7 @@ integration, and the approval workflow.
 - [ ] **Streamable HTTP transport** — HTTP binding does plain JSON-RPC POST; MCP spec also defines streamable HTTP for tool-result streaming
 - [ ] **Composer parallel groups + rollback on_error**
 - [ ] **YAML composite definition loader**
+- [ ] **Per-tenant HTTP binding deployment** — K8s manifests for the per-tenant pods + PRM endpoint per tenant
 - [ ] **BDD scaffolding** — pytest-bdd + Gherkin scenarios with OWASP tags
 - [ ] **Real-DB integration tests for `pg_mcp.py`**
 

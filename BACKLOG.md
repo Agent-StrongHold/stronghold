@@ -487,6 +487,7 @@ in memory and lost on restart" and finish the remaining wiring.
 - [ ] **Composer parallel groups + rollback on_error** — sequential-only today, treats `rollback` as `abort`.
 - [ ] **YAML composite definition loader** — Python composite registration works; YAML form not implemented.
 - [ ] **Periodic revocation purge** — `PgRevocationPersistence.purge_older_than(cutoff)` exists; needs a scheduled job (cutoff = `now - max_token_ttl - grace`).
+- [ ] **Per-tenant HTTP binding deployment** — design committed to "per-tenant pods, shared codebase" so each tenant gets its own canonical URI + PRM endpoint + namespace-scoped secrets. K8s manifests not written.
 
 #### Test infrastructure
 

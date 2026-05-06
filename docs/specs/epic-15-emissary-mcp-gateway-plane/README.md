@@ -39,8 +39,8 @@ the gateway plane that closes those gaps. Most of the plane shipped on
 
 ## Blocks
 
-- Promotion API (Story 15.6) — needs the catalog data model from 15.1
-- Agent-side Emissary integration (Story 15.7) — needs auth-context
+- Promotion API (Story 15.10) — needs the catalog data model from 15.1
+- Agent-side Emissary integration (Story 15.9) — needs auth-context
   propagation across agents → strategies → LLM client; depends on
   every prior story landing first
 
@@ -78,8 +78,9 @@ behaviour change to legacy `tool_dispatcher` traffic.
 | 15.8 | Redis persistence for high-write state (sessions, idempotency, issued tokens, PRM cache) | ⏳ pending |
 | 15.9 | Agent-side Emissary integration (legacy `tool_dispatcher` → Emissary) | ⏳ pending |
 | 15.10 | Promotion workflow API (USER → TEAM → ORG → PLATFORM with cumulative consent + cascade revocation) | ⏳ pending |
-| 15.11 | Hardening — Keyward signing-key rotation, K8sDeployer adapter, streamable HTTP, Composer parallel groups, periodic revocation purge, YAML composite loader | ⏳ pending |
+| 15.11 | Hardening — Keyward signing-key rotation, K8sDeployer adapter, streamable HTTP, Composer parallel groups, periodic revocation purge, YAML composite loader, per-tenant HTTP binding deployment | ⏳ pending |
 | 15.12 | BDD scaffolding + real-DB integration tests for `pg_mcp.py` | ⏳ pending |
+| 15.13 | Production `AuthorizationServer` — built-in OAuth 2.1 AS for self-hosted **or** tested Entra/Auth0/Keycloak integration. `TokenValidator` is a protocol today; this story makes it real. | ⏳ pending |
 
 ## Evidence References
 
