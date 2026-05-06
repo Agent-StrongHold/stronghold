@@ -5,7 +5,6 @@ K8s client is mocked (external infrastructure). All MCP types are real.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
 from types import SimpleNamespace
 from typing import Any
 from unittest.mock import MagicMock, patch
@@ -14,15 +13,11 @@ import pytest
 
 from stronghold.mcp.deployer import K8sDeployer
 from stronghold.mcp.types import (
-    MCPDiscoveredTool,
     MCPResourceLimits,
     MCPServer,
     MCPServerSpec,
     MCPServerStatus,
-    MCPSourceType,
-    MCPTransport,
 )
-
 
 # ── Fake K8s API objects ──────────────────────────────────────────────
 

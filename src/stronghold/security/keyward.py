@@ -39,6 +39,8 @@ from stronghold.types.security import (
 )
 
 if TYPE_CHECKING:
+    from collections.abc import Awaitable, Callable, Iterable
+
     from stronghold.protocols.security import ToolCatalog
     from stronghold.types.security import TokenRequest
 
@@ -61,7 +63,13 @@ class KeywardConfig:
 class Keyward:
     """Credential issuer for the Emissary MCP-gateway plane."""
 
-    def __init__(self, *, catalog: ToolCatalog, config: KeywardConfig) -> None:
+    def __init__(
+        self,
+        *,
+        catalog: ToolCatalog,
+        config: KeywardConfig,
+        persist_revoke: Callable[[str, RevocationCriteria], Awaitable[None]] | None = None,
+    ) -> None:
         if not config.signing_key:
             raise ValueError("Keyward refuses to start without a signing_key")
         self._catalog = catalog
@@ -70,6 +78,11 @@ class Keyward:
         # the audit ledger; this is local introspection state.
         self._issued: dict[str, IssuedToken] = {}
         self._revoked: set[str] = set()
+        self._persist_revoke = persist_revoke
+
+    def hydrate_revocations(self, token_ids: Iterable[str]) -> None:
+        """Insert revoked token ids without write-through (startup loader)."""
+        self._revoked.update(token_ids)
 
     # --- issuance --------------------------------------------------------
 
@@ -154,6 +167,9 @@ class Keyward:
                 targets.add(token_id)
 
         self._revoked.update(targets)
+        if self._persist_revoke is not None:
+            for token_id in targets:
+                await self._persist_revoke(token_id, criteria)
 
     # --- introspection ---------------------------------------------------
 

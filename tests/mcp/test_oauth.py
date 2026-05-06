@@ -10,13 +10,11 @@ import base64
 import hashlib
 from typing import Any
 
-import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from stronghold.mcp.oauth.endpoints import router, set_oauth_store
-from stronghold.mcp.oauth.store import InMemoryOAuthStore, OAuthStore, _hash_token
-from stronghold.mcp.oauth.types import TokenClaims
+from stronghold.mcp.oauth.store import InMemoryOAuthStore, OAuthStore
 
 
 def _make_app(store: OAuthStore | None = None) -> tuple[TestClient, OAuthStore]:

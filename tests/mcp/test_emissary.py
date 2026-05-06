@@ -639,3 +639,68 @@ async def test_composite_dispatch_routes_through_composer_and_back_to_atomic_ste
     assert result.is_error is False
     assert result.partial is False
     assert len(invokers.local_calls) == 1
+
+
+# --- idempotency cache eviction --------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_idempotency_cache_evicts_expired_entries_on_write() -> None:
+    now = [datetime.now(UTC)]
+    emissary, catalog, _, _, _ = _make_emissary(clock=lambda: now[0])
+    fingerprint = _fp("github_search")
+    _approve(catalog, fingerprint)
+    _register(emissary, fingerprint)
+
+    # Default idempotency_ttl is 1 hour; advance the clock to expire any
+    # cache entry on the next write.
+    request_a = ToolCallRequest(
+        fingerprint=fingerprint,
+        args={"q": "first"},
+        auth=_alice(),
+        session=None,
+        call_id="ca",
+        idempotency_key="old-key",
+    )
+    await emissary.call_tool(request_a)
+    assert "old-key" in {k[1] for k in emissary._idempotency}
+
+    # Advance past TTL.
+    now[0] = now[0] + timedelta(hours=2)
+
+    # A different idempotency key triggers a write that should evict the
+    # expired prior entry.
+    request_b = ToolCallRequest(
+        fingerprint=fingerprint,
+        args={"q": "second"},
+        auth=_alice(),
+        session=None,
+        call_id="cb",
+        idempotency_key="new-key",
+    )
+    await emissary.call_tool(request_b)
+    keys = {k[1] for k in emissary._idempotency}
+    assert "old-key" not in keys, "expired entry should have been evicted"
+    assert "new-key" in keys
+
+
+@pytest.mark.asyncio
+async def test_idempotency_cache_does_not_evict_unexpired_entries() -> None:
+    emissary, catalog, _, _, _ = _make_emissary()
+    fingerprint = _fp("github_search")
+    _approve(catalog, fingerprint)
+    _register(emissary, fingerprint)
+
+    # Two writes within the same TTL window — both must remain in cache.
+    for i in range(2):
+        await emissary.call_tool(
+            ToolCallRequest(
+                fingerprint=fingerprint,
+                args={"i": i},
+                auth=_alice(),
+                session=None,
+                call_id=f"c{i}",
+                idempotency_key=f"key-{i}",
+            ),
+        )
+    assert len(emissary._idempotency) == 2

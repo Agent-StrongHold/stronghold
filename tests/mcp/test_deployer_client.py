@@ -11,7 +11,6 @@ from __future__ import annotations
 
 import pytest
 
-from stronghold.protocols.mcp import McpDeployerClient
 from tests.fakes import FakeMcpDeployer
 
 
