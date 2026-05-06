@@ -1,8 +1,72 @@
-"""Helpers for extracting content from OpenAI-format message lists."""
+"""Helpers for working with OpenAI-format messages and LLM responses."""
 
 from __future__ import annotations
 
 from typing import Any
+
+_MAX_TOOL_RESULT_BYTES = 16_384
+
+
+class LLMResponse:
+    """Typed view over a raw LiteLLM response dict.
+
+    Eliminates the repeated choices[0].message.get() chains across strategies.
+    """
+
+    __slots__ = ("_raw",)
+
+    def __init__(self, raw: dict[str, Any]) -> None:
+        self._raw = raw
+
+    @property
+    def _first_choice(self) -> dict[str, Any]:
+        choices = self._raw.get("choices", [])
+        return choices[0] if choices else {}
+
+    @property
+    def message(self) -> dict[str, Any]:
+        return self._first_choice.get("message", {})
+
+    @property
+    def content(self) -> str:
+        return self.message.get("content", "") or ""
+
+    @property
+    def tool_calls(self) -> list[dict[str, Any]]:
+        tc = self.message.get("tool_calls")
+        return tc if isinstance(tc, list) else []
+
+    @property
+    def finish_reason(self) -> str:
+        return self._first_choice.get("finish_reason", "stop")
+
+    @property
+    def input_tokens(self) -> int:
+        return self._raw.get("usage", {}).get("prompt_tokens", 0)
+
+    @property
+    def output_tokens(self) -> int:
+        return self._raw.get("usage", {}).get("completion_tokens", 0)
+
+
+class ToolResult:
+    """Wraps a raw tool result with automatic truncation to prevent context exhaustion."""
+
+    __slots__ = ("_content",)
+
+    def __init__(self, raw: Any, max_bytes: int = _MAX_TOOL_RESULT_BYTES) -> None:
+        s = raw if isinstance(raw, str) else str(raw)
+        if len(s) > max_bytes:
+            omitted = len(s) - max_bytes
+            s = s[:max_bytes] + f"\n[... truncated, {omitted} bytes omitted]"
+        self._content = s
+
+    @property
+    def content(self) -> str:
+        return self._content
+
+    def __str__(self) -> str:
+        return self._content
 
 
 def extract_user_text(messages: list[dict[str, Any]]) -> str:

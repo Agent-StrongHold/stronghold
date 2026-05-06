@@ -6,11 +6,13 @@ This is the real engineering workflow, not a single-shot LLM call.
 from __future__ import annotations
 
 import asyncio
-import json
 import logging
 from collections.abc import Callable, Coroutine
 from typing import TYPE_CHECKING, Any
 
+from stronghold.agents.messages import LLMResponse
+from stronghold.agents.strategies.tool_loop import ToolLoop
+from stronghold.tracing.pipeline import PipelineTrace
 from stronghold.types.agent import ReasoningResult
 
 if TYPE_CHECKING:
@@ -25,10 +27,6 @@ StatusCallback = Callable[[str], Coroutine[Any, Any, None]]
 
 async def _noop_status(msg: str) -> None:
     pass
-
-
-_MAX_ARG_BYTES = 32_768
-_MAX_RESULT_BYTES = 16_384
 
 
 class ArtificerStrategy:
@@ -64,77 +62,69 @@ class ArtificerStrategy:
         **kwargs: Any,
     ) -> ReasoningResult:
         """Run the full plan-execute workflow — fully traced."""
-        tool_history: list[dict[str, Any]] = []
+        pt = PipelineTrace(trace)
         status = status_callback or _noop_status
+        tool_history: list[dict[str, Any]] = []
+
+        loop = ToolLoop(
+            tool_executor=tool_executor,
+            trace=trace,
+            tools=tools,
+            sentinel=kwargs.get("sentinel"),
+            auth=kwargs.get("auth"),
+            pii_filter=False,
+            status_callback=status,
+            on_tool_result=self._make_result_logger(status),
+        )
 
         # Phase 1: Plan — traced
         await status("Planning...")
-        if trace:
-            with trace.span("artificer.plan") as ps:
-                ps.set_input({"model": model, "message_count": len(messages)})
-                plan = await self._plan(messages, model, llm)
-                ps.set_output({"plan_length": len(plan), "plan_lines": plan.count("\n")})
-        else:
+        with pt.span("artificer.plan") as ps:
+            ps.set_input({"model": model, "message_count": len(messages)})
             plan = await self._plan(messages, model, llm)
+            ps.set_output({"plan_length": len(plan), "plan_lines": plan.count("\n")})
 
         await status(f"Plan complete ({plan.count(chr(10))} lines)")
         logger.info("Artificer plan generated: %d chars", len(plan))
 
-        # Brief pause between plan and execute to avoid rate limits
         await asyncio.sleep(2)
 
         # Phase 2: Execute each step with tool calls
         results: list[str] = [f"## Plan\n{plan}"]
         current_messages = list(messages)
         current_messages.append({"role": "assistant", "content": plan})
-
-        execute_prompt = (
-            "Now execute the plan above. For each step:\n"
-            "1. Use write_file to create/modify files\n"
-            "2. Use run_pytest to verify tests pass\n"
-            "3. Use run_ruff_check and run_mypy to verify code quality\n"
-            "4. Use git_commit when a step is complete\n\n"
-            "Execute step by step. Start with step 1."
+        current_messages.append(
+            {
+                "role": "user",
+                "content": (
+                    "Now execute the plan above. For each step:\n"
+                    "1. Use write_file to create/modify files\n"
+                    "2. Use run_pytest to verify tests pass\n"
+                    "3. Use run_ruff_check and run_mypy to verify code quality\n"
+                    "4. Use git_commit when a step is complete\n\n"
+                    "Execute step by step. Start with step 1."
+                ),
+            }
         )
-        current_messages.append({"role": "user", "content": execute_prompt})
 
         await status("Executing plan...")
 
         for round_num in range(self.max_phases * 3):
-            # LLM call — traced
-            if trace:
-                with trace.span(f"llm_call_{round_num}") as ls:
-                    ls.set_input({"model": model, "message_count": len(current_messages)})
-                    response = await llm.complete(
-                        current_messages,
-                        model,
-                        tools=tools,
-                        tool_choice="auto",
+            with pt.span(f"llm_call_{round_num}") as ls:
+                ls.set_input({"model": model, "message_count": len(current_messages)})
+                resp = LLMResponse(
+                    await llm.complete(
+                        current_messages, model, tools=tools, tool_choice="auto"
                     )
-                    usage = response.get("usage", {})
-                    ls.set_usage(
-                        input_tokens=usage.get("prompt_tokens", 0),
-                        output_tokens=usage.get("completion_tokens", 0),
-                        model=model,
-                    )
-            else:
-                response = await llm.complete(
-                    current_messages,
-                    model,
-                    tools=tools,
-                    tool_choice="auto",
+                )
+                ls.set_usage(
+                    input_tokens=resp.input_tokens,
+                    output_tokens=resp.output_tokens,
+                    model=model,
                 )
 
-            choices = response.get("choices", [])
-            choice = choices[0] if choices else {}
-            message = choice.get("message", {})
-            tool_calls = message.get("tool_calls")
-            if not isinstance(tool_calls, list):
-                tool_calls = []
-
-            if not tool_calls:
-                content = message.get("content", "")
-                results.append(f"\n## Result\n{content}")
+            if not resp.tool_calls:
+                results.append(f"\n## Result\n{resp.content}")
                 await status("Complete")
                 return ReasoningResult(
                     response="\n\n".join(results),
@@ -142,142 +132,10 @@ class ArtificerStrategy:
                     tool_history=tool_history,
                 )
 
-            # Execute tool calls — each traced
-            current_messages.append(message)
-
-            for tc in tool_calls:
-                fn = tc.get("function", {})
-                tool_name = fn.get("name", "")
-                try:
-                    tool_args = json.loads(fn.get("arguments", "{}"))
-                except json.JSONDecodeError:
-                    logger.warning(
-                        "Malformed tool arguments for %s: %s",
-                        tool_name,
-                        fn.get("arguments", "")[:200],
-                    )
-                    tool_args = {}
-
-                # Arg size check: reject oversized tool arguments (JSON bomb)
-                raw_arg_bytes = len(fn.get("arguments", "{}").encode("utf-8"))
-                if raw_arg_bytes > _MAX_ARG_BYTES:
-                    logger.warning(
-                        "Tool %s arg size %d exceeds %d limit",
-                        tool_name,
-                        raw_arg_bytes,
-                        _MAX_ARG_BYTES,
-                    )
-                    tool_result = f"Error: tool arguments exceed {_MAX_ARG_BYTES} byte limit"
-                    result_str = tool_result
-                    tool_history.append(
-                        {
-                            "tool_name": tool_name,
-                            "arguments": tool_args,
-                            "result": tool_result,
-                            "round": round_num,
-                        }
-                    )
-                    current_messages.append(
-                        {"role": "tool", "tool_call_id": tc.get("id", ""), "content": result_str}
-                    )
-                    continue
-
-                # Sentinel pre_call: permission check + schema validation
-                sentinel = kwargs.get("sentinel")
-                auth = kwargs.get("auth")
-                tool_blocked = False
-                if sentinel is not None and auth is not None:
-                    sentinel_verdict = await sentinel.pre_call(
-                        tool_name,
-                        tool_args,
-                        auth,
-                        {},
-                    )
-                    if not sentinel_verdict.allowed:
-                        tool_result = f"Error: Permission denied for tool '{tool_name}'"
-                        tool_blocked = True
-                    elif sentinel_verdict.repaired_data:
-                        tool_args = sentinel_verdict.repaired_data
-
-                await status(f"Running {tool_name}...")
-                logger.info("Tool call: %s(%s)", tool_name, list(tool_args.keys()))
-
-                if tool_blocked:
-                    pass
-                elif tool_executor and callable(tool_executor):
-                    if trace:
-                        with trace.span(f"tool.{tool_name}") as ts:
-                            ts.set_input(tool_args)
-                            tool_result = await tool_executor(tool_name, tool_args)
-                            result_preview = str(tool_result)[:300]
-                            tool_success = (
-                                '"passed": true' in result_preview
-                                or '"status": "ok"' in result_preview
-                                or (
-                                    not result_preview.startswith("Error")
-                                    and "error" not in result_preview[:50].lower()
-                                )
-                            )
-                            ts.set_output(
-                                {
-                                    "success": tool_success,
-                                    "result_preview": result_preview,
-                                }
-                            )
-                    else:
-                        tool_result = await tool_executor(tool_name, tool_args)
-                else:
-                    tool_result = f"Tool '{tool_name}' not available"
-
-                # Result truncation: cap tool results to prevent context window exhaustion
-                result_str = tool_result if isinstance(tool_result, str) else str(tool_result)
-                if len(result_str) > _MAX_RESULT_BYTES:
-                    omitted = len(str(tool_result)) - _MAX_RESULT_BYTES
-                    result_str = (
-                        result_str[:_MAX_RESULT_BYTES]
-                        + f"\n[... truncated, {omitted} bytes omitted]"
-                    )
-
-                # Sentinel post_call: Warden scan + PII filter
-                if sentinel is not None and auth is not None:
-                    result_str = await sentinel.post_call(tool_name, result_str, auth)
-                else:
-                    warden = kwargs.get("warden")
-                    if warden is not None:
-                        verdict = await warden.scan(result_str, "tool_result")
-                        if not verdict.clean:
-                            result_str = (
-                                f"[BLOCKED: tool result contained suspicious content: "
-                                f"{', '.join(verdict.flags)}]"
-                            )
-
-                # Log result summary
-                result_preview = result_str[:200]
-                if '"passed": true' in result_preview or '"status": "ok"' in result_preview:
-                    await status(f"{tool_name}: OK")
-                elif '"passed": false' in result_preview:
-                    await status(f"{tool_name}: FAILED — fixing...")
-                elif '"error":' in result_preview and '"status": "failed"' in result_preview:
-                    await status(f"{tool_name}: error — retrying...")
-
-                tool_history.append(
-                    {
-                        "tool_name": tool_name,
-                        "arguments": tool_args,
-                        "result": result_str,
-                        "round": round_num,
-                    }
-                )
-
-                current_messages.append(
-                    {
-                        "role": "tool",
-                        "tool_call_id": tc.get("id", ""),
-                        "content": result_str,
-                    }
-                )
-
-            # Pause between rounds to avoid rate limits
+            current_messages.append(resp.message)
+            await loop.run_calls(
+                resp.tool_calls, current_messages, tool_history, round_num=round_num
+            )
             await asyncio.sleep(1)
 
         await status("Max rounds reached")
@@ -286,6 +144,21 @@ class ArtificerStrategy:
             done=True,
             tool_history=tool_history,
         )
+
+    @staticmethod
+    def _make_result_logger(status: StatusCallback) -> Any:
+        """Return an on_tool_result callback that logs pytest/ruff/mypy outcomes."""
+
+        async def _log(tool_name: str, result_str: str) -> None:
+            preview = result_str[:200]
+            if '"passed": true' in preview or '"status": "ok"' in preview:
+                await status(f"{tool_name}: OK")
+            elif '"passed": false' in preview:
+                await status(f"{tool_name}: FAILED — fixing...")
+            elif '"error":' in preview and '"status": "failed"' in preview:
+                await status(f"{tool_name}: error — retrying...")
+
+        return _log
 
     async def _plan(
         self,
@@ -308,9 +181,4 @@ class ArtificerStrategy:
                 ),
             }
         )
-
-        response = await llm.complete(plan_messages, model)
-        choices = response.get("choices", [])
-        choice = choices[0] if choices else {}
-        content: str = choice.get("message", {}).get("content", "No plan generated")
-        return content
+        return LLMResponse(await llm.complete(plan_messages, model)).content or "No plan generated"

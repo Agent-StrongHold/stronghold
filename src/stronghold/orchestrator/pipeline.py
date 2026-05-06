@@ -21,6 +21,8 @@ from datetime import UTC, datetime
 from enum import Enum
 from typing import Any
 
+from stronghold.agents.messages import LLMResponse
+
 logger = logging.getLogger("stronghold.orchestrator.pipeline")
 
 _SPEC_SUMMARY_LIMIT = 2000
@@ -392,11 +394,8 @@ class BuilderPipeline:
 
             # Extract text output for next stage
             if current.result:
-                choices = current.result.get("choices", [])
-                if choices:
-                    prev_output = choices[0].get("message", {}).get("content", "")
-                else:
-                    prev_output = str(current.result.get("content", ""))
+                resp = LLMResponse(current.result)
+                prev_output = resp.content or str(current.result.get("content", ""))
             else:
                 prev_output = ""
 
