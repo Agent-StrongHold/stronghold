@@ -255,6 +255,8 @@ jobs:
       - name: Start CI postgres
         run: |
           docker rm -f ci-postgres 2>/dev/null || true
+          # Pre-pull so that the readiness timer isn't charged for network time.
+          docker pull pgvector/pgvector:pg17
           docker run -d --name ci-postgres \
             -e POSTGRES_USER=stronghold \
             -e POSTGRES_PASSWORD=stronghold \
@@ -264,7 +266,7 @@ jobs:
             pgvector/pgvector:pg17
           echo "Waiting for postgres to be ready..."
           READY=false
-          for i in $(seq 1 30); do
+          for i in $(seq 1 60); do
             if pg_isready -h localhost -p 5433 -U stronghold 2>/dev/null; then
               echo "Postgres ready after ${i}s"
               READY=true
@@ -273,8 +275,8 @@ jobs:
             sleep 1
           done
           if [ "$READY" != "true" ]; then
-            echo "::error::Postgres failed to start within 30s"
-            docker logs ci-postgres 2>&1 | tail -20
+            echo "::error::Postgres failed to start within 60s"
+            docker logs ci-postgres 2>&1 | tail -40
             exit 1
           fi
 
