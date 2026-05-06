@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, cast
 
 _MAX_TOOL_RESULT_BYTES = 16_384
 
@@ -20,33 +20,35 @@ class LLMResponse:
 
     @property
     def _first_choice(self) -> dict[str, Any]:
-        choices = self._raw.get("choices", [])
-        return choices[0] if choices else {}
+        choices = cast("list[Any]", self._raw.get("choices") or [])
+        return cast("dict[str, Any]", choices[0]) if choices else {}
 
     @property
     def message(self) -> dict[str, Any]:
-        return self._first_choice.get("message", {})
+        return cast("dict[str, Any]", self._first_choice.get("message") or {})
 
     @property
     def content(self) -> str:
-        return self.message.get("content", "") or ""
+        return cast("str", self.message.get("content") or "")
 
     @property
     def tool_calls(self) -> list[dict[str, Any]]:
         tc = self.message.get("tool_calls")
-        return tc if isinstance(tc, list) else []
+        return cast("list[dict[str, Any]]", tc) if isinstance(tc, list) else []
 
     @property
     def finish_reason(self) -> str:
-        return self._first_choice.get("finish_reason", "stop")
+        return cast("str", self._first_choice.get("finish_reason") or "stop")
 
     @property
     def input_tokens(self) -> int:
-        return self._raw.get("usage", {}).get("prompt_tokens", 0)
+        usage = cast("dict[str, Any]", self._raw.get("usage") or {})
+        return int(cast("int", usage.get("prompt_tokens", 0)))
 
     @property
     def output_tokens(self) -> int:
-        return self._raw.get("usage", {}).get("completion_tokens", 0)
+        usage = cast("dict[str, Any]", self._raw.get("usage") or {})
+        return int(cast("int", usage.get("completion_tokens", 0)))
 
 
 class ToolResult:

@@ -6,11 +6,11 @@ handle() runs: Warden scan → build context → strategy.reason() → post-turn
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 from stronghold.agents.messages import extract_user_text
 from stronghold.tracing.pipeline import PipelineTrace
-from stronghold.types.agent import AgentResponse
+from stronghold.types.agent import AgentResponse, ReasoningResult
 
 # Tool schemas — proper OpenAI function definitions for each tool
 _TOOL_SCHEMAS: dict[str, dict[str, object]] = {
@@ -168,7 +168,7 @@ if TYPE_CHECKING:
     from stronghold.protocols.quota import QuotaTracker
     from stronghold.protocols.tracing import TracingBackend
     from stronghold.security.warden.detector import Warden
-    from stronghold.types.agent import AgentIdentity, ReasoningResult
+    from stronghold.types.agent import AgentIdentity
     from stronghold.types.auth import AuthContext
 
 
@@ -293,7 +293,7 @@ class Agent:
         trace: PipelineTrace,
         messages: list[dict[str, Any]],
         auth: AuthContext,
-    ) -> tuple[list[dict[str, Any]], list[str]]:
+    ) -> tuple[list[dict[str, Any]], list[int]]:
         """Assemble the context window and return (context_messages, injected_ids)."""
         with trace.span("prompt.build") as ps:
             ps.set_input({"message_count": len(messages)})
@@ -340,13 +340,16 @@ class Agent:
         try:
             with trace.span("strategy.reason") as ss:
                 ss.set_input({"model": model, "tools": len(tool_defs) if tool_defs else 0})
-                result = await self._strategy.reason(
-                    context_messages,
-                    model,
-                    self._llm,
-                    tools=tool_defs,
-                    tool_executor=self._tool_executor,
-                    **kwargs,
+                result: ReasoningResult = cast(
+                    "ReasoningResult",
+                    await self._strategy.reason(
+                        context_messages,
+                        model,
+                        self._llm,
+                        tools=tool_defs,
+                        tool_executor=self._tool_executor,
+                        **kwargs,
+                    ),
                 )
                 ss.set_output(
                     {
@@ -425,7 +428,7 @@ class Agent:
 
     async def _post_turn_memory(
         self,
-        injected_ids: list[str],
+        injected_ids: list[int],
         result: ReasoningResult,
         auth: AuthContext,
         tool_had_failures: bool,
@@ -506,7 +509,7 @@ class Agent:
         result: ReasoningResult,
         model: str,
         history_count: int,
-        injected_ids: list[str],
+        injected_ids: list[int],
     ) -> None:
         """Write final span metadata and close the trace."""
         success_count = 0

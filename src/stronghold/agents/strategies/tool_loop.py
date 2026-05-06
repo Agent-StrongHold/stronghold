@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import json
 import logging
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 from stronghold.agents.messages import _MAX_TOOL_RESULT_BYTES, ToolResult
 from stronghold.tracing.pipeline import PipelineTrace
@@ -174,7 +174,7 @@ class ToolLoop:
     async def _post_scan(self, tool_name: str, result_str: str) -> str:
         """Sentinel post-call scan, or warden + optional PII filter fallback."""
         if self._sentinel is not None and self._auth is not None:
-            return await self._sentinel.post_call(tool_name, result_str, self._auth)
+            return cast("str", await self._sentinel.post_call(tool_name, result_str, self._auth))
         if self._warden is not None:
             verdict = await self._warden.scan(result_str, "tool_result")
             if not verdict.clean:
