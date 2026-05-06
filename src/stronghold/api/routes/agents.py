@@ -450,23 +450,28 @@ async def import_agent_from_url(request: Request) -> JSONResponse:
     # addresses, and all other reserved ranges via Python's ipaddress module.
     try:
         infos = _socket.getaddrinfo(host, None, _socket.AF_UNSPEC)
+        validated_ips: list[str] = []
         for info in infos:
             ip = _ipaddress.ip_address(info[4][0])
             if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved:
                 raise HTTPException(status_code=400, detail="URL resolves to private/reserved IP")
+            validated_ips.append(str(ip))
+        if not validated_ips:
+            raise HTTPException(status_code=400, detail="Hostname resolution returned no usable IPs")
+        selected_ip = validated_ips[0]
     except _socket.gaierror as e:
         raise HTTPException(status_code=400, detail=f"Hostname resolution failed: {e}") from e
 
-    # Reconstruct URL from validated parsed components.
-    # Keep only canonical HTTPS URL parts after validation.
-    safe_url = f"https://{host}{parsed.path}"
+    # Reconstruct URL from validated parsed components and pin to validated IP.
+    # Use Host header so TLS verification/SNI and upstream routing still use the approved hostname.
+    fetch_url = f"https://{selected_ip}{parsed.path}"
     if parsed.query:
-        safe_url += f"?{urlencode(parse_qsl(parsed.query, keep_blank_values=True), doseq=True)}"
+        fetch_url += f"?{urlencode(parse_qsl(parsed.query, keep_blank_values=True), doseq=True)}"
 
     # Fetch the zip
     try:
         async with httpx.AsyncClient(timeout=30.0, follow_redirects=False) as client:
-            resp = await client.get(safe_url)
+            resp = await client.get(fetch_url, headers={"Host": host})
             if resp.status_code != 200:  # noqa: PLR2004
                 raise HTTPException(
                     status_code=502,
