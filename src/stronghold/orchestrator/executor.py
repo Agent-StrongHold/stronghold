@@ -127,6 +127,9 @@ class GraphPipelineExecutor:
         if node.on_complete is not None:
             await node.on_complete(run, output)
 
+        if run.status.startswith("failed at "):
+            return "failed"
+
         logger.info("Executor: %s completed", node.name)
         return "completed"
 

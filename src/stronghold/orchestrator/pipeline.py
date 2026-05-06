@@ -15,7 +15,6 @@ Default pipeline:
 
 from __future__ import annotations
 
-import contextlib
 import logging
 from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
@@ -282,16 +281,6 @@ BUILDER_PIPELINE: list[PipelineNode] = [
 ]
 
 
-# ── Internal exception for spec verification failure ─────────────────────────
-
-
-class _SpecVerificationError(Exception):
-    def __init__(self, stage_name: str, failures: tuple[str, ...]) -> None:
-        super().__init__(f"Spec verification failed at {stage_name}")
-        self.stage_name = stage_name
-        self.error = f"Spec verification failed: {', '.join(failures)}"
-
-
 class BuilderPipeline:
     """Executes the full issue-to-merge pipeline via GraphPipelineExecutor.
 
@@ -382,8 +371,7 @@ class BuilderPipeline:
         graph = PipelineGraph(nodes)
         executor = GraphPipelineExecutor(self._engine)
 
-        with contextlib.suppress(_SpecVerificationError):
-            await executor.execute(graph, run, auth=None)
+        await executor.execute(graph, run, auth=None)
 
         self._reconcile_stages(run)
         return run
@@ -416,7 +404,6 @@ class BuilderPipeline:
                     run.failed_stage_error = (
                         f"Spec verification failed: {', '.join(verification.failures)}"
                     )
-                    raise _SpecVerificationError(_name, verification.failures)
 
             result.append(replace(node, on_complete=_hook))
         return result
