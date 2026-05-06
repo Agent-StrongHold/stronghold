@@ -163,12 +163,26 @@ Closes Tranche 6 implementation gaps and lands the audit's guardrails in depende
 | 55 | [`proactive-outbound.md`](./proactive-outbound.md) | Agent-initiated conversations and messages via OpenWebUI API. Outbound dispatch at P20-P30. OpenWebUI client, retry logic, quota-aware delivery. | 54, 17, 9 |
 | 56 | [`interactive-bootstrap.md`](./interactive-bootstrap.md) | Multi-phase bootstrap conversation (20 user questions, 20 agent guidance, 5 self-description, name selection). Per-facet multipliers on-read (24 dials). Three laws of robotics in system prompt. HEXACO population norms + 6 archetypes. | 54, 55, 23, 29 |
 
+### Memory layer extensions (Tranche 11 — buildable on Tranche 1)
+
+Four specs that extend the memory substrate: world-time validity distinct from learning-time, time-travel retrieval, per-source identity with emergent reliability, and load-bearing-fact cascade re-evaluation. Each is independently reviewable and lands behind a migration. Graph-DB extensions for the deepest traversals are deferred to Stronghold issue #1233.
+
+| # | Spec | Scope | Depends on |
+|---|-------|--------|------------|
+| 57 | [`bi-temporal-validity.md`](./bi-temporal-validity.md) | `valid_from` / `valid_to` columns distinct from `created_at`. Permitted only on non-self-implicating tiers. Predecessor `valid_to` set on supersession when previously None and successor has a world-time anchor. | 1, 2, 8 |
+| 58 | [`as-of-retrieval.md`](./as-of-retrieval.md) | Read-only retrieval mode returning the memories the Conduit would have surfaced at past time `t`. Visibility predicate combines `created_at`, `valid_from` / `valid_to`, supersession chain, and soft-delete. | 6, 16, 8, 57 |
+| 59 | [`source-identity-and-reliability.md`](./source-identity-and-reliability.md) | `source_identity` table with emergent reliability scalar from regret history. Feeds retrieval ranking, contradiction-detection threshold, and a regret-on-regret LESSON path when a source crosses a sustained-unreliability floor. | 1, 2, 4, 8, 18, 57 |
+| 60 | [`regret-severity-and-load-bearing.md`](./regret-severity-and-load-bearing.md) | REGRET weight scales by `(hold_days, citation_count)`. `memory_reeval_queue` flags downstream citers within `REEVAL_MAX_HOPS`. P11 detector drains queue as ingestion candidates; flagged facts are not auto-invalidated. | 1, 2, 4, 53, 57, 58, 59 |
+
 ## Deferred
 
 - **Additional detectors** — `learning_extraction`, `affirmation_candidacy`, `prospection`. Pattern is established by `detectors/contradiction.md`; individual specs will land alongside implementations.
 - **Mood affects decisions** — Phase-2 coupling of mood to routing / model choice / Warden thresholds. Specified as deferred in [`mood.md`](./mood.md) Q27.4.
 - **Multi-self reconciliation** — [`../DESIGN.md`](../DESIGN.md) §6.4.
 - **Sentinel × self-output interaction** — how Sentinel treats `reply_directly` outputs.
+- **Graph-DB extensions for deep traversal** — Apache AGE / pgRouting research for `count_downstream_citers` walks, regret-cascade chains, and `(entity, predicate)` validity windows. Tracked in Stronghold issue #1233.
+- **Per-(source, predicate) reliability** — Q59.1; deferred until per-source scalar is shown insufficient.
+- **Soft-delete `deleted_at`** — Q58.2; sibling spec to land before spec 58 implements.
 
 ## Non-goals (all specs)
 
