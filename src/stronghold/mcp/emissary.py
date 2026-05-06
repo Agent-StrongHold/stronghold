@@ -131,6 +131,8 @@ class Emissary:
         session_idle_timeout: timedelta = timedelta(minutes=30),
         session_hard_timeout: timedelta = timedelta(hours=12),
         clock: Callable[[], datetime] = lambda: datetime.now(UTC),
+        persist_register: Callable[[BackendRegistration], None] | None = None,
+        persist_unregister: Callable[[str], None] | None = None,
     ) -> None:
         self._catalog = catalog
         self._keyward = keyward
@@ -141,6 +143,8 @@ class Emissary:
         self._idle_timeout = session_idle_timeout
         self._hard_timeout = session_hard_timeout
         self._now = clock
+        self._persist_register = persist_register
+        self._persist_unregister = persist_unregister
 
         self._registrations: dict[str, BackendRegistration] = {}
         self._sessions: dict[str, Session] = {}
@@ -152,6 +156,18 @@ class Emissary:
 
     def register_backend(self, registration: BackendRegistration) -> None:
         self._registrations[registration.fingerprint.value] = registration
+        if self._persist_register is not None:
+            self._persist_register(registration)
+
+    def hydrate_backend(self, registration: BackendRegistration) -> None:
+        """Insert a registration without write-through (startup loader)."""
+        self._registrations[registration.fingerprint.value] = registration
+
+    def unregister_backend(self, fingerprint_value: str) -> None:
+        """Remove a registration. Idempotent."""
+        self._registrations.pop(fingerprint_value, None)
+        if self._persist_unregister is not None:
+            self._persist_unregister(fingerprint_value)
 
     def describe_server(self) -> dict[str, object]:
         # Surface advertised metadata for HTTP-binding PRM. The HTTP binding

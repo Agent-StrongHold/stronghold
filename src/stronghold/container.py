@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
@@ -524,15 +525,72 @@ async def create_container(config: StrongholdConfig) -> Container:
     from stronghold.security.tool_catalog import InMemoryToolCatalog  # noqa: PLC0415
     from stronghold.types.security import TargetKind  # noqa: PLC0415
 
-    mcp_tool_catalog = InMemoryToolCatalog()
+    # Build persisters first if a Postgres pool is available, then hand
+    # write-through callbacks to the in-memory components. Without a pool,
+    # the catalog/composer/emissary/keyward all operate purely in-memory
+    # (existing behaviour).
+    catalog_persistence = None
+    registration_persistence = None
+    revocation_persistence = None
+    composite_persistence = None
+    if db_pool is not None:
+        from stronghold.persistence.pg_mcp import (  # noqa: PLC0415
+            PgCatalogPersistence,
+            PgCompositePersistence,
+            PgRegistrationPersistence,
+            PgRevocationPersistence,
+        )
+
+        catalog_persistence = PgCatalogPersistence(db_pool)
+        registration_persistence = PgRegistrationPersistence(db_pool)
+        revocation_persistence = PgRevocationPersistence(db_pool)
+        composite_persistence = PgCompositePersistence(db_pool)
+        logger.info("Emissary plane persistence wired to Postgres")
+
+    # Persist-write-through helpers. Each returns None and schedules the
+    # async DB write as a fire-and-forget task. The Task return value is
+    # explicitly discarded so the helper conforms to the ``Callable[..., None]``
+    # signature the in-memory components expect.
+    def _persist_catalog_approve(entry: object) -> None:
+        if catalog_persistence is not None:
+            asyncio.create_task(catalog_persistence.approve(entry))  # type: ignore[arg-type]
+
+    def _persist_catalog_revoke(fp_value: str, scope: object) -> None:
+        if catalog_persistence is not None:
+            asyncio.create_task(catalog_persistence.revoke(fp_value, scope))  # type: ignore[arg-type]
+
+    def _persist_composite_upsert(definition: object) -> None:
+        if composite_persistence is not None:
+            asyncio.create_task(composite_persistence.upsert(definition))  # type: ignore[arg-type]
+
+    def _persist_composite_remove(fp_value: str) -> None:
+        if composite_persistence is not None:
+            asyncio.create_task(composite_persistence.remove(fp_value))
+
+    def _persist_registration_upsert(registration: object) -> None:
+        if registration_persistence is not None:
+            asyncio.create_task(registration_persistence.upsert(registration))  # type: ignore[arg-type]
+
+    def _persist_registration_remove(fp_value: str) -> None:
+        if registration_persistence is not None:
+            asyncio.create_task(registration_persistence.remove(fp_value))
+
+    mcp_tool_catalog = InMemoryToolCatalog(
+        persist_approve=_persist_catalog_approve if catalog_persistence is not None else None,
+        persist_revoke=_persist_catalog_revoke if catalog_persistence is not None else None,
+    )
     keyward = Keyward(
         catalog=mcp_tool_catalog,
         # Reuse jwt_secret for Keyward signing — config/loader.py already
         # validates ≥32 chars. A dedicated keyward signing key with rotation
         # is a follow-up.
         config=KeywardConfig(signing_key=config.jwt_secret),
+        persist_revoke=(revocation_persistence.add if revocation_persistence is not None else None),
     )
-    composer = Composer()
+    composer = Composer(
+        persist_upsert=_persist_composite_upsert if composite_persistence is not None else None,
+        persist_remove=_persist_composite_remove if composite_persistence is not None else None,
+    )
     mcp_http = httpx.AsyncClient(timeout=30)
     mcp_client = MCPClient(http=mcp_http)
 
@@ -558,12 +616,43 @@ async def create_container(config: StrongholdConfig) -> Container:
         warden=warden,
         composer=composer,
         invokers=invokers,
+        persist_register=(
+            _persist_registration_upsert if registration_persistence is not None else None
+        ),
+        persist_unregister=(
+            _persist_registration_remove if registration_persistence is not None else None
+        ),
     )
     tool_declaration_validator = ToolDeclarationValidator(catalog=mcp_tool_catalog)
     logger.info(
         "Emissary plane wired (invokers=%s)",
         sorted(str(k) for k in invokers),
     )
+
+    # Hydrate from Postgres at startup. Persisters return real records;
+    # we use the hydrate_* methods (which skip write-through) so we don't
+    # echo back into the database during recovery.
+    if (
+        catalog_persistence is not None
+        and registration_persistence is not None
+        and revocation_persistence is not None
+        and composite_persistence is not None
+    ):
+        from stronghold.persistence.pg_mcp import (  # noqa: PLC0415
+            hydrate_emissary_plane,
+        )
+
+        hydrated = await hydrate_emissary_plane(
+            catalog_persistence=catalog_persistence,
+            registration_persistence=registration_persistence,
+            revocation_persistence=revocation_persistence,
+            composite_persistence=composite_persistence,
+            catalog_apply=mcp_tool_catalog.hydrate,
+            registration_apply=emissary.hydrate_backend,
+            revocation_apply=lambda token_id: keyward.hydrate_revocations([token_id]),
+            composite_apply=composer.hydrate,
+        )
+        logger.info("Emissary plane hydrated from Postgres: %s", hydrated)
 
     # Bootstrap approved tools from a YAML file if configured. The loader
     # populates both the catalog and the Emissary backends from a single
