@@ -638,6 +638,9 @@ stronghold/
 
 ## v1.0.x: Emissary MCP Gateway Plane
 
+**Spec:** [Epic 15 — Emissary MCP Gateway Plane](docs/specs/epic-15-emissary-mcp-gateway-plane/README.md)
+([tests manifest](docs/specs/epic-15-emissary-mcp-gateway-plane/tests-manifest.md))
+
 **Theme:** Spec-compliant MCP surface end-to-end. Catalog + credentials +
 composition + dispatch + HTTP listener + outbound client + admin API +
 durable persistence. Most of the plane shipped on

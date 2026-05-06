@@ -64,6 +64,9 @@
 
 ### Phase: Emissary MCP Gateway Plane ✅ partial
 
+**Spec:** [Epic 15 — Emissary MCP Gateway Plane](docs/specs/epic-15-emissary-mcp-gateway-plane/README.md)
+([tests manifest](docs/specs/epic-15-emissary-mcp-gateway-plane/tests-manifest.md))
+
 Landed on `claude/setup-learning-repo-Q7Fo0` across PR #1206 + 8 follow-ups
 (2026-04-28 → 2026-05-05). The plane gives Stronghold a spec-compliant MCP
 surface end-to-end: catalog approvals, credential issuance, composite
@@ -450,6 +453,8 @@ Five features worth porting from the running conductor-router with Stronghold-na
 - Docker image + Helm chart skeleton
 
 ### v1.0.x — Emissary MCP Gateway Plane Follow-ups
+
+**Spec:** [Epic 15 — Stories 15.8–15.12](docs/specs/epic-15-emissary-mcp-gateway-plane/README.md#stories)
 
 The Emissary plane shipped with Postgres persistence for the four
 security/operationally-critical components. These follow-ups round out
