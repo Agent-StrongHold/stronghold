@@ -119,7 +119,13 @@ def determine_execution_tier(
     if current_tier == suggested_tier:
         return intent
 
-    return replace(intent, tier=cast("_PriorityTier", current_tier))
+    # current_tier comes from _LEVEL_TO_TIER (P0–P5 keys) or
+    # agent.priority_tier (gated by `in _TIER_LEVELS`); both are Intent.tier
+    # Literals at runtime. The cast tells mypy what the runtime guards prove.
+    return replace(
+        intent,
+        tier=cast("Literal['P0', 'P1', 'P2', 'P3', 'P4', 'P5']", current_tier),
+    )
 
 
 # Words that signal consent in response to a data-sharing question.

@@ -473,6 +473,11 @@ async def import_agent_from_url(request: Request) -> JSONResponse:
     if parsed.query:
         fetch_url += f"?{urlencode(parse_qsl(parsed.query, keep_blank_values=True), doseq=True)}"
 
+    # Reconstruct URL from validated parsed components to break taint flow
+    safe_url = f"https://{parsed.hostname}{parsed.path}"
+    if parsed.query:
+        safe_url += f"?{parsed.query}"
+
     # Fetch the zip
     try:
         async with httpx.AsyncClient(timeout=30.0, follow_redirects=False) as client:

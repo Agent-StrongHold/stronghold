@@ -9,7 +9,10 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from enum import StrEnum
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from stronghold.types.auth import AuthContext
 
 
 class TrustTier(StrEnum):
@@ -58,6 +61,10 @@ class WardenVerdict:
     flags: tuple[str, ...] = ()
     confidence: float = 1.0
     reasoning_trace: str | None = None
+    # Set when Warden detects something severe enough to invalidate
+    # the credentials a tool was issued for the call. Drives the
+    # Warden→Keyward revocation coupling at the Emissary boundary.
+    revoke: RevocationCriteria | None = None
 
 
 @dataclass(frozen=True)
@@ -123,3 +130,344 @@ class ClarifyingQuestion:
     question: str = ""
     options: tuple[str, ...] = ()  # a, b, c, d options
     allow_freetext: bool = True
+
+
+# ---------------------------------------------------------------------------
+# Tool catalog, credential issuance, and MCP gateway types.
+#
+# These power the Emissary (MCP gateway), Keyward (credential issuer), the
+# Composer (composite tool orchestrator), and the Sentinel tool-declaration
+# validator. Trust tier, Provenance, WardenVerdict, AuditEntry above carry
+# their existing semantics — the new types compose with them.
+# ---------------------------------------------------------------------------
+
+
+class Scope(StrEnum):
+    """Tool/permission scope walk. Maps onto AuthContext's org/team/user.
+
+    PLATFORM is the implicit Stronghold-system level; only SYSTEM identity
+    (SYSTEM_ORG_ID) approves at this scope.
+    """
+
+    USER = "user"
+    TEAM = "team"
+    ORG = "org"
+    PLATFORM = "platform"
+
+
+@dataclass(frozen=True)
+class ToolFingerprint:
+    """Canonical fingerprint of a tool declaration.
+
+    ``value`` is the sha256 hex of the canonical JSON of (name, description,
+    input_schema). ``schema_hash`` is the hash of input_schema alone — kept
+    separately so rug-pull diagnostics can distinguish "name same, schema
+    drifted" from "totally different tool".
+    """
+
+    value: str
+    name: str
+    schema_hash: str
+
+
+@dataclass(frozen=True)
+class CatalogEntry:
+    """A tool's approval record at a specific scope level."""
+
+    fingerprint: ToolFingerprint
+    trust_tier: TrustTier
+    provenance: Provenance
+    approved_at_scope: Scope
+    org_id: str = ""
+    team_id: str = ""
+    user_id: str = ""
+    allowed_audiences: frozenset[str] = frozenset()
+    declared_caps: frozenset[str] = frozenset()
+    approved_at: datetime = field(default_factory=lambda: datetime.now(UTC))
+    approved_by: str = ""
+    expires_at: datetime | None = None
+
+
+@dataclass(frozen=True)
+class RevocationCriteria:
+    """Match criteria for revoking issued tokens.
+
+    Any combination of fields narrows the set; an empty criteria revokes
+    nothing (revoke is not a wildcard).
+    """
+
+    token_id: str | None = None
+    tool: ToolFingerprint | None = None
+    user_id: str | None = None
+    audience: str | None = None
+    reason: str = ""
+
+
+@dataclass(frozen=True)
+class IssuedToken:
+    """A short-lived credential minted by Keyward for a tool call."""
+
+    id: str  # JTI
+    tool: ToolFingerprint
+    principal_user_id: str
+    principal_org_id: str
+    audience: str  # canonical URI per RFC 8707
+    scopes: frozenset[str]
+    issued_at: datetime
+    ttl_seconds: int
+    serialized: str  # JWT or compatible bearer string
+
+
+@dataclass(frozen=True)
+class TokenRequest:
+    """Caller's request for a per-call token."""
+
+    tool: ToolFingerprint
+    auth: AuthContext
+    audience: str
+    requested_scopes: frozenset[str]
+    call_id: str
+    idempotency_key: str | None = None
+
+
+@dataclass(frozen=True)
+class TokenResult:
+    """Keyward's response. Exactly one of token / error_kind is non-empty."""
+
+    token: IssuedToken | None = None
+    error: str | None = None
+    error_kind: str = ""  # unauthorized | audience_denied | scope_escalation | unavailable
+
+
+@dataclass(frozen=True)
+class TokenStatus:
+    """Current state of an issued token (introspection result)."""
+
+    token_id: str
+    revoked: bool
+    expires_at: datetime
+
+
+# --- Sessions (Emissary) -------------------------------------------------
+
+
+@dataclass(frozen=True)
+class SessionId:
+    """Opaque session handle returned by Emissary.start_session."""
+
+    value: str
+
+
+@dataclass(frozen=True)
+class Session:
+    """An Emissary session bound to one principal for stateful tools."""
+
+    id: SessionId
+    auth: AuthContext
+    started_at: datetime
+    last_activity: datetime
+    affinity_instance: str | None = None
+    active_tools: frozenset[ToolFingerprint] = frozenset()
+
+
+# --- MCP gateway request/response ----------------------------------------
+
+
+class TargetKind(StrEnum):
+    """How a tool is realised behind the gateway."""
+
+    COMPOSITE = "composite"
+    LOCAL_HOST = "local_host"
+    REMOTE_PROXY = "remote_proxy"
+    FIRST_PARTY = "first_party"
+
+
+@dataclass(frozen=True)
+class ToolDescriptor:
+    """A single entry in the principal-filtered tools list."""
+
+    fingerprint: ToolFingerprint
+    name: str
+    description: str
+    input_schema: dict[str, Any]
+    target_kind: TargetKind
+    trust_tier: TrustTier
+    scope: Scope
+
+
+@dataclass(frozen=True)
+class ToolCallRequest:
+    """A single tool invocation routed through Emissary."""
+
+    fingerprint: ToolFingerprint
+    args: dict[str, Any]
+    auth: AuthContext
+    session: SessionId | None = None
+    call_id: str = ""
+    idempotency_key: str | None = None
+
+
+@dataclass(frozen=True)
+class ToolCallResult:
+    """Result of an Emissary tool invocation, including the Warden verdict."""
+
+    content: Any
+    is_error: bool
+    warden_verdict: WardenVerdict
+    duration_ms: int = 0
+    token_id: str | None = None
+    partial: bool = False
+
+
+# --- Composites ----------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class CompositeStep:
+    """One step in a composite definition."""
+
+    id: str
+    tool: ToolFingerprint
+    args_template: dict[str, Any]
+    on_error: str = "abort"  # retry | skip | abort | rollback
+    parallel_group: str | None = None
+
+
+@dataclass(frozen=True)
+class CompositeDefinition:
+    """A higher-level tool composed of atomic steps."""
+
+    fingerprint: ToolFingerprint
+    name: str
+    description: str
+    input_schema: dict[str, Any]
+    output_schema: dict[str, Any]
+    steps: tuple[CompositeStep, ...]
+    # Effective tier of the composite — must be ≤ min(constituent atomic tiers).
+    trust_tier: TrustTier = TrustTier.T3
+
+
+@dataclass(frozen=True)
+class StepResult:
+    """Outcome of one composite step."""
+
+    step_id: str
+    output: Any = None
+    error: str | None = None
+
+
+@dataclass(frozen=True)
+class CompositeResult:
+    """Aggregate composite outcome. ``partial`` flags any non-clean exit."""
+
+    outputs: dict[str, Any]
+    step_results: tuple[StepResult, ...]
+    partial: bool = False
+
+
+# --- HTTP binding (Emissary external surface) ----------------------------
+
+
+@dataclass(frozen=True)
+class IncomingToken:
+    """A bearer token successfully validated by ``TokenValidator``.
+
+    ``audience`` is what the caller asserted; ``scopes`` is the granted set.
+    """
+
+    raw: str
+    subject: str
+    audience: str
+    scopes: frozenset[str]
+    expires_at: datetime
+
+
+class TokenValidationError(Exception):
+    """Base for token-validation failures at the HTTP edge."""
+
+
+class TokenAudienceMismatchError(TokenValidationError):
+    """Token's ``aud`` does not match the resource's canonical URI."""
+
+
+class TokenExpiredError(TokenValidationError):
+    """Token's ``exp`` has passed."""
+
+
+class InsufficientScopeError(TokenValidationError):
+    """Token's scopes don't cover the operation; carries required + provided."""
+
+    def __init__(self, required: frozenset[str], provided: frozenset[str]) -> None:
+        super().__init__(
+            f"required scopes {sorted(required)}, provided {sorted(provided)}",
+        )
+        self.required = required
+        self.provided = provided
+
+
+# --- Outbound MCP client (Emissary REMOTE_PROXY backend) -----------------
+
+
+@dataclass(frozen=True)
+class ServerMetadata:
+    """RFC 9728 Protected Resource Metadata for a remote MCP server.
+
+    ``canonical_uri`` is what the client passes as the RFC 8707 ``resource``
+    parameter and what tokens issued for this server must carry as ``aud``.
+    """
+
+    canonical_uri: str
+    auth_servers: tuple[str, ...]
+    scopes_supported: frozenset[str]
+
+
+class TokenAudiencePassthroughError(Exception):
+    """Caller tried to use a token whose ``aud`` is not the target server.
+
+    Forwarding such a token would be a token-passthrough — explicitly
+    forbidden by the MCP spec (§"Access Token Privilege Restriction").
+    """
+
+
+class RemoteUnauthorizedError(Exception):
+    """Remote server returned 401 with a ``WWW-Authenticate: Bearer …`` hint.
+
+    Callers should refresh the PRM, re-authorise, and retry — never silently
+    repeat the same token.
+    """
+
+    def __init__(self, message: str, resource_metadata: str | None = None) -> None:
+        super().__init__(message)
+        self.resource_metadata = resource_metadata
+
+
+class RemoteScopeChallengeError(Exception):
+    """Remote server returned 403 with ``error="insufficient_scope"``.
+
+    ``required`` carries the scope set the server says is needed.
+    """
+
+    def __init__(self, required: frozenset[str], message: str = "") -> None:
+        super().__init__(message or f"required scopes: {sorted(required)}")
+        self.required = required
+
+
+class RemoteToolError(Exception):
+    """JSON-RPC error returned by the remote tool/server."""
+
+    def __init__(self, code: int, message: str) -> None:
+        super().__init__(f"[{code}] {message}")
+        self.code = code
+        self.message = message
+
+
+# --- LOCAL_HOST invoker --------------------------------------------------
+
+
+class MCPServerNotRunningError(Exception):
+    """LOCAL_HOST tool's deployed pod is not in RUNNING status."""
+
+    def __init__(self, server_name: str, status: str) -> None:
+        super().__init__(f"server {server_name!r} status={status}")
+        self.server_name = server_name
+        self.status = status
