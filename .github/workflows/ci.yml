@@ -254,18 +254,45 @@ jobs:
 
       - name: Start CI postgres
         run: |
-          # k3s runners use containerd; prefer nerdctl over docker
-          CTR=docker
-          if ! command -v docker >/dev/null 2>&1; then
-            CTR=nerdctl
+          PG_POD="ci-postgres-${{ github.run_id }}"
+          if command -v docker >/dev/null 2>&1; then
+            # Docker available (non-k3s or DinD env)
+            docker rm -f ci-postgres 2>/dev/null || true
+            docker run -d --name ci-postgres \
+              -e POSTGRES_USER=stronghold \
+              -e POSTGRES_PASSWORD=stronghold \
+              -e POSTGRES_DB=stronghold \
+              -p 5433:5432 \
+              pgvector/pgvector:pg17
+            echo "POSTGRES_VIA=docker" >> "$GITHUB_ENV"
+          elif command -v nerdctl >/dev/null 2>&1; then
+            nerdctl rm -f ci-postgres 2>/dev/null || true
+            nerdctl run -d --name ci-postgres \
+              -e POSTGRES_USER=stronghold \
+              -e POSTGRES_PASSWORD=stronghold \
+              -e POSTGRES_DB=stronghold \
+              -p 5433:5432 \
+              pgvector/pgvector:pg17
+            echo "POSTGRES_VIA=nerdctl" >> "$GITHUB_ENV"
+          elif command -v kubectl >/dev/null 2>&1; then
+            # k3s cluster — spin up an ephemeral pod and port-forward
+            kubectl delete pod "$PG_POD" --ignore-not-found --wait=false 2>/dev/null || true
+            kubectl run "$PG_POD" \
+              --image=pgvector/pgvector:pg17 \
+              --env="POSTGRES_USER=stronghold" \
+              --env="POSTGRES_PASSWORD=stronghold" \
+              --env="POSTGRES_DB=stronghold" \
+              --restart=Never
+            kubectl wait "pod/$PG_POD" --for=condition=Ready --timeout=90s
+            kubectl port-forward "pod/$PG_POD" 5433:5432 &
+            echo "$!" > /tmp/pg-pf.pid
+            echo "POSTGRES_VIA=kubectl" >> "$GITHUB_ENV"
+            echo "PG_POD=$PG_POD" >> "$GITHUB_ENV"
+            sleep 3
+          else
+            echo "::error::No container runtime available (tried docker, nerdctl, kubectl)"
+            exit 1
           fi
-          $CTR rm -f ci-postgres 2>/dev/null || true
-          $CTR run -d --name ci-postgres \
-            -e POSTGRES_USER=stronghold \
-            -e POSTGRES_PASSWORD=stronghold \
-            -e POSTGRES_DB=stronghold \
-            -p 5433:5432 \
-            pgvector/pgvector:pg17
           echo "Waiting for postgres to be ready..."
           READY=false
           for i in $(seq 1 30); do
@@ -278,7 +305,6 @@ jobs:
           done
           if [ "$READY" != "true" ]; then
             echo "::error::Postgres failed to start within 30s"
-            $CTR logs ci-postgres 2>&1 | tail -20
             exit 1
           fi
 
@@ -337,6 +363,11 @@ jobs:
       - name: Stop CI postgres
         if: always()
         run: |
-          CTR=docker
-          command -v docker >/dev/null 2>&1 || CTR=nerdctl
-          $CTR rm -f ci-postgres 2>/dev/null || true
+          case "${POSTGRES_VIA:-docker}" in
+            docker)  docker rm -f ci-postgres 2>/dev/null || true ;;
+            nerdctl) nerdctl rm -f ci-postgres 2>/dev/null || true ;;
+            kubectl)
+              [ -f /tmp/pg-pf.pid ] && kill "$(cat /tmp/pg-pf.pid)" 2>/dev/null || true
+              kubectl delete pod "${PG_POD:-ci-postgres}" --ignore-not-found 2>/dev/null || true
+              ;;
+          esac
