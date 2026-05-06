@@ -129,13 +129,13 @@ def create_app() -> FastAPI:
             allow_credentials=_mw_config.cors.allow_credentials,
         )
 
-    # Demo cookie → Authorization injection middleware
-    # Reads the session cookie and, if it contains a valid HS256 demo JWT,
+    # Session cookie → Authorization injection middleware
+    # Reads the session cookie and, if it contains a valid HS256 session JWT,
     # injects a synthetic Authorization header so all route handlers authenticate
     # without needing to pass headers explicitly. Runs before route handlers.
-    from stronghold.api.middleware.demo_cookie import DemoCookieMiddleware  # noqa: PLC0415
+    from stronghold.api.middleware.session_cookie import SessionCookieMiddleware  # noqa: PLC0415
 
-    app.add_middleware(DemoCookieMiddleware)
+    app.add_middleware(SessionCookieMiddleware)
 
     # Payload size limit — reject oversized requests before parsing
     app.add_middleware(
@@ -174,13 +174,13 @@ def create_app() -> FastAPI:
             allow_credentials=_mw_config.cors.allow_credentials,
         )
 
-    # Demo cookie → Authorization injection middleware
-    # Reads the session cookie and, if it contains a valid HS256 demo JWT,
+    # Session cookie → Authorization injection middleware
+    # Reads the session cookie and, if it contains a valid HS256 session JWT,
     # injects a synthetic Authorization header so all route handlers authenticate
     # without needing to pass headers explicitly. Runs before route handlers.
-    from stronghold.api.middleware.demo_cookie import DemoCookieMiddleware  # noqa: PLC0415
+    from stronghold.api.middleware.session_cookie import SessionCookieMiddleware  # noqa: PLC0415
 
-    app.add_middleware(DemoCookieMiddleware)
+    app.add_middleware(SessionCookieMiddleware)
 
     # Payload size limit — reject oversized requests before parsing
     app.add_middleware(

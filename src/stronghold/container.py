@@ -132,12 +132,12 @@ class Container:
 def _wire_auth(
     config: StrongholdConfig,
 ) -> tuple[StaticKeyAuthProvider, PermissionTable]:
-    """Wire auth provider chain: demo cookie → cookie (BFF) → JWT → static key."""
+    """Wire auth provider chain: session cookie → cookie (BFF) → JWT → static key."""
     from stronghold.security.auth_composite import CompositeAuthProvider  # noqa: PLC0415
-    from stronghold.security.auth_demo_cookie import DemoCookieAuthProvider  # noqa: PLC0415
+    from stronghold.security.auth_session_cookie import SessionCookieAuthProvider  # noqa: PLC0415
 
     static_auth = StaticKeyAuthProvider(api_key=config.router_api_key)
-    demo_cookie_auth = DemoCookieAuthProvider(
+    session_cookie_auth = SessionCookieAuthProvider(
         api_key=config.router_api_key,
         cookie_name=config.auth.session_cookie_name,
     )
@@ -151,7 +151,7 @@ def _wire_auth(
             issuer=config.auth.issuer,
             audience=config.auth.audience,
         )
-        providers: list[StaticKeyAuthProvider] = [demo_cookie_auth, jwt_auth, static_auth]  # type: ignore[list-item]
+        providers: list[StaticKeyAuthProvider] = [session_cookie_auth, jwt_auth, static_auth]  # type: ignore[list-item]
 
         if config.auth.client_id and config.auth.token_url:
             cookie_auth = CookieAuthProvider(
@@ -166,12 +166,12 @@ def _wire_auth(
 
         auth_provider: StaticKeyAuthProvider = CompositeAuthProvider(providers)  # type: ignore[assignment]
         logger.info(
-            "Auth: composite (demo + cookie + JWT + static key) — JWKS: %s",
+            "Auth: composite (session + cookie + JWT + static key) — JWKS: %s",
             config.auth.jwks_url,
         )
     else:
-        auth_provider = CompositeAuthProvider([demo_cookie_auth, static_auth])  # type: ignore[assignment]
-        logger.info("Auth: composite (demo cookie + static key)")
+        auth_provider = CompositeAuthProvider([session_cookie_auth, static_auth])  # type: ignore[assignment]
+        logger.info("Auth: composite (session cookie + static key)")
 
     permission_table = PermissionTable.from_config(config.permissions)
     return auth_provider, permission_table

@@ -394,7 +394,7 @@ async def demo_login(
         "organization_id": user["org_id"],
         "team_id": user["team_id"],
         "roles": roles_raw,
-        "iss": "stronghold-demo",
+        "iss": "stronghold-session",
         "aud": "stronghold",
         "iat": now,
         "exp": now + auth_cfg.session_max_age,

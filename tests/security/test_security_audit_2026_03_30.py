@@ -36,7 +36,6 @@ from stronghold.types.memory import Learning
 
 from ..fakes import FakeLLMClient
 
-
 # =====================================================================
 # CRITICAL: Multi-tenant isolation — PgAgentRegistry
 # =====================================================================
@@ -440,14 +439,14 @@ class TestHighJWTKeyReuse:
         )
         assert "router_api_key" not in source, "Login must NOT use router_api_key for JWT signing."
 
-    def test_h7_demo_cookie_warns_but_does_not_reject_short_key(self) -> None:
-        """DemoCookieAuthProvider only warns on short keys, does not reject.
+    def test_h7_session_cookie_warns_but_does_not_reject_short_key(self) -> None:
+        """SessionCookieAuthProvider only warns on short keys, does not reject.
         This is a security weakness — short keys are brute-forceable.
         """
-        from stronghold.security.auth_demo_cookie import DemoCookieAuthProvider
+        from stronghold.security.auth_session_cookie import SessionCookieAuthProvider
 
         # BUG: short key only logs a warning, doesn't raise
-        provider = DemoCookieAuthProvider(api_key="too-short")
+        provider = SessionCookieAuthProvider(api_key="too-short")
         assert provider is not None, (
             "BUG CONFIRMED: short key accepted with only a warning. "
             "Fix: raise ValueError for keys < 32 bytes."

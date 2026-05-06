@@ -254,13 +254,17 @@ jobs:
 
       - name: Start CI postgres
         run: |
-          docker rm -f ci-postgres 2>/dev/null || true
-          docker run -d --name ci-postgres \
+          # k3s runners use containerd; prefer nerdctl over docker
+          CTR=docker
+          if ! command -v docker >/dev/null 2>&1; then
+            CTR=nerdctl
+          fi
+          $CTR rm -f ci-postgres 2>/dev/null || true
+          $CTR run -d --name ci-postgres \
             -e POSTGRES_USER=stronghold \
             -e POSTGRES_PASSWORD=stronghold \
             -e POSTGRES_DB=stronghold \
             -p 5433:5432 \
-            --security-opt apparmor=unconfined \
             pgvector/pgvector:pg17
           echo "Waiting for postgres to be ready..."
           READY=false
@@ -274,7 +278,7 @@ jobs:
           done
           if [ "$READY" != "true" ]; then
             echo "::error::Postgres failed to start within 30s"
-            docker logs ci-postgres 2>&1 | tail -20
+            $CTR logs ci-postgres 2>&1 | tail -20
             exit 1
           fi
 
@@ -332,4 +336,7 @@ jobs:
 
       - name: Stop CI postgres
         if: always()
-        run: docker rm -f ci-postgres 2>/dev/null || true
+        run: |
+          CTR=docker
+          command -v docker >/dev/null 2>&1 || CTR=nerdctl
+          $CTR rm -f ci-postgres 2>/dev/null || true

@@ -2,7 +2,7 @@
 
 Covers:
 - PayloadSizeLimitMiddleware (size enforcement + edge cases)
-- DemoCookieMiddleware (JWT cookie injection into ASGI scope)
+- SessionCookieMiddleware (JWT cookie injection into ASGI scope)
 - Auth route pattern (valid key, missing auth, invalid auth via StaticKeyAuthProvider)
 - TracingMiddleware (stub file, no middleware class — verify it's a placeholder)
 
@@ -12,12 +12,10 @@ asyncio_mode = "auto" — no @pytest.mark.asyncio needed.
 
 from __future__ import annotations
 
-import asyncio
 import time
 from typing import Any
 
 import jwt as pyjwt
-import pytest
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from starlette.requests import Request as StarletteRequest
@@ -26,9 +24,9 @@ from starlette.routing import Route
 from starlette.testclient import TestClient
 
 from stronghold.api.middleware import PayloadSizeLimitMiddleware
-from stronghold.api.middleware.demo_cookie import DemoCookieMiddleware
+from stronghold.api.middleware.session_cookie import SessionCookieMiddleware
 from stronghold.security.auth_static import StaticKeyAuthProvider
-from stronghold.types.auth import SYSTEM_AUTH, AuthContext
+from stronghold.types.auth import SYSTEM_AUTH
 from stronghold.types.config import AuthConfig, StrongholdConfig, TaskTypeConfig
 
 AUTH_HEADER = {"Authorization": "Bearer sk-test"}
@@ -185,11 +183,11 @@ class TestPayloadSizeLimitInvalidContentLength:
             assert resp.status_code == 413
 
 
-# ── DemoCookieMiddleware ──────────────────────────────────────────────
+# ── SessionCookieMiddleware ──────────────────────────────────────────────
 
 
 class _FakeContainer:
-    """Minimal container stand-in with the fields DemoCookieMiddleware reads."""
+    """Minimal container stand-in with the fields SessionCookieMiddleware reads."""
 
     def __init__(self, cookie_name: str = "stronghold_session", api_key: str = API_KEY) -> None:
         self.config = _minimal_config(
@@ -199,15 +197,15 @@ class _FakeContainer:
         self.config.jwt_secret = api_key
 
 
-def _demo_cookie_app(
+def _session_cookie_app(
     cookie_name: str = "stronghold_session",
     api_key: str = API_KEY,
 ) -> FastAPI:
-    """Build an app with DemoCookieMiddleware and an echo endpoint."""
+    """Build an app with SessionCookieMiddleware and an echo endpoint."""
     app = FastAPI()
 
     # Add the ASGI middleware
-    app.add_middleware(DemoCookieMiddleware)
+    app.add_middleware(SessionCookieMiddleware)
 
     @app.get("/echo-auth")
     async def echo_auth(request: Request) -> JSONResponse:
@@ -221,13 +219,13 @@ def _demo_cookie_app(
     return app
 
 
-def _make_demo_jwt(
+def _make_session_jwt(
     signing_key: str = API_KEY,
     sub: str = "demo-user",
     org_id: str = "demo-org",
     exp_offset: int = 3600,
 ) -> str:
-    """Create a valid HS256 demo JWT."""
+    """Create a valid HS256 session JWT."""
     payload = {
         "sub": sub,
         "org_id": org_id,
@@ -238,12 +236,12 @@ def _make_demo_jwt(
     return pyjwt.encode(payload, signing_key, algorithm="HS256")
 
 
-class TestDemoCookieExistingAuth:
+class TestSessionCookieExistingAuth:
     """Request with existing Authorization header is not modified."""
 
     def test_existing_auth_header_not_overwritten(self) -> None:
-        app = _demo_cookie_app()
-        token = _make_demo_jwt()
+        app = _session_cookie_app()
+        token = _make_session_jwt()
         with TestClient(app) as client:
             resp = client.get(
                 "/echo-auth",
@@ -257,12 +255,12 @@ class TestDemoCookieExistingAuth:
             assert resp.json()["authorization"] == "Bearer my-real-token"
 
 
-class TestDemoCookieValidCookie:
-    """Request with valid demo cookie gets Authorization injected."""
+class TestSessionCookieValidCookie:
+    """Request with valid session cookie gets Authorization injected."""
 
     def test_valid_cookie_injects_bearer(self) -> None:
-        app = _demo_cookie_app()
-        token = _make_demo_jwt()
+        app = _session_cookie_app()
+        token = _make_session_jwt()
         with TestClient(app) as client:
             resp = client.get(
                 "/echo-auth",
@@ -271,18 +269,18 @@ class TestDemoCookieValidCookie:
             assert resp.status_code == 200
             auth = resp.json()["authorization"]
             assert auth is not None
-            assert auth.startswith("Bearer demo-jwt:")
+            assert auth.startswith("Bearer session-jwt:")
             # The injected value should contain the original JWT
             assert token in auth
 
 
-class TestDemoCookieInvalidCookie:
+class TestSessionCookieInvalidCookie:
     """Request with invalid cookie is not modified."""
 
     def test_expired_jwt_not_injected(self) -> None:
-        app = _demo_cookie_app()
+        app = _session_cookie_app()
         # Create an expired JWT
-        expired_token = _make_demo_jwt(exp_offset=-3600)
+        expired_token = _make_session_jwt(exp_offset=-3600)
         with TestClient(app) as client:
             resp = client.get(
                 "/echo-auth",
@@ -293,9 +291,9 @@ class TestDemoCookieInvalidCookie:
             assert resp.json()["authorization"] is None
 
     def test_wrong_signing_key_not_injected(self) -> None:
-        app = _demo_cookie_app()
+        app = _session_cookie_app()
         # Sign with a different key than the app uses
-        bad_token = _make_demo_jwt(signing_key="wrong-secret-key-12345")
+        bad_token = _make_session_jwt(signing_key="wrong-secret-key-12345")
         with TestClient(app) as client:
             resp = client.get(
                 "/echo-auth",
@@ -305,7 +303,7 @@ class TestDemoCookieInvalidCookie:
             assert resp.json()["authorization"] is None
 
     def test_wrong_audience_not_injected(self) -> None:
-        app = _demo_cookie_app()
+        app = _session_cookie_app()
         # Create a JWT with wrong audience
         payload = {
             "sub": "demo-user",
@@ -323,7 +321,7 @@ class TestDemoCookieInvalidCookie:
             assert resp.json()["authorization"] is None
 
     def test_garbage_cookie_value_not_injected(self) -> None:
-        app = _demo_cookie_app()
+        app = _session_cookie_app()
         with TestClient(app) as client:
             resp = client.get(
                 "/echo-auth",
@@ -333,19 +331,19 @@ class TestDemoCookieInvalidCookie:
             assert resp.json()["authorization"] is None
 
 
-class TestDemoCookieNoCookie:
+class TestSessionCookieNoCookie:
     """Request with no cookie passes through without modification."""
 
     def test_no_cookie_passes_through(self) -> None:
-        app = _demo_cookie_app()
+        app = _session_cookie_app()
         with TestClient(app) as client:
             resp = client.get("/echo-auth")
             assert resp.status_code == 200
             assert resp.json()["authorization"] is None
 
     def test_wrong_cookie_name_ignored(self) -> None:
-        app = _demo_cookie_app(cookie_name="stronghold_session")
-        token = _make_demo_jwt()
+        app = _session_cookie_app(cookie_name="stronghold_session")
+        token = _make_session_jwt()
         with TestClient(app) as client:
             resp = client.get(
                 "/echo-auth",
@@ -355,19 +353,19 @@ class TestDemoCookieNoCookie:
             assert resp.json()["authorization"] is None
 
 
-class TestDemoCookieNoContainer:
+class TestSessionCookieNoContainer:
     """Request when no container is set on app state passes through."""
 
     def test_no_container_passes_through(self) -> None:
         app = FastAPI()
-        app.add_middleware(DemoCookieMiddleware)
+        app.add_middleware(SessionCookieMiddleware)
 
         @app.get("/echo-auth")
         async def echo_auth(request: Request) -> JSONResponse:
             auth = request.headers.get("authorization")
             return JSONResponse({"authorization": auth})
 
-        token = _make_demo_jwt()
+        token = _make_session_jwt()
         with TestClient(app) as client:
             resp = client.get(
                 "/echo-auth",
