@@ -1,0 +1,127 @@
+@import url('https://fonts.googleapis.com/css2?family=VT323&family=IBM+Plex+Mono:ital,wght@0,300;0,400;0,500;0,600;0,700;1,400&family=IBM+Plex+Sans:ital,wght@0,300;0,400;0,500;0,600;0,700;1,400&family=IBM+Plex+Serif:ital,wght@0,400;0,500;1,400&display=swap');
+
+:root {
+  /* ── Ink / Bone greyscale ── */
+  --ink-0: #050507;
+  --ink-1: #0A0B0A;
+  --ink-2: #0F1110;
+  --ink-3: #141714;
+  --ink-4: #1B1F1C;
+  --ink-5: #222825;
+
+  --line-1: #232925;
+  --line-2: #334038;
+  --line-3: #4E5C54;
+
+  --grey-1: #6E7670;
+  --grey-2: #8F9692;
+  --grey-3: #B4BAB7;
+  --grey-4: #D6D4CE;
+
+  --bone-1: #ECEAE3;
+  --bone-0: #F2F0EA;
+
+  /* ── Signal: phosphor green ── */
+  --phosphor-hi:   #A8FF8E;
+  --phosphor:      #5EE88C;
+  --phosphor-mid:  #3EC172;
+  --phosphor-dim:  #1E7A3D;
+  --phosphor-deep: #0D2A17;
+  --phosphor-ink:  #061007;
+
+  --phosphor-glow-soft: 0 0 2px rgba(94,232,140,0.55), 0 0 8px rgba(94,232,140,0.32);
+  --phosphor-glow-med:  0 0 2px rgba(94,232,140,0.8), 0 0 10px rgba(94,232,140,0.5), 0 0 22px rgba(94,232,140,0.22);
+  --phosphor-glow-hot:  0 0 3px rgba(168,255,142,0.95), 0 0 12px rgba(94,232,140,0.7), 0 0 30px rgba(94,232,140,0.35), 0 0 60px rgba(62,193,114,0.18);
+
+  /* ── Amber: classified / warning ── */
+  --amber:     #FFB547;
+  --amber-dim: #8A6520;
+  --amber-glow: 0 0 2px rgba(255,181,71,0.7), 0 0 10px rgba(255,181,71,0.38);
+
+  /* ── Burn: destructive ── */
+  --burn:     #FF5A4E;
+  --burn-dim: #6E2A22;
+  --burn-glow: 0 0 2px rgba(255,90,78,0.7), 0 0 10px rgba(255,90,78,0.38);
+
+  /* ── Semantic shortcuts ── */
+  --bg:           var(--ink-1);
+  --bg-elevated:  var(--ink-3);
+  --panel:        var(--ink-4);
+  --panel-recessed: var(--ink-2);
+  --input-bg:     var(--ink-5);
+  --fg:           var(--bone-1);
+  --fg-strong:    var(--bone-0);
+  --fg-muted:     var(--grey-2);
+  --border:       var(--line-1);
+  --border-strong: var(--line-2);
+  --accent:       var(--phosphor);
+
+  /* ── Type families ── */
+  --font-display: 'VT323', 'IBM Plex Mono', monospace;
+  --font-mono:    'IBM Plex Mono', 'SF Mono', Menlo, monospace;
+  --font-sans:    'IBM Plex Sans', system-ui, sans-serif;
+  --font-serif:   'IBM Plex Serif', Georgia, serif;
+
+  /* ── Type scale ── */
+  --fs-display: 72px;
+  --fs-h1: 44px;
+  --fs-h2: 28px;
+  --fs-h3: 20px;
+  --fs-body: 16px;
+  --fs-small: 14px;
+  --fs-micro: 12px;
+  --fs-tag: 11px;
+
+  /* ── Tracking ── */
+  --tracking-display: 0.02em;
+  --tracking-label:   0.18em;
+  --tracking-wide:    0.32em;
+
+  /* ── Spacing (4px grid) ── */
+  --sp-1: 4px;  --sp-2: 8px;  --sp-3: 12px; --sp-4: 16px;
+  --sp-5: 24px; --sp-6: 32px; --sp-7: 48px; --sp-8: 64px; --sp-9: 96px;
+
+  /* ── Motion ── */
+  --ease-ui:     cubic-bezier(0.2, 0.8, 0.2, 1);
+  --ease-reveal: cubic-bezier(0.4, 0, 0.6, 1);
+  --ease-step:   steps(8, end);
+  --dur-hover:   120ms;
+  --dur-state:   220ms;
+  --dur-scene:   600ms;
+  --dur-type:    1400ms;
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+
+html, body { height: 100%; margin: 0; overflow: hidden; }
+
+body {
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--font-sans);
+  font-size: var(--fs-body);
+  -webkit-font-smoothing: antialiased;
+}
+
+::selection { background: var(--phosphor); color: var(--ink-0); text-shadow: none; }
+
+*::-webkit-scrollbar       { width: 6px; height: 6px; }
+*::-webkit-scrollbar-thumb { background: var(--line-2); }
+*::-webkit-scrollbar-thumb:hover { background: var(--phosphor-dim); }
+*::-webkit-scrollbar-track { background: transparent; }
+
+@keyframes blink { 50% { opacity: 0; } }
+.cursor {
+  display: inline-block;
+  width: 0.55em;
+  height: 1em;
+  vertical-align: -0.12em;
+  background: var(--phosphor);
+  box-shadow: var(--phosphor-glow-med);
+  animation: blink 1s steps(2, end) infinite;
+}
+
+input, textarea, button, select { font-family: inherit; }
+textarea { resize: none; }
+a { text-decoration: none; color: inherit; }
+p { margin: 0 0 var(--sp-4); }

@@ -1,0 +1,91 @@
+/* CRT overlay effects — opt-in via .crt-on on <body> */
+
+/* ── Scanlines ── */
+.crt-light { position: relative; }
+.crt-light::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 40;
+  background: repeating-linear-gradient(
+    to bottom,
+    rgba(0,0,0,0) 0, rgba(0,0,0,0) 2px,
+    rgba(0,0,0,0.12) 2px, rgba(0,0,0,0.12) 3px
+  );
+  mix-blend-mode: multiply;
+}
+
+.crt { position: relative; }
+.crt::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 40;
+  background: repeating-linear-gradient(
+    to bottom,
+    rgba(0,0,0,0) 0, rgba(0,0,0,0) 2px,
+    rgba(0,0,0,0.32) 2px, rgba(0,0,0,0.32) 3px
+  );
+  mix-blend-mode: multiply;
+}
+
+/* ── Sweep ── */
+.crt::after, .crt-sweep::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 41;
+  background: linear-gradient(
+    to bottom,
+    transparent 0%,
+    rgba(94,232,140,0.03) 50%,
+    transparent 100%
+  );
+  background-size: 100% 200%;
+  animation: sweep 6s linear infinite;
+}
+@keyframes sweep { from { background-position: 0 -100%; } to { background-position: 0 100%; } }
+
+/* ── Glow helpers ── */
+.bloom-soft { text-shadow: var(--phosphor-glow-soft); }
+.bloom-med  { text-shadow: var(--phosphor-glow-med); }
+.bloom-hot  { text-shadow: var(--phosphor-glow-hot); }
+.bloom-amber { text-shadow: var(--amber-glow); color: var(--amber); }
+.bloom-burn  { text-shadow: var(--burn-glow);  color: var(--burn); }
+.box-bloom   { box-shadow: var(--phosphor-glow-med); }
+
+/* ── Flicker ── */
+.flicker { animation: flicker 4.2s ease-in-out infinite; }
+@keyframes flicker {
+  0%,19%,21%,23%,25%,54%,56%,100% { opacity: 1; }
+  20%,24%,55% { opacity: 0.4; }
+}
+
+/* ── Background patterns ── */
+.bg-blueprint {
+  background-image:
+    linear-gradient(rgba(94,232,140,0.05) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(94,232,140,0.05) 1px, transparent 1px),
+    linear-gradient(rgba(94,232,140,0.02) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(94,232,140,0.02) 1px, transparent 1px);
+  background-size: 80px 80px, 80px 80px, 10px 10px, 10px 10px;
+}
+
+/* ── Corner brackets ── */
+.brackets {
+  position: relative;
+}
+.brackets::before, .brackets::after {
+  content: "";
+  position: absolute;
+  width: 14px;
+  height: 14px;
+  border-color: var(--phosphor);
+  border-style: solid;
+  filter: drop-shadow(0 0 4px rgba(94,232,140,0.4));
+}
+.brackets::before { top: 0; left: 0; border-width: 1px 0 0 1px; }
+.brackets::after  { bottom: 0; right: 0; border-width: 0 1px 1px 0; }
