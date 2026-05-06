@@ -42,7 +42,7 @@ class FakePool:
         self.acquire_calls = 0
         self._conn: FakeConnection | None = None
 
-    def set_connection(self, conn: "FakeConnection") -> None:
+    def set_connection(self, conn: FakeConnection) -> None:
         self._conn = conn
 
     async def close(self) -> None:
