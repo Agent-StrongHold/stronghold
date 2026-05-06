@@ -320,6 +320,10 @@ class TemplateAuthoringValidationError(ConfigError):
     code = "TEMPLATE_AUTHORING_INVALID"
 
 
+class BrandKitExtractionError(ConfigError):
+    code = "BRAND_KIT_EXTRACTION_FAILED"
+
+
 class AssetNotFoundError(CanvasStudioError):
     code = "ASSET_NOT_FOUND"
 
