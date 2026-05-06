@@ -454,9 +454,7 @@ class Conduit:
 
         return intent
 
-    def _determine_tier(
-        self, intent: Intent, target_agent_name: str | None, trace: Any
-    ) -> Intent:
+    def _determine_tier(self, intent: Intent, target_agent_name: str | None, trace: Any) -> Intent:
         c = self._c
         _agent_for_tier = c.agents.get(target_agent_name) if target_agent_name else None
         suggested_tier = intent.tier
@@ -481,9 +479,7 @@ class Conduit:
                     return sticky
         return target_agent_name
 
-    def _resolve_consent(
-        self, session_id: str | None, messages: list[dict[str, Any]]
-    ) -> None:
+    def _resolve_consent(self, session_id: str | None, messages: list[dict[str, Any]]) -> None:
         if not session_id or session_id not in self._consent_pending:
             return
         pending_provider = self._consent_pending.pop(session_id)
@@ -534,8 +530,7 @@ class Conduit:
             if prov_cfg.status != "active":
                 continue
             has_paygo = (
-                prov_cfg.overage_cost_per_1k_input > 0
-                or prov_cfg.overage_cost_per_1k_output > 0
+                prov_cfg.overage_cost_per_1k_input > 0 or prov_cfg.overage_cost_per_1k_output > 0
             )
             if has_paygo:
                 _any_available = True
@@ -820,17 +815,13 @@ class Conduit:
                         "classified_by": "needs_detail",
                     },
                     "agent": arbiter.identity.name,
-                    "reason": (
-                        f"insufficient detail: {[m.category for m in sufficiency.missing]}"
-                    ),
+                    "reason": (f"insufficient detail: {[m.category for m in sufficiency.missing]}"),
                     "missing": missing_qs,
                 },
             ),
         )
 
-    async def _save_session_stickiness(
-        self, session_id: str | None, agent: Any
-    ) -> None:
+    async def _save_session_stickiness(self, session_id: str | None, agent: Any) -> None:
         if not session_id or agent.identity.name == "arbiter":
             return
         async with self._session_lock:

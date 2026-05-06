@@ -113,9 +113,7 @@ class ArtificerStrategy:
             with pt.span(f"llm_call_{round_num}") as ls:
                 ls.set_input({"model": model, "message_count": len(current_messages)})
                 resp = LLMResponse(
-                    await llm.complete(
-                        current_messages, model, tools=tools, tool_choice="auto"
-                    )
+                    await llm.complete(current_messages, model, tools=tools, tool_choice="auto")
                 )
                 ls.set_usage(
                     input_tokens=resp.input_tokens,

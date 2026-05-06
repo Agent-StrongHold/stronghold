@@ -263,9 +263,7 @@ class Agent:
 
     # ── Pipeline steps ────────────────────────────────────────────────────────
 
-    async def _warden_scan(
-        self, trace: PipelineTrace, user_text: str
-    ) -> AgentResponse | None:
+    async def _warden_scan(self, trace: PipelineTrace, user_text: str) -> AgentResponse | None:
         """Scan user input; return a blocked AgentResponse if flagged, else None."""
         with trace.span("warden.user_input") as ws:
             ws.set_input({"text_length": len(user_text)})
@@ -274,9 +272,7 @@ class Agent:
         if not verdict.clean:
             trace.score("blocked", 1.0, comment=f"flags: {verdict.flags}")
             trace.end()
-            return AgentResponse.blocked_response(
-                f"Blocked by Warden: {', '.join(verdict.flags)}"
-            )
+            return AgentResponse.blocked_response(f"Blocked by Warden: {', '.join(verdict.flags)}")
         return None
 
     async def _inject_session_history(
@@ -310,9 +306,7 @@ class Agent:
                 org_id=auth.org_id,
                 team_id=auth.team_id,
             )
-            ps.set_output(
-                {"context_message_count": len(context), "learnings_injected": len(ids)}
-            )
+            ps.set_output({"context_message_count": len(context), "learnings_injected": len(ids)})
         return context, ids
 
     def _resolve_tool_defs(self) -> list[dict[str, Any]] | None:
@@ -320,8 +314,7 @@ class Agent:
         if not self.identity.tools:
             return None
         return [
-            _build_tool_schema(name, registry=self._tool_registry)
-            for name in self.identity.tools
+            _build_tool_schema(name, registry=self._tool_registry) for name in self.identity.tools
         ]
 
     async def _run_strategy(
@@ -348,19 +341,28 @@ class Agent:
             with trace.span("strategy.reason") as ss:
                 ss.set_input({"model": model, "tools": len(tool_defs) if tool_defs else 0})
                 result = await self._strategy.reason(
-                    context_messages, model, self._llm,
-                    tools=tool_defs, tool_executor=self._tool_executor, **kwargs,
+                    context_messages,
+                    model,
+                    self._llm,
+                    tools=tool_defs,
+                    tool_executor=self._tool_executor,
+                    **kwargs,
                 )
-                ss.set_output({
-                    "done": result.done,
-                    "tool_rounds": len(result.tool_history) if result.tool_history else 0,
-                    "response_length": len(result.response or ""),
-                })
+                ss.set_output(
+                    {
+                        "done": result.done,
+                        "tool_rounds": len(result.tool_history) if result.tool_history else 0,
+                        "response_length": len(result.response or ""),
+                    }
+                )
         except (ValueError, RuntimeError, TimeoutError, OSError) as exc:
             import logging as _log  # noqa: PLC0415
+
             _log.getLogger("stronghold.agent").warning(
                 "Strategy failed: agent=%s model=%s error=%s",
-                self.identity.name, model, type(exc).__name__,
+                self.identity.name,
+                model,
+                type(exc).__name__,
             )
             trace.score("strategy_error", 0.0, "Strategy raised an exception")
             trace.end()
@@ -379,8 +381,12 @@ class Agent:
         tool_had_failures: bool,
     ) -> None:
         """Extract root-cause learnings when tool calls failed."""
-        if not (tool_had_failures and self._rca_extractor and self._learning_store
-                and result.tool_history):
+        if not (
+            tool_had_failures
+            and self._rca_extractor
+            and self._learning_store
+            and result.tool_history
+        ):
             return
         with trace.span("rca.extraction") as rs:
             rca = await self._rca_extractor.extract_rca(user_text, result.tool_history)
@@ -513,15 +519,17 @@ class Agent:
                 fail_count += 1
             else:
                 success_count += 1
-        trace.update({
-            "agent": self.identity.name,
-            "model": model,
-            "response_length": str(len(result.response or "")),
-            "tool_calls_total": str(len(result.tool_history) if result.tool_history else 0),
-            "tool_calls_success": str(success_count),
-            "tool_calls_failed": str(fail_count),
-            "tools_used": ",".join(dict.fromkeys(tools_used)),
-            "session_history_injected": str(history_count),
-            "learnings_injected": str(len(injected_ids)),
-        })
+        trace.update(
+            {
+                "agent": self.identity.name,
+                "model": model,
+                "response_length": str(len(result.response or "")),
+                "tool_calls_total": str(len(result.tool_history) if result.tool_history else 0),
+                "tool_calls_success": str(success_count),
+                "tool_calls_failed": str(fail_count),
+                "tools_used": ",".join(dict.fromkeys(tools_used)),
+                "session_history_injected": str(history_count),
+                "learnings_injected": str(len(injected_ids)),
+            }
+        )
         trace.end()

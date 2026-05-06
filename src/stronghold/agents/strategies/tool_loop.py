@@ -126,14 +126,10 @@ class ToolLoop:
             }
         )
 
-    def _parse_args(
-        self, tool_name: str, raw_args: str
-    ) -> tuple[dict[str, Any], str | None]:
+    def _parse_args(self, tool_name: str, raw_args: str) -> tuple[dict[str, Any], str | None]:
         """Parse JSON args. Returns (args, error_str) — error_str non-None means blocked."""
         if len(raw_args.encode()) > self._max_arg_bytes:
-            logger.warning(
-                "Tool %s arg size exceeds %d byte limit", tool_name, self._max_arg_bytes
-            )
+            logger.warning("Tool %s arg size exceeds %d byte limit", tool_name, self._max_arg_bytes)
             return {}, f"Error: tool arguments exceed {self._max_arg_bytes} byte limit"
         try:
             return json.loads(raw_args), None
@@ -168,8 +164,7 @@ class ToolLoop:
             ts.set_output(
                 {
                     "success": (
-                        not preview.startswith("Error")
-                        and "error" not in preview[:50].lower()
+                        not preview.startswith("Error") and "error" not in preview[:50].lower()
                     ),
                     "result_preview": preview,
                 }

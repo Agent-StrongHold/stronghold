@@ -20,6 +20,21 @@ if TYPE_CHECKING:
 logger = logging.getLogger("stronghold.strategies.react")
 
 
+def _find_tool_schema(
+    tools: list[dict[str, Any]] | None,
+    tool_name: str,
+) -> dict[str, Any]:
+    """Find the parameter schema for a tool by name."""
+    if not tools:
+        return {}
+    for tool in tools:
+        fn = tool.get("function", {})
+        if fn.get("name") == tool_name:
+            params: dict[str, Any] = fn.get("parameters", {})
+            return params
+    return {}
+
+
 class ReactStrategy:
     """ReAct loop: LLM call → tool dispatch → feed back → repeat."""
 
