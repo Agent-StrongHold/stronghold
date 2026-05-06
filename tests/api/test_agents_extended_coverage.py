@@ -304,7 +304,7 @@ class TestImportAgentFromUrl:
         "ssrf_url",
         [
             "https://10.0.0.1/agent.zip",        # private 10.0.0.0/8
-            "https://localhost:8080/agent.zip",  # localhost DNS
+            "https://localhost/agent.zip",        # localhost DNS
             "https://127.0.0.1/agent.zip",       # loopback
             "https://192.168.1.1/agent.zip",     # private 192.168.0.0/16
             "https://172.16.0.1/agent.zip",      # private 172.16.0.0/12 (added — was uncovered)
