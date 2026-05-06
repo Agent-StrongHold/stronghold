@@ -379,6 +379,16 @@ class Emissary:
             result=result,
             expires_at=now + self._idempotency_ttl,
         )
+        self._evict_expired_idempotency(now)
+
+    def _evict_expired_idempotency(self, now: datetime) -> None:
+        # Bound the cache by deleting expired entries on each write. Cheap
+        # amortised — without this the dict grows unbounded for the life of
+        # the process, every distinct (session, key) pair leaks memory after
+        # its TTL.
+        expired = [k for k, record in self._idempotency.items() if record.expires_at <= now]
+        for key in expired:
+            self._idempotency.pop(key, None)
 
     def _resolve_affinity(
         self,
