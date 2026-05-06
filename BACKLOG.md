@@ -62,6 +62,29 @@
 - Tool result size cap (16KB), JSON bomb limit (32KB)
 - PII filter on all code paths (not just Sentinel)
 
+### Phase: Emissary MCP Gateway Plane ✅ partial
+
+Landed on `claude/setup-learning-repo-Q7Fo0` across PR #1206 + 8 follow-ups
+(2026-04-28 → 2026-05-05). The plane gives Stronghold a spec-compliant MCP
+surface end-to-end: catalog approvals, credential issuance, composite
+tool orchestration, gateway dispatch, HTTP listener, outbound MCP client,
+admin API, YAML loader, write-through Postgres persistence.
+
+- **ToolFingerprinter** — canonical sha256 over (name, description, input_schema). Order-independent, Unicode-normalised. Detects rug-pull via separate schema_hash.
+- **ToolCatalog** — scope-aware approvals (USER/TEAM/ORG/PLATFORM); SYSTEM identity sees all. Subscribe-on-change for cache invalidation. In-memory + write-through to Postgres.
+- **Sentinel `ToolDeclarationValidator`** — gates outbound tools[] against catalog; distinguishes unapproved from mismatched (rug-pull); fail-closed on catalog-unavailable. Hooked into `/v1/chat/completions` for inbound tools[] (forward-compat safety net).
+- **Keyward** — short-lived audience-bound JWT issuance. Refusal kinds: unauthorized / audience_denied / scope_escalation / unavailable. Revoke by token_id, tool, user, or audience. Persistent revocation set across restarts.
+- **Composer** — deterministic composite tool orchestrator. Sequential v1; abort/skip/retry on_error. Step graph routes back through Emissary so each atomic step gets the full Sentinel/Keyward/Warden treatment.
+- **Emissary** — in-process MCP gateway dispatcher implementing the `MCPGateway` protocol. Sessions (idle + hard timeout, ownership-bound, affinity-routed). Idempotency cache with TTL eviction (no leak). Target-kind dispatch: COMPOSITE / LOCAL_HOST / REMOTE_PROXY / FIRST_PARTY. Warden→Keyward revocation coupling.
+- **HTTP binding** — Starlette ASGI app. RFC 9728 PRM at well-known + sub-path URIs. RFC 8707 audience binding (no token-passthrough). 401 + WWW-Authenticate `resource_metadata` pointer; 403 + `insufficient_scope` + `scope=` parameter on scope challenge.
+- **Outbound `MCPClient`** — PRM discovery + 5-min cache, audience-mismatch refusal before any network call, HTTPS-only with `dev_mode` for localhost, 401-triggered PRM invalidation.
+- **Backend invokers** — REMOTE_PROXY (via MCPClient) and LOCAL_HOST (via MCPDeployer + MCPRegistry, gated on McpDeployerClient adapter). Status-aware dispatch refuses non-RUNNING servers and triggers deployer.health() for diagnostics.
+- **Container DI wiring** — 6 fields on `Container` (mcp_tool_catalog, keyward, composer, mcp_client, emissary, tool_declaration_validator). Wired in `create_container`. Backend invokers populated based on availability.
+- **mcp_admin routes** — `GET/POST/DELETE /v1/stronghold/admin/mcp/tools[/...]`. Admin role required, CSRF-protected on cookie auth, 503 when plane not wired. Couples catalog approval and Emissary backend registration on POST.
+- **YAML startup loader** — `mcp_tools_file` config path → catalog approval + Emissary backend registration in one pass. Idempotent. Hard-fail at startup on parse errors.
+- **Postgres persistence** — `mcp_tool_catalog`, `mcp_emissary_backends`, `mcp_keyward_revocations`, `mcp_composer_definitions`. Schema in `migrations/012_mcp_emissary_plane.sql`. In-memory remains the read path; Postgres is the durable write-through and the source of truth across restarts. Hydrate-from-Postgres at startup. Without `db_pool`, every hook stays None and components run purely in-memory (full backwards compat).
+- **149 contract tests** across the plane (catalog, fingerprint, sentinel, keyward, composer, emissary, http binding, mcp client, invokers, registration loader, mcp admin routes, container wiring, persistence layer). All gates clean (ruff + mypy --strict + bandit -ll + vulture).
+
 ### Metrics
 - **155+ source files, ~11,500 LOC**
 - **2785 tests passing**
@@ -425,6 +448,45 @@ Five features worth porting from the running conductor-router with Stronghold-na
 - Property-based isolation tests
 - Tag and push to GitHub
 - Docker image + Helm chart skeleton
+
+### v1.0.x — Emissary MCP Gateway Plane Follow-ups
+
+The Emissary plane shipped with Postgres persistence for the four
+security/operationally-critical components. These follow-ups round out
+the user policy "everything should persist; nothing should be just stored
+in memory and lost on restart" and finish the remaining wiring.
+
+#### Persistence — Redis (high write volume, short TTL)
+
+- [ ] **Emissary sessions to Redis** — `_sessions`, `_session_client_info`, `_affinity` are still per-process dicts. Multi-replica deployments break session affinity on pod death.
+- [ ] **Idempotency cache to Redis** — currently in-process with TTL eviction. Multi-replica replay across pods needs shared state.
+- [ ] **Keyward `_issued` to Redis** — issued-token introspection state; degraded but not lost on restart (JWTs are self-validating; revocations are durable).
+- [ ] **MCPClient PRM cache to Redis** — actually a cache (5-min TTL); fine in-memory but cross-replica share saves discovery RTT.
+
+#### Agent integration
+
+- [ ] **Agent-side Emissary integration** — agents call tools via legacy `tool_dispatcher`; routing through Emissary requires auth-context propagation through agents → strategies → LLM client.
+- [ ] **LiteLLM-edge enforcement of agent-internal tools[]** — chat.py validates inbound tools[]; agent-emitted tools[] need the same gate via auth-context plumbing.
+
+#### Approval workflow (designed, not implemented)
+
+- [ ] **Promotion API** — user → team → org → platform approval chain with cumulative consent and cascade revocation. Catalog supports the data model; needs HTTP API + UI.
+- [ ] **Approval expiry / re-review** — `CatalogEntry.expires_at` exists; needs a periodic job to flag/revoke.
+
+#### Hardening
+
+- [ ] **Keyward signing-key rotation** — reuses jwt_secret today; needs rotation + multi-key validation window.
+- [ ] **Production AuthorizationServer** — `TokenValidator` is just a protocol; needs either a built-in OAuth 2.1 AS (for self-hosted) or a tested integration with Entra/Auth0/Keycloak.
+- [ ] **K8sDeployer → McpDeployerClient adapter** — current `K8sDeployer` has a different shape (`deploy(server)` vs `deploy_tool_mcp(name, image)`). Adapter would unblock LOCAL_HOST routing in K8s deployments.
+- [ ] **Streamable HTTP transport** — HTTP binding does plain JSON-RPC POST; MCP spec also defines streamable HTTP for tool-result streaming.
+- [ ] **Composer parallel groups + rollback on_error** — sequential-only today, treats `rollback` as `abort`.
+- [ ] **YAML composite definition loader** — Python composite registration works; YAML form not implemented.
+- [ ] **Periodic revocation purge** — `PgRevocationPersistence.purge_older_than(cutoff)` exists; needs a scheduled job (cutoff = `now - max_token_ttl - grace`).
+
+#### Test infrastructure
+
+- [ ] **BDD scaffolding** — pytest-bdd + tests/features/ Gherkin scenarios with OWASP tags. Designed; not landed.
+- [ ] **Real-DB integration tests for `pg_mcp.py`** — current tests use a hand-rolled in-memory pool shim; full integration needs a real Postgres in CI.
 
 ### v1.1: Blue Team + Workflows + Local Identity
 - **Local user management** — Stronghold-native user/team/org store (argon2 passwords, CRUD endpoints, admin UI). Replaces LiteLLM dependency for identity. Email+password login via same BFF HttpOnly cookie flow.

@@ -19,6 +19,7 @@ v0.8  Import/Export + API                 ← Phase 8
 v0.9  Deployment + K8s                    ← Phase 9
 v1.0  Production release                  ← Phase 10 + Security Gate
 
+v1.0.x Emissary MCP gateway plane         ← partial; see v1.0.x section
 v1.1  Closed-loop feedback (phase 1-3)
 v1.2  Tournaments + Forge + advanced memory
 v1.3  Multi-tenant + adaptive tools
@@ -634,6 +635,50 @@ stronghold/
 **Checkpoint:** v1.0 shipped.
 
 ---
+
+## v1.0.x: Emissary MCP Gateway Plane
+
+**Theme:** Spec-compliant MCP surface end-to-end. Catalog + credentials +
+composition + dispatch + HTTP listener + outbound client + admin API +
+durable persistence. Most of the plane shipped on
+`claude/setup-learning-repo-Q7Fo0` (PR #1206 + 8 follow-ups, 2026-04-28
+through 2026-05-05). Remaining items round out persistence, agent-side
+integration, and the approval workflow.
+
+### Landed
+
+- [x] ToolFingerprinter — canonical sha256 over (name, description, input_schema)
+- [x] ToolCatalog — scope-aware approvals (USER/TEAM/ORG/PLATFORM); subscribe-on-change
+- [x] Sentinel `ToolDeclarationValidator` — gates outbound tools[] vs catalog; fail-closed on catalog-unavailable
+- [x] Keyward — short-lived audience-bound JWT issuance; revoke by token / tool / user / audience
+- [x] Composer — deterministic composite tool orchestrator (sequential, abort/skip/retry)
+- [x] Emissary — in-process gateway dispatcher; sessions, idempotency cache w/TTL eviction, target-kind routing, Warden→Keyward revocation coupling
+- [x] HTTP binding — Starlette ASGI, RFC 9728 PRM, RFC 8707 audience binding, no token-passthrough
+- [x] Outbound `MCPClient` — PRM discovery + cache, audience-mismatch refusal before network, HTTPS-only with dev_mode
+- [x] Backend invokers — REMOTE_PROXY (via MCPClient) + LOCAL_HOST (via MCPDeployer + MCPRegistry, gated on McpDeployerClient adapter)
+- [x] Container DI wiring — 6 fields on `Container` wired in `create_container`
+- [x] Inbound chat hook — `/v1/chat/completions` validates inbound tools[] (forward-compat safety net)
+- [x] Admin routes — `GET/POST/DELETE /v1/stronghold/admin/mcp/tools[/...]`
+- [x] YAML startup loader — `mcp_tools_file` → catalog + Emissary backends in one pass
+- [x] Postgres persistence (PR-W7) — catalog, registrations, revocations, composite definitions all write through; rehydrate at startup
+- [x] 149 plane contract tests; ruff + mypy --strict + bandit -ll + vulture clean
+
+### Pending
+
+- [ ] **Redis persistence** for sessions, idempotency cache, Keyward issued-tokens, MCPClient PRM cache (multi-replica session affinity, cross-pod replay)
+- [ ] **Agent-side Emissary integration** — agents currently call tools via legacy `tool_dispatcher`; routing through Emissary requires auth-context propagation through agents → strategies → LLM client
+- [ ] **LiteLLM-edge enforcement of agent-internal tools[]** — chat.py validates inbound tools[]; agent-emitted tools[] need the same gate
+- [ ] **Promotion API** — user → team → org → platform approval chain with cumulative consent + cascade revocation; data model exists, HTTP API + UI do not
+- [ ] **Approval expiry / re-review** — `expires_at` exists; needs a scheduled job
+- [ ] **Periodic revocation purge** — `PgRevocationPersistence.purge_older_than` exists; needs scheduling
+- [ ] **Keyward signing-key rotation** — reuses jwt_secret; needs rotation + multi-key validation window
+- [ ] **Production AuthorizationServer** — TokenValidator is a protocol; need either a built-in OAuth 2.1 AS or tested Entra/Auth0/Keycloak integration
+- [ ] **K8sDeployer → McpDeployerClient adapter** — current K8sDeployer doesn't satisfy the protocol; adapter unblocks LOCAL_HOST in K8s deployments
+- [ ] **Streamable HTTP transport** — HTTP binding does plain JSON-RPC POST; MCP spec also defines streamable HTTP for tool-result streaming
+- [ ] **Composer parallel groups + rollback on_error**
+- [ ] **YAML composite definition loader**
+- [ ] **BDD scaffolding** — pytest-bdd + Gherkin scenarios with OWASP tags
+- [ ] **Real-DB integration tests for `pg_mcp.py`**
 
 ## v1.1: Closed-Loop Feedback + Tournament Hardening
 
