@@ -1,31 +1,33 @@
 """Builder pipeline — chained agent execution for issue-to-merge flow.
 
 The pipeline defines ordered stages that an issue flows through.
-Each stage is an agent with a specific role. The output of one stage
-becomes context for the next. If a stage fails, the pipeline halts
-and reports which stage broke.
+Each stage is an agent with a specific role. Stage ordering, skipping,
+and post-completion hooks are declared on PipelineNode; GraphPipelineExecutor
+drives execution.
 
-Default pipeline (configurable):
+Default pipeline:
   1. quartermaster  — decompose epic into atomic issues (skip if already atomic)
   2. archie          — scaffold protocols, fakes, file structure
   3. mason          — TDD: write tests, then implementation
-  4. auditor        — review PR, post violation comments
-  5. gatekeeper     — final lint/format/merge-readiness check
+  4. auditor        — review PR, post violation comments (skip if code is clean)
+  5. gatekeeper     — final lint/format/merge-readiness check (skip if review clean)
 """
 
 from __future__ import annotations
 
+import contextlib
 import logging
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
 from enum import Enum
 from typing import Any
 
-from stronghold.agents.messages import LLMResponse
+from stronghold.orchestrator.graph import PipelineGraph, PipelineNode
 
 logger = logging.getLogger("stronghold.orchestrator.pipeline")
 
 _SPEC_SUMMARY_LIMIT = 2000
+_CLEAN_SIGNALS = ("no violations", "lgtm", "approved", "all checks pass", "clean")
 
 
 def build_spec_summary(spec: Any) -> str:
@@ -86,7 +88,7 @@ class StageStatus(Enum):
 
 @dataclass
 class PipelineStage:
-    """A single stage in the builder pipeline."""
+    """A single stage in the builder pipeline (kept for backward compatibility)."""
 
     name: str
     agent_name: str
@@ -96,7 +98,7 @@ class PipelineStage:
     error: str = ""
     started_at: datetime | None = None
     completed_at: datetime | None = None
-    skip_if: str = ""  # condition to skip (e.g., "atomic" skips quartermaster)
+    skip_if: str = ""
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -121,6 +123,8 @@ class PipelineRun:
     current_stage: int = 0
     status: str = "pending"
     context: dict[str, Any] = field(default_factory=dict)
+    skipped_stages: list[str] = field(default_factory=list)
+    failed_stage_error: str = ""
     created_at: datetime = field(default_factory=lambda: datetime.now(UTC))
 
     def to_dict(self) -> dict[str, object]:
@@ -136,13 +140,62 @@ class PipelineRun:
         }
 
 
-# ── Default pipeline stages ─────────────────────────────────────────
+# ── skip_if predicates ───────────────────────────────────────────────────────
 
-BUILDER_PIPELINE = [
-    PipelineStage(
+
+def _decompose_skip_if(ctx: dict[str, Any]) -> bool:
+    return bool(ctx.get("skip_decompose", False))
+
+
+def _review_skip_if(ctx: dict[str, Any]) -> bool:
+    implement_out = ctx.get("implement", "").lower()
+    return any(sig in implement_out for sig in _CLEAN_SIGNALS)
+
+
+def _cleanup_skip_if(ctx: dict[str, Any]) -> bool:
+    review_out = ctx.get("review", "").lower()
+    return any(sig in review_out for sig in _CLEAN_SIGNALS)
+
+
+# ── on_complete hooks ────────────────────────────────────────────────────────
+
+
+async def _decompose_on_complete(run: PipelineRun, output: str) -> None:
+    """Emit and persist spec from decompose output."""
+    spec_store = run.context.get("_spec_store")
+    if spec_store is None:
+        return
+    if run.context.get("_spec") is not None:
+        return
+    spec = _emit_and_save_spec(run.issue_number, run.title, output, spec_store)
+    await spec_store.save(spec)
+    run.context["_spec"] = spec
+    run.context["spec"] = spec.to_dict()
+    run.context["verifications"] = []
+    run.context["spec_summary"] = build_spec_summary(spec)
+
+
+async def _scaffold_on_complete(run: PipelineRun, output: str) -> None:
+    """Enrich spec with property tests after scaffold."""
+    spec_store = run.context.get("_spec_store")
+    spec = run.context.get("_spec")
+    if spec_store is None or spec is None:
+        return
+    enriched = _enrich_spec_with_property_tests(spec)
+    await spec_store.save(enriched)
+    run.context["_spec"] = enriched
+    run.context["spec"] = enriched.to_dict()
+    run.context["spec_summary"] = build_spec_summary(enriched)
+
+
+# ── Default pipeline nodes ───────────────────────────────────────────────────
+
+BUILDER_PIPELINE: list[PipelineNode] = [
+    PipelineNode(
         name="decompose",
         agent_name="quartermaster",
-        skip_if="atomic",
+        skip_if=_decompose_skip_if,
+        on_complete=_decompose_on_complete,
         prompt_template=(
             "Decompose this epic into atomic, implementable sub-issues. "
             "Each sub-issue must have:\n"
@@ -155,9 +208,11 @@ BUILDER_PIPELINE = [
             "Output a numbered list of sub-issues with details."
         ),
     ),
-    PipelineStage(
+    PipelineNode(
         name="scaffold",
         agent_name="archie",
+        depends_on=("decompose",),
+        on_complete=_scaffold_on_complete,
         prompt_template=(
             "Read issue #{issue_number}: {title}\n\n"
             "{spec_summary}\n\n"
@@ -167,13 +222,14 @@ BUILDER_PIPELINE = [
             "3. Create empty module files with docstrings\n"
             "4. Update ARCHITECTURE.md if adding new components\n"
             "5. Generate property test stubs from spec invariants\n\n"
-            "Previous stage output:\n{prev_output}\n\n"
+            "Previous stage output:\n{decompose}\n\n"
             "DO NOT write implementation code. Only structure."
         ),
     ),
-    PipelineStage(
+    PipelineNode(
         name="implement",
         agent_name="mason",
+        depends_on=("scaffold",),
         prompt_template=(
             "Implement issue #{issue_number}: {title}\n\n"
             "Repository: https://github.com/{repo}\n\n"
@@ -184,13 +240,15 @@ BUILDER_PIPELINE = [
             "3. Verify all spec invariants hold via property tests\n"
             "4. Run quality gates: pytest, ruff, mypy, bandit\n"
             "5. Create a PR when all gates pass\n\n"
-            "Scaffold from previous stage:\n{prev_output}\n\n"
+            "Scaffold from previous stage:\n{scaffold}\n\n"
             "Create a focused PR with your changes."
         ),
     ),
-    PipelineStage(
+    PipelineNode(
         name="review",
         agent_name="auditor",
+        depends_on=("implement",),
+        skip_if=_review_skip_if,
         prompt_template=(
             "Review the PR created for issue #{issue_number}: {title}\n\n"
             "{spec_summary}\n\n"
@@ -201,17 +259,18 @@ BUILDER_PIPELINE = [
             "- Multi-tenant isolation (org_id on all queries)\n"
             "- Protocol compliance (DI, no direct imports)\n"
             "- Code quality (naming, complexity, duplication)\n\n"
-            "Previous stage output:\n{prev_output}\n\n"
+            "Previous stage output:\n{implement}\n\n"
             "Post your review as PR comments with ViolationCategory tags."
         ),
     ),
-    PipelineStage(
+    PipelineNode(
         name="cleanup",
         agent_name="gatekeeper",
-        skip_if="review_clean",
+        depends_on=("review",),
+        skip_if=_cleanup_skip_if,
         prompt_template=(
             "Final cleanup for issue #{issue_number}: {title}\n\n"
-            "The auditor found these issues:\n{prev_output}\n\n"
+            "The auditor found these issues:\n{review}\n\n"
             "Fix all violations:\n"
             "1. Run ruff check --fix && ruff format\n"
             "2. Fix any mypy --strict errors\n"
@@ -223,8 +282,18 @@ BUILDER_PIPELINE = [
 ]
 
 
+# ── Internal exception for spec verification failure ─────────────────────────
+
+
+class _SpecVerificationError(Exception):
+    def __init__(self, stage_name: str, failures: tuple[str, ...]) -> None:
+        super().__init__(f"Spec verification failed at {stage_name}")
+        self.stage_name = stage_name
+        self.error = f"Spec verification failed: {', '.join(failures)}"
+
+
 class BuilderPipeline:
-    """Executes the full issue-to-merge pipeline.
+    """Executes the full issue-to-merge pipeline via GraphPipelineExecutor.
 
     Usage:
         pipeline = BuilderPipeline(orchestrator_engine)
@@ -257,10 +326,17 @@ class BuilderPipeline:
         skip_decompose: bool = True,
     ) -> PipelineRun:
         """Run the full pipeline for an issue."""
-        import copy
+        from stronghold.orchestrator.executor import GraphPipelineExecutor
 
         run_id = f"pipeline-{issue_number}"
-        stages = [copy.deepcopy(s) for s in BUILDER_PIPELINE]
+        stages = [
+            PipelineStage(
+                name=node.name,
+                agent_name=node.agent_name,
+                prompt_template=node.prompt_template,
+            )
+            for node in BUILDER_PIPELINE
+        ]
         run = PipelineRun(
             id=run_id,
             issue_number=issue_number,
@@ -269,174 +345,102 @@ class BuilderPipeline:
             stages=stages,
         )
         self._runs[run_id] = run
-        run.status = "running"
+
+        # Populate context with pipeline parameters accessible to hooks and templates
+        run.context.update(
+            {
+                "skip_decompose": skip_decompose,
+                "issue_number": issue_number,
+                "title": title,
+                "repo": repo,
+                "_spec_store": self._spec_store,
+                "_spec_verifier": self._spec_verifier,
+            }
+        )
 
         # Load spec if store is available
         spec = None
         if self._spec_store is not None:
             spec = await self._spec_store.get(issue_number)
             if spec is not None:
+                run.context["_spec"] = spec
                 run.context["spec"] = spec.to_dict()
                 run.context["verifications"] = []
 
-        spec_summary = build_spec_summary(spec) if spec is not None else ""
+        # Emit spec immediately when decompose will be skipped (atomic issue)
+        if self._spec_store is not None and spec is None and skip_decompose:
+            spec = _emit_and_save_spec(issue_number, title, "", self._spec_store)
+            await self._spec_store.save(spec)
+            run.context["_spec"] = spec
+            run.context["spec"] = spec.to_dict()
+            run.context["verifications"] = []
 
-        prev_output = ""
-        for i, stage in enumerate(stages):
-            run.current_stage = i
+        run.context["spec_summary"] = build_spec_summary(spec) if spec is not None else ""
 
-            # Skip conditions
-            if stage.skip_if == "atomic" and skip_decompose:
-                stage.status = StageStatus.SKIPPED
-                logger.info("Pipeline %s: skipping %s (atomic issue)", run_id, stage.name)
+        # Wrap each node's on_complete with spec verification if configured
+        nodes = self._wrap_nodes_with_verification(BUILDER_PIPELINE)
+        graph = PipelineGraph(nodes)
+        executor = GraphPipelineExecutor(self._engine)
 
-                # Emit spec from issue metadata when decompose is skipped
-                if stage.name == "decompose" and spec is None and self._spec_store is not None:
-                    spec = _emit_and_save_spec(issue_number, title, "", self._spec_store)
-                    await self._spec_store.save(spec)
-                    run.context["spec"] = spec.to_dict()
-                    run.context["verifications"] = []
-                    spec_summary = build_spec_summary(spec)
+        with contextlib.suppress(_SpecVerificationError):
+            await executor.execute(graph, run, auth=None)
 
-                continue
-
-            _clean_signals = ("no violations", "lgtm", "approved", "all checks pass", "clean")
-            if stage.skip_if == "review_clean" and any(
-                s in prev_output.lower() for s in _clean_signals
-            ):
-                stage.status = StageStatus.SKIPPED
-                logger.info("Pipeline %s: skipping %s (review clean)", run_id, stage.name)
-                continue
-
-            # Check agent exists (use engine's public accessor, not internal state)
-            if not self._engine.has_agent(stage.agent_name):
-                stage.status = StageStatus.SKIPPED
-                logger.warning(
-                    "Pipeline %s: skipping %s (agent '%s' not loaded)",
-                    run_id,
-                    stage.name,
-                    stage.agent_name,
-                )
-                prev_output = f"[skipped: agent {stage.agent_name} not available]"
-                continue
-
-            # Build prompt from template
-            prompt = stage.prompt_template.format(
-                issue_number=issue_number,
-                title=title,
-                repo=repo,
-                prev_output=prev_output[:2000],
-                spec_summary=spec_summary,
-            )
-
-            # Dispatch through orchestrator engine
-            stage.status = StageStatus.RUNNING
-            stage.started_at = datetime.now(UTC)
-            logger.info("Pipeline %s: starting %s (agent=%s)", run_id, stage.name, stage.agent_name)
-
-            work_id = f"{run_id}-{stage.name}"
-            self._engine.dispatch(
-                work_id=work_id,
-                agent_name=stage.agent_name,
-                messages=[{"role": "user", "content": prompt}],
-                trigger="pipeline",
-                priority_tier="P5",
-                intent_hint="code_gen",
-                metadata={
-                    "issue_number": issue_number,
-                    "pipeline_run": run_id,
-                    "stage": stage.name,
-                },
-            )
-
-            # Wait for completion with exponential backoff (not 1s polling)
-            import asyncio
-
-            _poll_interval = 1.0
-            _elapsed = 0.0
-            _stage_timeout = 600.0  # 10 minutes max per stage
-            while _elapsed < _stage_timeout:
-                current = self._engine.get(work_id)
-                if current and current.status.value in ("completed", "failed", "cancelled"):
-                    break
-                await asyncio.sleep(_poll_interval)
-                _elapsed += _poll_interval
-                _poll_interval = min(_poll_interval * 1.5, 10.0)  # back off to 10s max
-
-            current = self._engine.get(work_id)
-            if current is None:
-                stage.status = StageStatus.FAILED
-                stage.error = "Work item lost"
-                stage.completed_at = datetime.now(UTC)
-                run.status = f"failed at {stage.name}"
-                logger.error("Pipeline %s: %s FAILED: work item lost", run_id, stage.name)
-                break
-            if current.status.value == "failed":
-                stage.status = StageStatus.FAILED
-                stage.error = current.error
-                stage.completed_at = datetime.now(UTC)
-                run.status = f"failed at {stage.name}"
-                logger.error("Pipeline %s: %s FAILED: %s", run_id, stage.name, stage.error)
-                break
-            if _elapsed >= _stage_timeout:
-                # Timed out — cancel the work item and fail the stage
-                self._engine.cancel(work_id)
-                stage.status = StageStatus.FAILED
-                stage.error = f"Stage timed out after {_stage_timeout:.0f}s"
-                stage.completed_at = datetime.now(UTC)
-                run.status = f"failed at {stage.name}"
-                logger.error("Pipeline %s: %s TIMED OUT", run_id, stage.name)
-                break
-
-            stage.status = StageStatus.COMPLETED
-            stage.result = current.result
-            stage.completed_at = datetime.now(UTC)
-
-            # Extract text output for next stage
-            if current.result:
-                resp = LLMResponse(current.result)
-                prev_output = resp.content or str(current.result.get("content", ""))
-            else:
-                prev_output = ""
-
-            logger.info("Pipeline %s: %s completed", run_id, stage.name)
-
-            # Post-stage spec hooks
-            if self._spec_store is not None:
-                if stage.name == "decompose" and spec is None:
-                    spec = _emit_and_save_spec(issue_number, title, prev_output, self._spec_store)
-                    await self._spec_store.save(spec)
-                    run.context["spec"] = spec.to_dict()
-                    run.context["verifications"] = []
-                    spec_summary = build_spec_summary(spec)
-
-                if stage.name == "scaffold" and spec is not None:
-                    spec = _enrich_spec_with_property_tests(spec)
-                    await self._spec_store.save(spec)
-                    run.context["spec"] = spec.to_dict()
-                    spec_summary = build_spec_summary(spec)
-
-            # Verify against spec if verifier is available
-            if spec is not None and self._spec_verifier is not None:
-                verification = await self._spec_verifier.verify(
-                    spec, stage.name, stage.result or {}
-                )
-                run.context["verifications"].append(verification.to_dict())
-                if not verification.passed:
-                    stage.status = StageStatus.FAILED
-                    stage.error = f"Spec verification failed: {', '.join(verification.failures)}"
-                    run.status = f"failed at {stage.name}"
-                    logger.error(
-                        "Pipeline %s: %s FAILED spec verification: %s",
-                        run_id,
-                        stage.name,
-                        verification.failures,
-                    )
-                    break
-
-        if run.status == "running":
-            run.status = "completed"
+        self._reconcile_stages(run)
         return run
+
+    def _wrap_nodes_with_verification(self, nodes: list[PipelineNode]) -> list[PipelineNode]:
+        """Return nodes whose on_complete also runs spec verification."""
+        if self._spec_verifier is None:
+            return list(nodes)
+
+        result = []
+        for node in nodes:
+            original = node.on_complete
+
+            async def _hook(
+                run: PipelineRun,
+                output: str,
+                _orig: Any = original,
+                _name: str = node.name,
+            ) -> None:
+                if _orig is not None:
+                    await _orig(run, output)
+                spec = run.context.get("_spec")
+                verifier = run.context.get("_spec_verifier")
+                if spec is None or verifier is None:
+                    return
+                verification = await verifier.verify(spec, _name, {})
+                run.context.setdefault("verifications", []).append(verification.to_dict())
+                if not verification.passed:
+                    run.status = f"failed at {_name}"
+                    run.failed_stage_error = (
+                        f"Spec verification failed: {', '.join(verification.failures)}"
+                    )
+                    raise _SpecVerificationError(_name, verification.failures)
+
+            result.append(replace(node, on_complete=_hook))
+        return result
+
+    def _reconcile_stages(self, run: PipelineRun) -> None:
+        """Update PipelineStage statuses from executor results (backward compat)."""
+        failed_name = ""
+        if run.status.startswith("failed at "):
+            failed_name = run.status[len("failed at ") :]
+
+        for stage in run.stages:
+            if stage.name == failed_name:
+                stage.status = StageStatus.FAILED
+                stage.error = run.failed_stage_error
+            elif stage.name in run.context and stage.name not in (
+                "spec_summary",
+                "_spec_store",
+                "_spec_verifier",
+                "_spec",
+            ):
+                stage.status = StageStatus.COMPLETED
+            elif stage.name in run.skipped_stages:
+                stage.status = StageStatus.SKIPPED
+            # else: PENDING (default)
 
     def get_run(self, run_id: str) -> PipelineRun | None:
         return self._runs.get(run_id)
