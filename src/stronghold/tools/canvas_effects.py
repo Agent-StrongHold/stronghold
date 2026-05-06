@@ -280,7 +280,7 @@ class _LCG:
         return v - bound
 
 
-_DISPATCH: dict[EffectKind, "EffectHandler"] = {
+_DISPATCH: dict[EffectKind, EffectHandler] = {
     EffectKind.BRIGHTNESS: _brightness,
     EffectKind.CONTRAST: _contrast,
     EffectKind.SATURATION: _saturation,

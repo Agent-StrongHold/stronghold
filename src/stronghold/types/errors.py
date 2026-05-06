@@ -324,6 +324,37 @@ class BrandKitExtractionError(ConfigError):
     code = "BRAND_KIT_EXTRACTION_FAILED"
 
 
+# ── Print-on-Demand (§28) ────────────────────────────────────────
+
+
+class PrintProviderError(ToolError):
+    """Generic upstream failure from a print provider API."""
+
+    code = "PRINT_PROVIDER_ERROR"
+
+
+class PrintProviderRejectedError(ConfigError):
+    """Provider's strict spec validation rejected the document."""
+
+    code = "PRINT_PROVIDER_REJECTED"
+
+
+class PrintQuoteExpiredError(ConfigError):
+    """Quote was used after its TTL; caller must re-quote."""
+
+    code = "PRINT_QUOTE_EXPIRED"
+
+
+class PrintAddressInvalidError(ConfigError):
+    """Shipping address validation failed."""
+
+    code = "PRINT_ADDRESS_INVALID"
+
+
+class PrintOrderNotFoundError(StrongholdError):
+    code = "PRINT_ORDER_NOT_FOUND"
+
+
 class AssetNotFoundError(CanvasStudioError):
     code = "ASSET_NOT_FOUND"
 
