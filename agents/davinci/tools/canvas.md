@@ -7,13 +7,21 @@ parameters:
   properties:
     action:
       type: string
-      enum: [generate, refine, reference, composite, text]
+      enum: [generate, refine, reference, composite, text, list_layers, transform, delete, duplicate, save_reference, load_reference, list_references]
       description: |
-        generate  — Create a single image layer (background, character, or object)
-        refine    — Fix artifacts on a layer via img2img editing
-        reference — Generate a multi-view character reference sheet
-        composite — Assemble layers into a final image
-        text      — Render typography on the canvas
+        generate       — Create a single image layer (background, character, or object)
+        refine         — Fix artifacts on a layer via img2img editing
+        reference      — Generate a multi-view character reference sheet
+        composite      — Assemble layers into a final image
+        text           — Render typography on the canvas
+        list_layers    — List all layers with their current transforms
+        transform      — Update position/scale/rotation/z_index/visibility of a layer
+        delete         — Remove a layer from the canvas
+        duplicate      — Copy a layer with offset position
+        upload         — Import a user-uploaded image as a layer or reference input
+        save_reference — Persist a character reference sheet to the database for reuse across sessions
+        load_reference — Load a previously saved character reference by name
+        list_references — List all saved character references for the current user/tenant
     layer_type:
       type: string
       enum: [background, character, object]
@@ -109,6 +117,26 @@ parameters:
     perspective:
       type: string
       description: "Camera angle/lens for cross-layer consistency."
+    layer_id:
+      type: string
+      description: "Layer ID for transform/delete/duplicate actions."
+    reference_name:
+      type: string
+      description: "Name for saving/loading a character reference (e.g. 'warrior-knight', 'anime-girl')."
+    reference_description:
+      type: string
+      description: "Text description of the character for searchability when saving a reference."
+    reference_tags:
+      type: array
+      items:
+        type: string
+      description: "Tags for categorizing saved references (e.g. ['fantasy', 'warrior', 'male'])."
+    upload_image:
+      type: string
+      description: "Base64-encoded image uploaded by the user. Used as source for img2img generation, character reference input, or direct layer import."
+    upload_name:
+      type: string
+      description: "Name for the uploaded image when importing as a layer."
   required: [action]
 endpoint: ""
 auth_key_env: ""
@@ -167,3 +195,48 @@ The tool selects models based on the `tier` parameter:
 5. together-ideogram-ai/ideogram-3.0 ($0.06)
 
 **Refine**: together-black-forest-labs/flux.1-kontext-pro ($0.04)
+
+### Layer Manipulation
+
+**list_layers** — List all layers on the current canvas
+- Returns: array of layers with id, name, type, x, y, scale, rotation, z_index, visible
+
+**transform** — Update a layer's position, scale, rotation, z_index, or visibility
+- Requires: `action`, `layer_id`
+- Optional: any combination of x, y, scale, rotation, z_index, visible
+
+**delete** — Remove a layer from the canvas
+- Requires: `action`, `layer_id`
+
+**duplicate** — Copy a layer with a new ID and +20px offset
+- Requires: `action`, `layer_id`
+
+### Image Upload
+
+**upload** — Import a user-uploaded image as a canvas layer or reference input
+- Requires: `action`, `upload_image` (base64-encoded PNG/JPEG)
+- Optional: `upload_name` (layer name), `layer_type` (default: object)
+- The uploaded image becomes a layer that can be transformed like any other
+- Use case 1: User uploads a photo → Da Vinci uses it as img2img source for character gen
+- Use case 2: User uploads existing art → imported as a layer for compositing
+- Use case 3: User uploads a character reference → saved via save_reference for reuse
+
+### Character Reference Persistence
+
+Character references can be saved to the database so the same character
+can be reused across sessions, scenes, and even by other users in the
+same tenant.
+
+**save_reference** — Persist a character reference sheet
+- Requires: `action`, `reference_name`, `reference_description`
+- Optional: `reference_tags`, `reference_images` (if not provided, uses the most recent reference sheet from the current canvas)
+- Stored per-user with tenant visibility (tenant users can browse each other's references)
+
+**load_reference** — Load a saved character reference by name
+- Requires: `action`, `reference_name`
+- Returns: the saved reference images for use as `reference_images` in generate/refine calls
+
+**list_references** — Browse saved character references
+- Requires: `action`
+- Optional: `reference_tags` (filter by tags)
+- Returns: list of saved references with name, description, tags, thumbnail

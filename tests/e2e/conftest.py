@@ -13,16 +13,28 @@ API_KEY = os.getenv("STRONGHOLD_API_KEY", "sk-stronghold-prod-2026")
 
 
 def _stack_running() -> bool:
+    """True only when the Stronghold stack is reachable on STRONGHOLD_URL.
+
+    Identity is verified via the /health payload's `service` field, not just
+    the HTTP status. CI runners can have stale containers from sibling
+    projects (e.g. the homelab predecessor) listening on the same port; a
+    bare 200 doesn't prove that this PR's stack is the one under test.
+    """
     try:
         r = httpx.get(f"{STRONGHOLD_URL}/health", timeout=3)
-        return r.status_code == 200
     except Exception:  # noqa: BLE001
+        return False
+    if r.status_code != 200:
+        return False
+    try:
+        return r.json().get("service") == "stronghold"
+    except ValueError:
         return False
 
 
 skip_no_stack = pytest.mark.skipif(
     not _stack_running(),
-    reason="Docker stack not running (start with: docker compose up -d)",
+    reason="Stronghold stack not reachable on STRONGHOLD_URL (start with: docker compose up -d)",
 )
 
 
