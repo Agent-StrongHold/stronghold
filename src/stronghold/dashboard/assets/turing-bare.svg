@@ -1,0 +1,76 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 400" width="320" height="400">
+  <defs>
+    
+    <radialGradient id="eye" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#A8FF8E"></stop>
+      <stop offset="45%" stop-color="#5EE88C"></stop>
+      <stop offset="100%" stop-color="#0D2A17"></stop>
+    </radialGradient>
+    <filter id="oglow"><feGaussianBlur stdDeviation="2.5"></feGaussianBlur><feMerge><feMergeNode></feMergeNode><feMergeNode in="SourceGraphic"></feMergeNode></feMerge></filter>
+  </defs>
+  <rect class="bg" width="320" height="400"></rect>
+
+  
+  <path class="dark" d="M130 360 L110 400 L210 400 L190 360 Z"></path>
+  <path class="s" d="M130 360 L110 400 M190 360 L210 400 M115 390 L205 390"></path>
+
+  
+  <path class="mid" d="M60 400 L90 340 L230 340 L260 400 Z"></path>
+  <path class="s" d="M90 340 L230 340"></path>
+
+  
+  <rect class="dark" x="140" y="300" width="40" height="60"></rect>
+  <path class="s" d="M140 300 L140 360 M180 300 L180 360 M140 316 L180 316 M140 332 L180 332 M140 348 L180 348"></path>
+
+  
+  <path class="hi" d="M100 200 Q100 140 160 130 Q220 140 220 200 L220 280 Q220 310 200 310 L120 310 Q100 310 100 280 Z"></path>
+  
+  <path class="s" d="M100 200 Q100 140 160 130 Q220 140 220 200 L220 280 Q220 310 200 310 L120 310 Q100 310 100 280 Z"></path>
+  
+  <path class="s-fine" d="M105 220 L130 270 M215 220 L190 270"></path>
+  
+  <path class="s" d="M135 270 L185 270"></path>
+  <path class="s-fine" d="M135 265 L185 265 M135 275 L185 275"></path>
+  
+  <path class="s" d="M140 295 L180 295"></path>
+  <circle class="mid" cx="140" cy="295" r="3"></circle>
+  <circle class="mid" cx="180" cy="295" r="3"></circle>
+
+  
+  <path class="s" d="M110 195 Q160 185 210 195"></path>
+  
+  <path class="mid" d="M120 130 Q160 120 200 130 L200 145 Q160 138 120 145 Z"></path>
+  <path class="s" d="M120 130 Q160 120 200 130 L200 145 Q160 138 120 145 Z"></path>
+  
+  <line class="s" x1="160" y1="120" x2="160" y2="100"></line>
+  <circle class="hi" cx="160" cy="98" r="2.5"></circle>
+
+  
+  <path class="glass" d="M116 210 Q116 195 136 195 L156 195 Q160 195 160 205 L160 230 Q160 240 150 240 L126 240 Q116 240 116 230 Z"></path>
+  <path class="glass" d="M204 210 Q204 195 184 195 L164 195 Q160 195 160 205 L160 230 Q160 240 170 240 L194 240 Q204 240 204 230 Z"></path>
+  <path class="s" d="M116 210 Q116 195 136 195 L184 195 Q204 195 204 210 L204 230 Q204 240 194 240 L126 240 Q116 240 116 230 Z"></path>
+  
+  <line class="s" x1="160" y1="195" x2="160" y2="240"></line>
+
+  
+  <g filter="url(#oglow)">
+    <circle fill="url(#eye)" cx="138" cy="217" r="10"></circle>
+    <circle fill="url(#eye)" cx="182" cy="217" r="10"></circle>
+    <circle fill="#A8FF8E" cx="138" cy="217" r="2.5"></circle>
+    <circle fill="#A8FF8E" cx="182" cy="217" r="2.5"></circle>
+  </g>
+
+  
+  <rect class="mid" x="96" y="215" width="8" height="24"></rect>
+  <rect class="mid" x="216" y="215" width="8" height="24"></rect>
+  <path class="s-fine" d="M98 220 L102 220 M98 225 L102 225 M98 230 L102 230 M218 220 L222 220 M218 225 L222 225 M218 230 L222 230"></path>
+
+  
+  <circle class="mid" cx="112" cy="160" r="1.5"></circle>
+  <circle class="mid" cx="208" cy="160" r="1.5"></circle>
+  <circle class="mid" cx="112" cy="290" r="1.5"></circle>
+  <circle class="mid" cx="208" cy="290" r="1.5"></circle>
+
+  
+  <text x="160" y="345" text-anchor="middle" fill="#6E7670" font-family="IBM Plex Mono,monospace" font-size="6" letter-spacing="0.2em">AT-01 · PROJECT TURING</text>
+</svg>
