@@ -60,9 +60,19 @@ def _principal_qualifies(entry: CatalogEntry, auth: AuthContext) -> bool:
 
 
 class InMemoryToolCatalog:
-    """Reference implementation of the ``ToolCatalog`` protocol."""
+    """Reference implementation of the ``ToolCatalog`` protocol.
 
-    def __init__(self) -> None:
+    Memory state is the read path; an optional ``persistence`` callback
+    pair provides write-through to durable storage. The catalog stays the
+    source of truth for queries; persistence is for restart recovery.
+    """
+
+    def __init__(
+        self,
+        *,
+        persist_approve: Callable[[CatalogEntry], None] | None = None,
+        persist_revoke: Callable[[str, Scope | None], None] | None = None,
+    ) -> None:
         # (fingerprint_value, scope) -> entry. Same fingerprint may be
         # approved at multiple scopes simultaneously; lookup walks
         # narrow-to-wide.
@@ -72,6 +82,8 @@ class InMemoryToolCatalog:
         # name -> set[fingerprint_value] (rug-pull diagnostics).
         self._by_name: dict[str, set[str]] = defaultdict(set)
         self._subscribers: list[Callable[[], None]] = []
+        self._persist_approve = persist_approve
+        self._persist_revoke = persist_revoke
 
     # --- mutation surface (used by promotion/admin paths) ----------------
 
@@ -80,10 +92,25 @@ class InMemoryToolCatalog:
         self._entries[(fingerprint.value, entry.approved_at_scope)] = entry
         self._fingerprints[fingerprint.value] = fingerprint
         self._by_name[fingerprint.name].add(fingerprint.value)
+        if self._persist_approve is not None:
+            self._persist_approve(entry)
+        self._notify()
+
+    def hydrate(self, entry: CatalogEntry) -> None:
+        """Insert an entry into the in-memory cache without write-through.
+
+        Used by the startup loader to populate from persistence without
+        triggering write-through back into the database.
+        """
+        self._entries[(entry.fingerprint.value, entry.approved_at_scope)] = entry
+        self._fingerprints[entry.fingerprint.value] = entry.fingerprint
+        self._by_name[entry.fingerprint.name].add(entry.fingerprint.value)
         self._notify()
 
     def revoke(self, fingerprint: ToolFingerprint, scope: Scope | None = None) -> None:
         """Revoke an approval. If ``scope`` is None, revokes at all scopes."""
+        if self._persist_revoke is not None:
+            self._persist_revoke(fingerprint.value, scope)
         if scope is None:
             keys = [k for k in self._entries if k[0] == fingerprint.value]
         else:

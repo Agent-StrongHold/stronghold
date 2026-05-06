@@ -24,6 +24,16 @@ rollback) already in place.
 Epic 14 (Artificer v2) is a rethink trigger, not a build spec. It captures the
 criteria under which v2 design begins — after learning from epics 06–13.
 
+Epic 15 (Emissary MCP gateway plane) is independent of the 01–14 sequence.
+It builds the spec-compliant MCP surface (catalog, credential issuer,
+gateway, HTTP listener, outbound client, persistence) and gates the
+LLM-edge tools[] declaration through Sentinel. It depends on the existing
+Phase 3 security layer (Warden + Sentinel) and Phase 5 (Auth + asyncpg
+pool) but does not block any 01–14 epic. Most stories shipped on
+`claude/setup-learning-repo-Q7Fo0` (PR #1206 + 8 follow-ups,
+2026-04-28 → 2026-05-05); see the epic README for the landed/pending
+split.
+
 ## Ship Waves
 
 | Wave | Epics | Release constraint |

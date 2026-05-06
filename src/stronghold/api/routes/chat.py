@@ -40,6 +40,26 @@ async def chat_completions(request: Request) -> JSONResponse:
     raw_session_id: str | None = body.get("session_id")
     execution_mode: str = body.get("execution_mode", "best_effort")
     intent_hint: str = body.get("intent_hint", "") or body.get("intent", "")
+    inbound_tools: list[dict[str, Any]] = body.get("tools") or []
+
+    # Sentinel ToolDeclarationValidator — gate any client-supplied tools[]
+    # against the principal's approved catalog. Today the field is unused
+    # downstream so this is a forward-compat safety net: if a future change
+    # surfaces inbound tools[] to the model, they are already validated.
+    if inbound_tools and container.tool_declaration_validator is not None:
+        verdict = await container.tool_declaration_validator.validate(
+            inbound_tools,
+            auth_ctx,
+        )
+        if not verdict.allowed:
+            payload: dict[str, Any] = {
+                "error": "tool_declarations_unapproved",
+                "unapproved": [fp.name for fp in verdict.unapproved],
+                "mismatched": [fp.name for fp in verdict.mismatched],
+                "submit_urls": verdict.submit_urls or {},
+            }
+            status = 503 if verdict.fail_closed else 403
+            raise HTTPException(status_code=status, detail=payload)
 
     # Validate and scope session_id to caller's org
     from stronghold.sessions.store import validate_and_build_session_id  # noqa: PLC0415

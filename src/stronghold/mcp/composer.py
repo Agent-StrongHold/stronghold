@@ -35,6 +35,8 @@ from stronghold.types.security import (
 )
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from stronghold.protocols.security import CompositeRuntime
     from stronghold.types.security import (
         CompositeDefinition,
@@ -73,13 +75,32 @@ def _resolve_template(
 
 
 class Composer:
-    """In-memory composite tool orchestrator."""
+    """In-memory composite tool orchestrator with optional write-through."""
 
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        *,
+        persist_upsert: Callable[[CompositeDefinition], None] | None = None,
+        persist_remove: Callable[[str], None] | None = None,
+    ) -> None:
         self._registry: dict[str, CompositeDefinition] = {}
+        self._persist_upsert = persist_upsert
+        self._persist_remove = persist_remove
 
     def register(self, definition: CompositeDefinition) -> None:
         self._registry[definition.fingerprint.value] = definition
+        if self._persist_upsert is not None:
+            self._persist_upsert(definition)
+
+    def hydrate(self, definition: CompositeDefinition) -> None:
+        """Insert without write-through (used by startup loader)."""
+        self._registry[definition.fingerprint.value] = definition
+
+    def unregister(self, fingerprint: ToolFingerprint) -> None:
+        """Remove a composite. Idempotent."""
+        self._registry.pop(fingerprint.value, None)
+        if self._persist_remove is not None:
+            self._persist_remove(fingerprint.value)
 
     def is_registered(self, fingerprint: ToolFingerprint) -> bool:
         return fingerprint.value in self._registry

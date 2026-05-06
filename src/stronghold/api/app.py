@@ -207,6 +207,7 @@ def create_app() -> FastAPI:
     from stronghold.api.routes.marketplace import router as marketplace_router
     from stronghold.api.routes.mason import router as mason_router
     from stronghold.api.routes.mcp import router as mcp_router
+    from stronghold.api.routes.mcp_admin import router as mcp_admin_router
     from stronghold.api.routes.models import router as models_router
     from stronghold.api.routes.profile import router as profile_router
     from stronghold.api.routes.schedules import router as schedules_router
@@ -237,6 +238,7 @@ def create_app() -> FastAPI:
     app.include_router(dashboard_router)
     app.include_router(webhooks_router)
     app.include_router(mcp_router)
+    app.include_router(mcp_admin_router)
     app.include_router(schedules_router)
     app.include_router(mason_router)
     app.include_router(orchestrator_router)
