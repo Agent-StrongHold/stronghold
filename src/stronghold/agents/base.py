@@ -170,7 +170,6 @@ if TYPE_CHECKING:
     from stronghold.security.warden.detector import Warden
     from stronghold.types.agent import AgentIdentity, ReasoningResult
     from stronghold.types.auth import AuthContext
-    from stronghold.types.security import WardenVerdict
 
 
 class Agent:

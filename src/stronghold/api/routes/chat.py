@@ -58,7 +58,6 @@ async def chat_completions(request: Request) -> JSONResponse:
     # 2. Gate: sanitize + Warden scan + sufficiency check
     gate_result = await container.gate.process_input(
         extract_user_text(messages),
-        user_text,
         execution_mode=execution_mode,
         auth=auth_ctx,
     )

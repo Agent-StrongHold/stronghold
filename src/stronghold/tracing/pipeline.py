@@ -4,11 +4,10 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
-from stronghold.protocols.tracing import Span, Trace
 from stronghold.tracing.noop import NoopTrace
 
 if TYPE_CHECKING:
-    pass
+    from stronghold.protocols.tracing import Span, Trace
 
 
 class PipelineTrace:

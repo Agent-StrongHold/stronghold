@@ -12,7 +12,7 @@ import json
 import logging
 from typing import TYPE_CHECKING, Any
 
-from stronghold.agents.messages import ToolResult, _MAX_TOOL_RESULT_BYTES
+from stronghold.agents.messages import _MAX_TOOL_RESULT_BYTES, ToolResult
 from stronghold.tracing.pipeline import PipelineTrace
 
 if TYPE_CHECKING:
