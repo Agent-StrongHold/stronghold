@@ -1235,6 +1235,98 @@ class DocumentVersion:
 
 
 # ---------------------------------------------------------------------------
+# LoRA / fine-tuning (spec §21)
+# ---------------------------------------------------------------------------
+
+
+class LoraScope(StrEnum):
+    DOCUMENT = "document"
+    CHARACTER = "character"
+    STYLE_LOCK = "style_lock"
+    USER = "user"
+
+
+class LoraJobStatus(StrEnum):
+    PENDING = "pending"
+    RUNNING = "running"
+    COMPLETED = "completed"
+    FAILED = "failed"
+    CANCELLED = "cancelled"
+
+
+class LoraTriggeredBy(StrEnum):
+    USER = "user"
+    AUTO_AFTER_N_REFS = "auto_after_n_refs"
+    SCHEDULED = "scheduled"
+
+
+@dataclass(frozen=True)
+class Lora:
+    """A trained LoRA adapter (spec §21)."""
+
+    id: str
+    tenant_id: str
+    owner_id: str
+    scope: LoraScope
+    scope_id: str
+    base_model: str
+    trigger_words: tuple[str, ...]
+    blob_id: str
+    rank: int = 16
+    alpha: int = 32
+    parent_lora_id: str | None = None
+    thumbnail_blob_id: str | None = None
+    metadata: dict[str, Any] = field(default_factory=dict)
+    quality_score: float = 0.0
+    active: bool = False
+    pinned: bool = False
+    retired_at: datetime | None = None
+    trained_at: datetime = field(default_factory=lambda: datetime.now(UTC))
+
+    def __post_init__(self) -> None:
+        if self.rank < 1:
+            raise ConfigError(f"rank must be >= 1, got {self.rank}", code="LORA_RANK_INVALID")
+        if not 0.0 <= self.quality_score <= 1.0:
+            raise ConfigError(
+                f"quality_score must be in [0, 1], got {self.quality_score}",
+                code="LORA_QUALITY_INVALID",
+            )
+
+
+@dataclass(frozen=True)
+class LoraTrainingJob:
+    """A submitted LoRA training job (spec §21)."""
+
+    id: str
+    tenant_id: str
+    user_id: str
+    scope: LoraScope
+    scope_id: str
+    base_model: str
+    trainer: str
+    training_blob_ids: tuple[str, ...]
+    status: LoraJobStatus = LoraJobStatus.PENDING
+    forecast_cost_usd: str = "0"
+    actual_cost_usd: str | None = None
+    forecast_duration_minutes: int = 30
+    actual_duration_minutes: int | None = None
+    result_lora_id: str | None = None
+    failure_reason: str | None = None
+    triggered_by: LoraTriggeredBy = LoraTriggeredBy.USER
+    quality_score: float | None = None
+    created_at: datetime = field(default_factory=lambda: datetime.now(UTC))
+    started_at: datetime | None = None
+    completed_at: datetime | None = None
+
+    def __post_init__(self) -> None:
+        if not self.training_blob_ids:
+            raise ConfigError(
+                "LoraTrainingJob requires at least one training blob",
+                code="LORA_TRAINING_DATA_EMPTY",
+            )
+
+
+# ---------------------------------------------------------------------------
 # Style drift score (spec §09)
 # ---------------------------------------------------------------------------
 
