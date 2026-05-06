@@ -14,6 +14,7 @@ from typing import Any
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import JSONResponse
 
+from stronghold.agents.messages import extract_user_text
 from stronghold.types.errors import QuotaExhaustedError
 
 logger = logging.getLogger("stronghold.api.chat")
@@ -55,21 +56,8 @@ async def chat_completions(request: Request) -> JSONResponse:
         raise HTTPException(status_code=400, detail=str(e)) from e
 
     # 2. Gate: sanitize + Warden scan + sufficiency check
-    user_text = ""
-    for msg in reversed(messages):
-        if msg.get("role") == "user":
-            content = msg.get("content", "")
-            if isinstance(content, str):
-                user_text = content
-            elif isinstance(content, list):
-                user_text = " ".join(
-                    p.get("text", "")
-                    for p in content
-                    if isinstance(p, dict) and p.get("type") == "text"
-                )
-            break
-
     gate_result = await container.gate.process_input(
+        extract_user_text(messages),
         user_text,
         execution_mode=execution_mode,
         auth=auth_ctx,

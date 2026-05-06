@@ -11,6 +11,8 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, Any
 
+from stronghold.agents.messages import extract_user_text
+
 if TYPE_CHECKING:
     from stronghold.protocols.memory import LearningStore
     from stronghold.protocols.prompts import PromptManager
@@ -113,11 +115,7 @@ class ContextBuilder:
                     )
 
         # 3. Matched learnings (keyword-based, org-scoped, boundary-isolated)
-        user_text = ""
-        for msg in reversed(messages):
-            if msg.get("role") == "user":
-                user_text = str(msg.get("content", ""))
-                break
+        user_text = extract_user_text(messages)
 
         if (
             learning_store

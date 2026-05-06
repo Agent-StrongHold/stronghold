@@ -21,6 +21,7 @@ import logging
 from dataclasses import replace
 from typing import TYPE_CHECKING, Any, Literal, Protocol, cast, runtime_checkable
 
+from stronghold.agents.messages import extract_user_text
 from stronghold.types.model import ModelConfig, ProviderConfig
 from stronghold.types.reactor import Event
 
@@ -250,15 +251,10 @@ class Conduit:
             if intent_hint and intent_hint in c.config.task_types:
                 from stronghold.types.intent import Intent
 
-                user_text = ""
-                for m in reversed(messages):
-                    if m.get("role") == "user":
-                        user_text = str(m.get("content", ""))
-                        break
                 intent = Intent(
                     task_type=intent_hint,
                     classified_by="hint",
-                    user_text=user_text,
+                    user_text=extract_user_text(messages),
                 )
                 cs.set_output({"task_type": intent_hint, "classified_by": "hint"})
             else:
@@ -337,11 +333,7 @@ class Conduit:
         # ── 4b. Data sharing consent resolution ──
         if session_id and session_id in self._consent_pending:
             pending_provider = self._consent_pending.pop(session_id)
-            user_text = ""
-            for m in reversed(messages):
-                if m.get("role") == "user":
-                    user_text = str(m.get("content", "")).strip().lower()
-                    break
+            user_text = extract_user_text(messages).strip().lower()
             first_word = user_text.split()[0] if user_text else ""
             if first_word in _CONSENT_AFFIRMATIVE or user_text in _CONSENT_AFFIRMATIVE:
                 if session_id not in self._session_consents:

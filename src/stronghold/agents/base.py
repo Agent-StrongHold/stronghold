@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
+from stronghold.agents.messages import extract_user_text
 from stronghold.tracing.pipeline import PipelineTrace
 from stronghold.types.agent import AgentResponse
 
@@ -225,20 +226,7 @@ class Agent:
         )
 
         # 1. Extract user text for Warden scan
-        user_text = ""
-        for msg in reversed(messages):
-            if msg.get("role") == "user":
-                content = msg.get("content", "")
-                if isinstance(content, str):
-                    user_text = content
-                elif isinstance(content, list):
-                    # Multimodal: extract text parts only
-                    user_text = " ".join(
-                        p.get("text", "")
-                        for p in content
-                        if isinstance(p, dict) and p.get("type") == "text"
-                    )
-                break
+        user_text = extract_user_text(messages)
 
         # 2. Warden scan
         with trace.span("warden.user_input") as ws:
