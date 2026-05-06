@@ -33,10 +33,11 @@ The 7-tier memory model is treated in `main` as originating with CoinSwarm on Ja
 ## Reading order
 
 1. [`DESIGN.md`](./DESIGN.md) — thesis, gap analysis against the 7-tier model, what the Conduit becomes when it has a self.
-2. [`specs/`](./specs/) — individually reviewable specs for the durable personal memory layer. Start at [`specs/README.md`](./specs/README.md).
-3. [`sketches/`](./sketches/) — runnable scaffold. Library code + runtime layer + tests. 142 tests pass.
-4. [`RUNNING.md`](./RUNNING.md) — ops doc: how to run, inspect, and back up a research-box deployment.
-5. *(future)* `FINDINGS.md` — what worked, what didn't, what's too dangerous to land in `main`.
+2. [`autonoetic-self.md`](./autonoetic-self.md) — companion overview of the self-model content (personality, passions, hobbies, skills, preferences, todos, mood, activation graph). What the Conduit *is* when it has a self, alongside DESIGN.md's *why*.
+3. [`specs/`](./specs/) — individually reviewable specs. Start at [`specs/README.md`](./specs/README.md). Tranches 1–5 cover the memory layer, motivation, dreaming, and runtime. Tranche 6 (specs 22–30) covers the self-model.
+4. [`sketches/`](./sketches/) — runnable scaffold. Library code + runtime layer + tests.
+5. [`RUNNING.md`](./RUNNING.md) — ops doc: how to run, inspect, and back up a research-box deployment.
+6. *(future)* `FINDINGS.md` — what worked, what didn't, what's too dangerous to land in `main`.
 
 ## Running it
 

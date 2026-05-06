@@ -126,3 +126,217 @@ CREATE TABLE IF NOT EXISTS working_memory (
 
 CREATE INDEX IF NOT EXISTS idx_working_memory_self
     ON working_memory (self_id, priority DESC, created_at DESC);
+
+
+-- -------------------------------------------------------------- self-model --
+--
+-- Tables implementing specs 22-30 (Tranche 6). One global self per research
+-- deployment; `self_id` column is present on every table so audits can
+-- distinguish in the hypothetical multi-self future.
+
+
+-- 24 HEXACO facets per self.
+CREATE TABLE IF NOT EXISTS self_personality_facets (
+    node_id          TEXT PRIMARY KEY,
+    self_id          TEXT NOT NULL,
+    trait            TEXT NOT NULL,
+    facet_id         TEXT NOT NULL,
+    score            REAL NOT NULL CHECK (score >= 1.0 AND score <= 5.0),
+    last_revised_at  TEXT NOT NULL,
+    created_at       TEXT NOT NULL,
+    updated_at       TEXT NOT NULL,
+    UNIQUE (self_id, trait, facet_id)
+);
+
+
+-- 200 HEXACO-PI-R items. Shared across selves (static after seed).
+CREATE TABLE IF NOT EXISTS self_personality_items (
+    node_id          TEXT PRIMARY KEY,
+    self_id          TEXT NOT NULL,
+    item_number      INTEGER NOT NULL CHECK (item_number BETWEEN 1 AND 200),
+    prompt_text      TEXT NOT NULL,
+    keyed_facet      TEXT NOT NULL,
+    reverse_scored   INTEGER NOT NULL DEFAULT 0,
+    created_at       TEXT NOT NULL,
+    updated_at       TEXT NOT NULL,
+    UNIQUE (self_id, item_number)
+);
+
+
+-- Bootstrap + retest answers.
+CREATE TABLE IF NOT EXISTS self_personality_answers (
+    node_id             TEXT PRIMARY KEY,
+    self_id             TEXT NOT NULL,
+    item_id             TEXT NOT NULL,
+    revision_id         TEXT,
+    answer_1_5          INTEGER NOT NULL CHECK (answer_1_5 BETWEEN 1 AND 5),
+    justification_text  TEXT NOT NULL,
+    asked_at            TEXT NOT NULL,
+    created_at          TEXT NOT NULL,
+    updated_at          TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_answers_self_asked
+    ON self_personality_answers (self_id, asked_at DESC);
+
+
+-- Weekly retest snapshots.
+CREATE TABLE IF NOT EXISTS self_personality_revisions (
+    node_id            TEXT PRIMARY KEY,
+    self_id            TEXT NOT NULL,
+    revision_id        TEXT NOT NULL UNIQUE,
+    ran_at             TEXT NOT NULL,
+    sampled_item_ids   TEXT NOT NULL,          -- JSON array length == 20
+    deltas_by_facet    TEXT NOT NULL,          -- JSON object facet -> float
+    created_at         TEXT NOT NULL,
+    updated_at         TEXT NOT NULL
+);
+
+
+CREATE TABLE IF NOT EXISTS self_passions (
+    node_id            TEXT PRIMARY KEY,
+    self_id            TEXT NOT NULL,
+    text               TEXT NOT NULL,
+    strength           REAL NOT NULL CHECK (strength BETWEEN 0.0 AND 1.0),
+    rank               INTEGER NOT NULL CHECK (rank >= 0),
+    first_noticed_at   TEXT NOT NULL,
+    created_at         TEXT NOT NULL,
+    updated_at         TEXT NOT NULL,
+    UNIQUE (self_id, rank)
+);
+
+
+CREATE TABLE IF NOT EXISTS self_hobbies (
+    node_id            TEXT PRIMARY KEY,
+    self_id            TEXT NOT NULL,
+    name               TEXT NOT NULL,
+    description        TEXT NOT NULL,
+    last_engaged_at    TEXT,
+    created_at         TEXT NOT NULL,
+    updated_at         TEXT NOT NULL,
+    UNIQUE (self_id, name)
+);
+
+
+CREATE TABLE IF NOT EXISTS self_interests (
+    node_id            TEXT PRIMARY KEY,
+    self_id            TEXT NOT NULL,
+    topic              TEXT NOT NULL,
+    description        TEXT NOT NULL,
+    last_noticed_at    TEXT,
+    created_at         TEXT NOT NULL,
+    updated_at         TEXT NOT NULL,
+    UNIQUE (self_id, topic)
+);
+
+
+CREATE TABLE IF NOT EXISTS self_preferences (
+    node_id            TEXT PRIMARY KEY,
+    self_id            TEXT NOT NULL,
+    kind               TEXT NOT NULL CHECK (kind IN ('like', 'dislike', 'favorite', 'avoid')),
+    target             TEXT NOT NULL,
+    strength           REAL NOT NULL CHECK (strength BETWEEN 0.0 AND 1.0),
+    rationale          TEXT NOT NULL,
+    created_at         TEXT NOT NULL,
+    updated_at         TEXT NOT NULL,
+    UNIQUE (self_id, kind, target)
+);
+
+
+CREATE TABLE IF NOT EXISTS self_skills (
+    node_id              TEXT PRIMARY KEY,
+    self_id              TEXT NOT NULL,
+    name                 TEXT NOT NULL,
+    kind                 TEXT NOT NULL CHECK (kind IN ('intellectual', 'physical', 'habit', 'social')),
+    stored_level         REAL NOT NULL CHECK (stored_level BETWEEN 0.0 AND 1.0),
+    decay_rate_per_day   REAL NOT NULL CHECK (decay_rate_per_day > 0.0),
+    last_practiced_at    TEXT NOT NULL,
+    created_at           TEXT NOT NULL,
+    updated_at           TEXT NOT NULL,
+    UNIQUE (self_id, name)
+);
+
+
+CREATE TABLE IF NOT EXISTS self_todos (
+    node_id              TEXT PRIMARY KEY,
+    self_id              TEXT NOT NULL,
+    text                 TEXT NOT NULL,
+    motivated_by_node_id TEXT NOT NULL,
+    status               TEXT NOT NULL DEFAULT 'active'
+                          CHECK (status IN ('active', 'completed', 'archived')),
+    outcome_text         TEXT,
+    created_at           TEXT NOT NULL,
+    updated_at           TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_self_todos_active
+    ON self_todos (self_id, status, created_at);
+
+
+CREATE TABLE IF NOT EXISTS self_todo_revisions (
+    node_id        TEXT PRIMARY KEY,
+    self_id        TEXT NOT NULL,
+    todo_id        TEXT NOT NULL,
+    revision_num   INTEGER NOT NULL CHECK (revision_num >= 1),
+    text_before    TEXT NOT NULL,
+    text_after     TEXT NOT NULL,
+    revised_at     TEXT NOT NULL,
+    created_at     TEXT NOT NULL,
+    updated_at     TEXT NOT NULL,
+    UNIQUE (todo_id, revision_num)
+);
+
+-- Block updates and deletes on the revision table (append-only).
+CREATE TRIGGER IF NOT EXISTS self_todo_revisions_no_update
+    BEFORE UPDATE ON self_todo_revisions
+BEGIN
+    SELECT RAISE(ABORT, 'self_todo_revisions is append-only');
+END;
+
+CREATE TRIGGER IF NOT EXISTS self_todo_revisions_no_delete
+    BEFORE DELETE ON self_todo_revisions
+BEGIN
+    SELECT RAISE(ABORT, 'self_todo_revisions is append-only');
+END;
+
+
+CREATE TABLE IF NOT EXISTS self_mood (
+    self_id       TEXT PRIMARY KEY,
+    valence       REAL NOT NULL CHECK (valence BETWEEN -1.0 AND 1.0),
+    arousal       REAL NOT NULL CHECK (arousal BETWEEN 0.0 AND 1.0),
+    focus         REAL NOT NULL CHECK (focus BETWEEN 0.0 AND 1.0),
+    last_tick_at  TEXT NOT NULL,
+    updated_at    TEXT NOT NULL
+);
+
+
+CREATE TABLE IF NOT EXISTS self_activation_contributors (
+    node_id         TEXT PRIMARY KEY,
+    self_id         TEXT NOT NULL,
+    target_node_id  TEXT NOT NULL,
+    target_kind     TEXT NOT NULL,
+    source_id       TEXT NOT NULL,
+    source_kind     TEXT NOT NULL,
+    weight          REAL NOT NULL CHECK (weight BETWEEN -1.0 AND 1.0),
+    origin          TEXT NOT NULL CHECK (origin IN ('self', 'rule', 'retrieval')),
+    rationale       TEXT NOT NULL,
+    expires_at      TEXT,
+    retracted_by    TEXT,
+    created_at      TEXT NOT NULL,
+    updated_at      TEXT NOT NULL,
+    CHECK (target_node_id <> source_id),
+    CHECK ((origin = 'retrieval') = (expires_at IS NOT NULL))
+);
+
+CREATE INDEX IF NOT EXISTS idx_activation_target
+    ON self_activation_contributors (target_node_id, expires_at);
+
+
+-- Bootstrap progress checkpoint (self-bootstrap resume support).
+CREATE TABLE IF NOT EXISTS self_bootstrap_progress (
+    self_id           TEXT PRIMARY KEY,
+    seed              INTEGER,
+    last_item_number  INTEGER NOT NULL DEFAULT 0,
+    started_at        TEXT NOT NULL,
+    updated_at        TEXT NOT NULL
+);

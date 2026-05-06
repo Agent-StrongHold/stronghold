@@ -59,10 +59,130 @@ Read in order. Later specs depend on earlier ones.
 | 20 | [`runtime-reactor.md`](./runtime-reactor.md) | Blocking-tick + ThreadPoolExecutor side channel. Deliberate divergence from main's asyncio. FakeReactor for tests. | — |
 | 21 | [`observability.md`](./observability.md) | v1 Prometheus metric contract. Inspect CLI read-only subcommands. Smoke mode acceptance criteria. | all |
 
+### Self-model (Tranche 6 — durable content of the autonoetic self)
+
+The self-model — what the Turing Conduit knows about itself between requests — above and beyond episodic memory. Companion overview at [`../autonoetic-self.md`](../autonoetic-self.md).
+
+| # | Spec | Scope | Depends on |
+|---|---|---|---|
+| 22 | [`self-schema.md`](./self-schema.md) | Tables and value types for all self-model nodes: personality facets, passions, hobbies, interests, preferences, skills, todos, mood, activation contributors. | 1, 2 |
+| 23 | [`personality.md`](./personality.md) | HEXACO-24 profile. Random bootstrap draw, 200-item HEXACO-PI-R seed, weekly 20-item re-test weighted by time-since-last-asked, narrative revision via the activation graph. | 22 |
+| 24 | [`self-nodes.md`](./self-nodes.md) | Passions, hobbies, interests, preferences, skills. Bootstrap-empty, accrete via self-authored `note_*` tools. Skill decay applied on read: `level × exp(-rate × days)`. | 22 |
+| 25 | [`activation-graph.md`](./activation-graph.md) | Contributor edges (`target, source, weight, origin, rationale`). `active_now(node) = sigmoid(Σ weight × source_state / SCALE)`. Origins: self / rule / retrieval (TTL-bounded). Conflict via counter-contributors. | 22, 23, 24 |
+| 26 | [`self-todos.md`](./self-todos.md) | Self-authored todos with required `motivated_by_node_id`. Append-only revision history. Completion mints AFFIRMATION + reinforces motivator via a contributor edge. | 22, 24 |
+| 27 | [`mood.md`](./mood.md) | `(valence, arousal, focus)` singleton. Hourly decay toward neutral; event nudges (tool success/fail, AFFIRMATION/REGRET mints, todo completion, Warden alerts). Phase-1: affects tone only. | 22, 2 |
+| 28 | [`self-surface.md`](./self-surface.md) | Self-tool registry, `recall_self()` deep read, 4-line minimal prompt block (identity + mood + active todos + dominant passion). First-person framing throughout. | 22, 23, 24, 25, 26, 27 |
+| 29 | [`self-bootstrap.md`](./self-bootstrap.md) | `stronghold bootstrap-self` CLI. Random HEXACO draw → 200 Likert LLM answers with justifications → 24 facets + 1 mood + empty everything else. Idempotent per `self_id`; resumable. | 22, 23, 24, 27, 8 |
+| 30 | [`self-as-conduit.md`](./self-as-conduit.md) | First-person routing pipeline: Warden → minimal block + retrieval contributors → perception (LLM + possible `recall_self`) → decision (`reply_directly` / `delegate` / `ask_clarifying` / `decline`) → dispatch → observation (self-model updates, mood nudges). Replaces the stateless Conduit for the Turing branch. | 22, 23, 24, 25, 26, 27, 28, 29, 9, 16, 17 |
+
+### Tranche 7 (planning — not yet implemented)
+
+Closes Tranche 6 implementation gaps and lands the audit's guardrails in dependency order. Plan doc: [`../PLAN-tranche-7.md`](../PLAN-tranche-7.md). Audit: [`../AUDIT-self-model-guardrails.md`](../AUDIT-self-model-guardrails.md).
+
+**7.0 — Foundation closure** (critical impl gaps from F35–F39)
+
+| # | Spec | Scope | Depends on |
+|---|---|---|---|
+| 31 | [`self-tool-registry.md`](./self-tool-registry.md) | `SelfTool` dataclass + `SELF_TOOL_REGISTRY` + `register_self_tool`; implementations of `write_contributor`, `record_personality_claim`, `retract_contributor_by_counter`. | 28, 18 |
+| 32 | [`memory-mirroring.md`](./memory-mirroring.md) | `self_memory_bridge.py` wraps write-paths for every self-model write-site; closes ~10 spec ACs that specified memory mirrors but were silently ignored. | 1, 2, 4, 31 |
+| 33 | [`self-schedules.md`](./self-schedules.md) | Reactor interval triggers for `tick_mood_decay` (hourly) and `run_personality_retest` (weekly), registered at bootstrap finalize. | 20, 27, 23, 29, 32 |
+| 34 | [`memory-source-state.md`](./memory-source-state.md) | Wire `source_kind = "memory"` to real `memory.weight`; restore "REGRET > OBSERVATION" invariant in activation graph. | 1, 2, 25, 8 |
+| 35 | [`self-write-preconditions.md`](./self-write-preconditions.md) | Bootstrap-complete check on every write-tool; `active_now` 30s cache with invalidation; `acting_self_id` on repo mutators. | 22, 29, 28, 25 |
+
+**7.1 — Boundary hardening** (guardrails G1, G2, G5, G17)
+
+| # | Spec | Scope | Depends on |
+|---|---|---|---|
+| 36 | [`warden-on-self-writes.md`](./warden-on-self-writes.md) | Warden scan (tool-result posture) on every self-authored text write; block mirrors as OBSERVATION. | 31, 32 |
+| 37 | [`self-write-budgets.md`](./self-write-budgets.md) | Per-request caps: 3 new nodes / 5 contributors / 2 todo-writes / 3 personality claims. | 31, 35 |
+| 38 | [`retrieval-contributor-cap.md`](./retrieval-contributor-cap.md) | Top-K ≤ 8 retrieval contributors per target; Σ\|weight\| ≤ 1.0 per target per request. | 25, 16, 44 |
+| 39 | [`forensic-tagging.md`](./forensic-tagging.md) | `request_hash` + `perception_tool_call_id` context vars stamp every self-write via the memory bridge. | 32, 31, 44 |
+
+**7.2 — Drift bounds** (G3, G4, G6, G10)
+
+| # | Spec | Scope | Depends on |
+|---|---|---|---|
+| 40 | [`facet-drift-budget.md`](./facet-drift-budget.md) | Rolling 7-day and 90-day Δ caps per facet; `apply_retest` clips; OPINION memory on clip. | 23, 33, 32 |
+| 41 | [`narrative-claim-rate-limit.md`](./narrative-claim-rate-limit.md) | ≤ 3 `record_personality_claim` per facet per rolling 7 days. | 23, 31, 32 |
+| 42 | [`mood-rolling-sum-guard.md`](./mood-rolling-sum-guard.md) | Cap cumulative \|delta\| per mood dim per rolling 7 days; over-cap still mirrors, doesn't mutate. | 27, 33, 32 |
+| 43 | [`skill-honesty-invariant.md`](./skill-honesty-invariant.md) | `practice_skill(new_level > stored_level)` requires a same-request supporting OBSERVATION/ACCOMPLISHMENT. | 24, 32, 39 |
+
+**7.3 — Self-as-Conduit runtime** (closes F39, F40)
+
+| # | Spec | Scope | Depends on |
+|---|---|---|---|
+| 44 | [`conduit-runtime.md`](./conduit-runtime.md) | Implementation of spec 30's full perception → decision → dispatch → observation pipeline. Per-self advisory lock with watchdog. | 30, 31, 32, 33, 35, 37, 38, 39, 17, 36 |
+| 45 | [`conduit-mode-shim.md`](./conduit-mode-shim.md) | `CONDUIT_MODE = "stateless" \| "self"` config flag; default stateless during rollout. | 44, 17 |
+
+**7.4 — Operator oversight** (G12, G13, G14, G15, G16, G18)
+
+| # | Spec | Scope | Depends on |
+|---|---|---|---|
+| 46 | [`operator-review-gate.md`](./operator-review-gate.md) | Self-authored facet/passion contributors route to `self_contributor_pending`; weekly digest + CLI ack. | 25, 31, 32, 39 |
+| 47 | [`repo-self-id-enforcement.md`](./repo-self-id-enforcement.md) | `acting_self_id` parameter on every `SelfRepo` mutator; FK from every self-model table to `self_identity`. | 22, 8, 35 |
+| 48 | [`bootstrap-seed-registry.md`](./bootstrap-seed-registry.md) | Refuse reused HEXACO seeds by default; sign bootstrap-complete memory with operator HMAC; tamper → read-only mode. | 29, 8, 32 |
+| 49 | [`self-tool-import-firewall.md`](./self-tool-import-firewall.md) | `importlib` meta-path finder blocks imports of `SELF_TOOL_REGISTRY` from non-self modules. | 31 |
+
+**7.5 — Growth and operational** (G7, G8, G9, G11)
+
+| # | Spec | Scope | Depends on |
+|---|---|---|---|
+| 50 | [`retrieval-contributor-gc.md`](./retrieval-contributor-gc.md) | Scheduled sweep + opportunistic-on-read GC of expired retrieval contributors. | 25, 20, 33 |
+| 51 | [`per-kind-node-caps.md`](./per-kind-node-caps.md) | Hard caps per kind; at-cap `note_*` archives lowest-`active_now` existing row. | 24, 25, 32, 35 |
+| 52 | [`near-duplicate-review.md`](./near-duplicate-review.md) | Cosine-similar `note_*` texts flag for merge-review; 0.5× activation multiplier until operator resolves. | 24, 16, 46, 32 |
+| 53 | [`revision-compaction.md`](./revision-compaction.md) | Weekly compaction of `self_todo_revisions` and `self_personality_answers`. | 26, 23, 20 |
+### Autonoetic completion (Tranche 7 — Phase 2)
+
+| # | Spec | Scope | Depends on |
+|---|-------|--------|------------|
+| 31 | [`source-monitoring.md`](./source-monitoring.md) | First-person validation at write boundary, perspective reconstruction, stance owner enforcement. Closes DESIGN §4.1 + §4.4. | 1, 22 |
+| 32 | [`memory-source-state.md`](./memory-source-state.md) | Wire episodic/durable memory weights into activation graph source_state. Closes F30. | 25 |
+| 33 | [`activation-cache.md`](./activation-cache.md) | 30-second TTL cache on active_now(), invalidated on contributor writes. Closes F29. | 25 |
+| 34 | [`contradiction-regret.md`](./contradiction-regret.md) | Mint OPINION on every contradicted stance, REGRET when thresholds met. Closes DESIGN §4.5. | 4 |
+
+### Proactive expansion (Tranche 8 — Phase 3)
+
+| # | Spec | Scope | Depends on |
+|---|-------|--------|------------|
+| 35 | [`newsletter-reader.md`](./newsletter-reader.md) | Read-only scanner for HuggingFace-deposited newsletter summaries in Obsidian vault. No email access. | 18 |
+| 36 | [`obsidian-post.md`](./obsidian-post.md) | Markdown → WordPress poster for public persona statements at agentstronghold.com. | 18 |
+| 37 | [`stronghold-litellm.md`](./stronghold-litellm.md) | Dynamic model discovery from Stronghold LiteLLM proxy, merge with static pools.yaml. | 19 |
+| 38 | [`tool-wiring.md`](./tool-wiring.md) | Wire all scaffolded tools into runtime: newsletter scanner, WordPress, search, stronghold discovery. | 18, 35, 36, 37 |
+
+### Guardrails (Tranche 9 — Phase 1)
+
+| # | Spec | Scope | Depends on |
+|---|-------|--------|------------|
+| 39 | [`guardrails.md`](./guardrails.md) | 18 invariants (G1–G18): boundary hardening, drift bounds, operator oversight, growth caps. Closes all 34 audit findings F1–F34. | 25, 27, 28, 22, 23 |
+
+### Conversations & Bootstrap (Tranche 10 — Phase 4)
+
+| # | Spec | Scope | Depends on |
+|---|-------|--------|------------|
+| 54 | [`conversation-threads.md`](./conversation-threads.md) | Conversation tracking, per-user identity, daily thread quotas (1 agent-created thread per user per day, midnight US Central). `conversations`, `conversation_messages`, `conversation_quotas` tables. | 17, 9 |
+| 55 | [`proactive-outbound.md`](./proactive-outbound.md) | Agent-initiated conversations and messages via OpenWebUI API. Outbound dispatch at P20-P30. OpenWebUI client, retry logic, quota-aware delivery. | 54, 17, 9 |
+| 56 | [`interactive-bootstrap.md`](./interactive-bootstrap.md) | Multi-phase bootstrap conversation (20 user questions, 20 agent guidance, 5 self-description, name selection). Per-facet multipliers on-read (24 dials). Three laws of robotics in system prompt. HEXACO population norms + 6 archetypes. | 54, 55, 23, 29 |
+
+### Memory layer extensions (Tranche 11 — buildable on Tranche 1)
+
+Four specs that extend the memory substrate: world-time validity distinct from learning-time, time-travel retrieval, per-source identity with emergent reliability, and load-bearing-fact cascade re-evaluation. Each is independently reviewable and lands behind a migration. Graph-DB extensions for the deepest traversals are deferred to Stronghold issue #1233.
+
+| # | Spec | Scope | Depends on |
+|---|-------|--------|------------|
+| 57 | [`bi-temporal-validity.md`](./bi-temporal-validity.md) | `valid_from` / `valid_to` columns distinct from `created_at`. Permitted only on non-self-implicating tiers. Predecessor `valid_to` set on supersession when previously None and successor has a world-time anchor. | 1, 2, 8 |
+| 58 | [`as-of-retrieval.md`](./as-of-retrieval.md) | Read-only retrieval mode returning the memories the Conduit would have surfaced at past time `t`. Visibility predicate combines `created_at`, `valid_from` / `valid_to`, supersession chain, and soft-delete. | 6, 16, 8, 57 |
+| 59 | [`source-identity-and-reliability.md`](./source-identity-and-reliability.md) | `source_identity` table with emergent reliability scalar from regret history. Feeds retrieval ranking, contradiction-detection threshold, and a regret-on-regret LESSON path when a source crosses a sustained-unreliability floor. | 1, 2, 4, 8, 18, 57 |
+| 60 | [`regret-severity-and-load-bearing.md`](./regret-severity-and-load-bearing.md) | REGRET weight scales by `(hold_days, citation_count)`. `memory_reeval_queue` flags downstream citers within `REEVAL_MAX_HOPS`. P11 detector drains queue as ingestion candidates; flagged facts are not auto-invalidated. | 1, 2, 4, 53, 57, 58, 59 |
+
 ## Deferred
 
 - **Additional detectors** — `learning_extraction`, `affirmation_candidacy`, `prospection`. Pattern is established by `detectors/contradiction.md`; individual specs will land alongside implementations.
-- **Personality / interests / hobbies / passions / likes-dislikes / favorites / personal skill development** — separately discussed; specs to follow.
+- **Mood affects decisions** — Phase-2 coupling of mood to routing / model choice / Warden thresholds. Specified as deferred in [`mood.md`](./mood.md) Q27.4.
+- **Multi-self reconciliation** — [`../DESIGN.md`](../DESIGN.md) §6.4.
+- **Sentinel × self-output interaction** — how Sentinel treats `reply_directly` outputs.
+- **Graph-DB extensions for deep traversal** — Apache AGE / pgRouting research for `count_downstream_citers` walks, regret-cascade chains, and `(entity, predicate)` validity windows. Tracked in Stronghold issue #1233.
+- **Per-(source, predicate) reliability** — Q59.1; deferred until per-source scalar is shown insufficient.
+- **Soft-delete `deleted_at`** — Q58.2; sibling spec to land before spec 58 implements.
 
 ## Non-goals (all specs)
 
