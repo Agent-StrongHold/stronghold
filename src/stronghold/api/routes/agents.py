@@ -15,6 +15,16 @@ from stronghold.types.errors import QuotaExhaustedError
 
 router = APIRouter(prefix="/v1/stronghold")
 
+# Canonical map from user-supplied hostname → allowlisted hostname.
+# Using the dict VALUE (not the user-controlled key) in HTTP requests breaks
+# CodeQL's taint flow from user input to the network destination.
+_ALLOWED_IMPORT_HOSTS: dict[str, str] = {
+    "github.com": "github.com",
+    "codeload.github.com": "codeload.github.com",
+    "raw.githubusercontent.com": "raw.githubusercontent.com",
+    "objects.githubusercontent.com": "objects.githubusercontent.com",
+}
+
 
 @router.post("/request")
 async def structured_request(request: Request) -> JSONResponse:
@@ -414,14 +424,10 @@ async def import_agent_from_url(request: Request) -> JSONResponse:
         raise HTTPException(status_code=400, detail="URL path must be absolute")
 
     # Restrict outbound fetches to approved Git hosting domains.
-    # This prevents user-controlled arbitrary destinations (full SSRF).
-    allowed_hosts = {
-        "github.com",
-        "codeload.github.com",
-        "raw.githubusercontent.com",
-        "objects.githubusercontent.com",
-    }
-    if host not in allowed_hosts:
+    # canonical_host comes from the dict VALUE (a module-level constant), not
+    # from user-supplied input — this breaks CodeQL's SSRF taint flow.
+    canonical_host = _ALLOWED_IMPORT_HOSTS.get(host)
+    if canonical_host is None:
         raise HTTPException(status_code=400, detail="Host is not allowed for import")
 
     # Additional SSRF hardening: only allow known-safe URL path shapes per host.
@@ -460,8 +466,10 @@ async def import_agent_from_url(request: Request) -> JSONResponse:
     except _socket.gaierror:
         pass  # Let httpx handle DNS errors
 
-    # Reconstruct URL from validated parsed components to break taint flow
-    safe_url = f"https://{parsed.hostname}{parsed.path}"
+    # Reconstruct URL from the canonical (constant-sourced) host and validated
+    # parsed components. Using canonical_host (from _ALLOWED_IMPORT_HOSTS value)
+    # rather than parsed.hostname keeps the host out of CodeQL's taint graph.
+    safe_url = f"https://{canonical_host}{parsed.path}"
     if parsed.query:
         safe_url += f"?{parsed.query}"
 
