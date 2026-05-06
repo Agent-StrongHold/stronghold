@@ -254,63 +254,31 @@ jobs:
 
       - name: Start CI postgres
         run: |
-          PG_POD="ci-postgres-${{ github.run_id }}"
-          if command -v docker >/dev/null 2>&1; then
-            # Docker available (non-k3s or DinD env)
-            docker rm -f ci-postgres 2>/dev/null || true
-            docker run -d --name ci-postgres \
-              -e POSTGRES_USER=stronghold \
-              -e POSTGRES_PASSWORD=stronghold \
-              -e POSTGRES_DB=stronghold \
-              -p 5433:5432 \
-              pgvector/pgvector:pg17
-            echo "POSTGRES_VIA=docker" >> "$GITHUB_ENV"
-          elif command -v nerdctl >/dev/null 2>&1; then
-            nerdctl rm -f ci-postgres 2>/dev/null || true
-            nerdctl run -d --name ci-postgres \
-              -e POSTGRES_USER=stronghold \
-              -e POSTGRES_PASSWORD=stronghold \
-              -e POSTGRES_DB=stronghold \
-              -p 5433:5432 \
-              pgvector/pgvector:pg17
-            echo "POSTGRES_VIA=nerdctl" >> "$GITHUB_ENV"
-          elif command -v kubectl >/dev/null 2>&1; then
-            # k3s cluster — spin up an ephemeral pod and port-forward
-            kubectl delete pod "$PG_POD" --ignore-not-found --wait=false 2>/dev/null || true
-            kubectl run "$PG_POD" \
-              --image=pgvector/pgvector:pg17 \
-              --env="POSTGRES_USER=stronghold" \
-              --env="POSTGRES_PASSWORD=stronghold" \
-              --env="POSTGRES_DB=stronghold" \
-              --restart=Never
-            kubectl wait "pod/$PG_POD" --for=condition=Ready --timeout=90s
-            kubectl port-forward "pod/$PG_POD" 5433:5432 &
-            echo "$!" > /tmp/pg-pf.pid
-            echo "POSTGRES_VIA=kubectl" >> "$GITHUB_ENV"
-            echo "PG_POD=$PG_POD" >> "$GITHUB_ENV"
-            sleep 3
-          else
-            echo "::error::No container runtime available (tried docker, nerdctl, kubectl)"
-            exit 1
-          fi
+          # Install postgres + pgvector natively — avoids container port-mapping
+          # issues on k3s runners where docker iptables FORWARD rules are blocked.
+          sudo apt-get install -y -qq postgresql postgresql-common
+          PG_VER=$(pg_lsclusters -h 2>/dev/null | awk 'NR==1{print $1}')
+          PG_VER=${PG_VER:-$(ls /etc/postgresql/ 2>/dev/null | sort -V | tail -1)}
+          PG_VER=${PG_VER:-15}
+          # Install pgvector (required for vector(768) columns in migrations)
+          sudo apt-get install -y -qq "postgresql-${PG_VER}-pgvector" 2>/dev/null || \
+            sudo apt-get install -y -qq postgresql-pgvector 2>/dev/null || true
+          sudo service postgresql start
           echo "Waiting for postgres to be ready..."
-          READY=false
           for i in $(seq 1 30); do
-            if pg_isready -h localhost -p 5433 -U stronghold 2>/dev/null; then
+            if sudo -u postgres pg_isready 2>/dev/null; then
               echo "Postgres ready after ${i}s"
-              READY=true
               break
             fi
             sleep 1
           done
-          if [ "$READY" != "true" ]; then
-            echo "::error::Postgres failed to start within 30s"
-            exit 1
-          fi
+          sudo -u postgres createuser stronghold 2>/dev/null || true
+          sudo -u postgres psql -c "ALTER USER stronghold WITH PASSWORD 'stronghold';"
+          sudo -u postgres createdb stronghold --owner stronghold 2>/dev/null || true
 
       - name: Run all migrations
         env:
-          DATABASE_URL: postgresql://stronghold:stronghold@localhost:5433/stronghold
+          DATABASE_URL: postgresql://stronghold:stronghold@localhost/stronghold
         run: |
           # Run all migrations in a single connection to avoid inter-file
           # connection drops on resource-constrained k3s runners.
@@ -319,7 +287,7 @@ jobs:
       - name: "Tier 1: Tests (working branch push)"
         if: github.event_name == 'push'
         env:
-          DATABASE_URL: postgresql://stronghold:stronghold@localhost:5433/stronghold
+          DATABASE_URL: postgresql://stronghold:stronghold@localhost/stronghold
         run: |
           pytest tests/ -v --tb=short \
             --ignore=tests/e2e \
@@ -329,7 +297,7 @@ jobs:
       - name: "Tier 2: Tests + 85% coverage (PR to feature)"
         if: github.event_name == 'pull_request' && startsWith(github.base_ref, 'feature/')
         env:
-          DATABASE_URL: postgresql://stronghold:stronghold@localhost:5433/stronghold
+          DATABASE_URL: postgresql://stronghold:stronghold@localhost/stronghold
         run: |
           pytest tests/ -v --tb=short \
             --ignore=tests/e2e \
@@ -343,7 +311,7 @@ jobs:
       - name: "Tier 3: Full test suite + 90% coverage (PR to integration or main)"
         if: github.event_name == 'pull_request' && (github.base_ref == 'integration' || github.base_ref == 'main')
         env:
-          DATABASE_URL: postgresql://stronghold:stronghold@localhost:5433/stronghold
+          DATABASE_URL: postgresql://stronghold:stronghold@localhost/stronghold
         run: |
           pytest tests/ -v --tb=short \
             --ignore=tests/performance \
@@ -362,12 +330,4 @@ jobs:
 
       - name: Stop CI postgres
         if: always()
-        run: |
-          case "${POSTGRES_VIA:-docker}" in
-            docker)  docker rm -f ci-postgres 2>/dev/null || true ;;
-            nerdctl) nerdctl rm -f ci-postgres 2>/dev/null || true ;;
-            kubectl)
-              [ -f /tmp/pg-pf.pid ] && kill "$(cat /tmp/pg-pf.pid)" 2>/dev/null || true
-              kubectl delete pod "${PG_POD:-ci-postgres}" --ignore-not-found 2>/dev/null || true
-              ;;
-          esac
+        run: sudo service postgresql stop 2>/dev/null || true
