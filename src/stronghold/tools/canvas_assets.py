@@ -120,7 +120,10 @@ def _cosine(a: Sequence[float], b: Sequence[float]) -> float:
 # ---------------------------------------------------------------------------
 
 
-_SVG_SCRIPT_RE = re.compile(rb"<\s*script\b[^>]*>.*?<\s*/\s*script\b[^>]*>", re.IGNORECASE | re.DOTALL)
+_SVG_SCRIPT_RE = re.compile(
+    rb"<\s*script\b[^>]*>.*?<\s*/\s*script\b[^>]*>",
+    re.IGNORECASE | re.DOTALL,
+)
 
 
 def _sanitise_svg(blob: bytes) -> bytes:
