@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from stronghold.agents.messages import extract_user_text
 from stronghold.classifier.complexity import (
     automation_min_tier,
     estimate_complexity,
@@ -58,13 +59,7 @@ class ClassifierEngine:
     ) -> Intent:
         """Classify the user's intent."""
         # Extract user text from last user message
-        user_text = ""
-        for msg in reversed(messages):
-            if msg.get("role") == "user":
-                content = msg.get("content", "")
-                if isinstance(content, str):
-                    user_text = content
-                break
+        user_text = extract_user_text(messages)
 
         # Phase 1: Keyword scoring
         scores = score_keywords(user_text, task_types)

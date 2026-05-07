@@ -845,7 +845,7 @@ class TestSessionEndpoint:
             "organization_id": "acme",
             "team_id": "eng",
             "roles": ["user", "engineer"],
-            "iss": "stronghold-demo",
+            "iss": "stronghold-session",
             "aud": "stronghold",
             "iat": now,
             "exp": now + 3600,
@@ -876,7 +876,7 @@ class TestSessionEndpoint:
         claims = {
             "sub": "alice@example.com",
             "aud": "stronghold",
-            "iss": "stronghold-demo",
+            "iss": "stronghold-session",
             "iat": now - 7200,
             "exp": now - 3600,  # expired
         }

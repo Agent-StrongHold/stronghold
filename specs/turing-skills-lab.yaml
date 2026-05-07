@@ -1,0 +1,90 @@
+# Spec 1185: Skills Lab — AI-assisted Forge console
+#
+# Parent: UI Plan — Turing's Field Console (see specs/TURING-CONSOLE-README.md).
+# Backs the Skills Lab surface (`/dashboard/skills-lab`). The Lab is the
+# console surface for the existing Forge agent — the capability creator —
+# plus a small set of handler-facing endpoints for listing, requesting,
+# reviewing, and promoting skills.
+#
+# Backend is overwhelmingly the existing Forge + SkillRegistry infrastructure.
+# This spec adds the thin console route that sits over them; it does not
+# rewrite Forge.
+
+issue_number: 1185
+title: "Skills Lab — console over existing Forge + SkillRegistry (list / request / review / promote)"
+status: active
+complexity: M
+
+protocols_touched:
+  - SkillRegistry
+  - SkillForge               # existing Forge protocol
+  - AuditLog
+
+files_touched:
+  - src/stronghold/api/routes/skills_lab.py
+  - src/stronghold/types/skills_lab_api.py
+  - src/stronghold/dashboard/skills-lab.html
+  - src/stronghold/dashboard/components/skills-lab.jsx
+  - tests/api/test_skills_lab_routes.py
+
+acceptance_criteria:
+  - "GET /api/skills-lab/skills?tier=... returns skills filtered by trust tier (skull | T3 | T2 | T1 | T0); default is all tiers"
+  - "GET /api/skills-lab/skills/{id} returns full skill manifest (yaml frontmatter + markdown body + current trust tier + authoring history)"
+  - "POST /api/skills-lab/request invokes Forge with {description, target_tier=skull (always), constraints} and returns a pending skill at skull tier"
+  - "GET /api/skills-lab/pending returns skill requests currently in Forge's queue with status {running | awaiting_review | rejected}"
+  - "POST /api/skills-lab/skills/{id}/promote tier=NEW_TIER requires admin permission and a reason string; steps are skull → T3 → T2 → T1 (T0 is reserved for built-ins and rejected from this endpoint)"
+  - "POST /api/skills-lab/skills/{id}/demote tier=NEW_TIER demotes toward higher caution (e.g. T1 → T2); requires reason"
+  - "POST /api/skills-lab/skills/{id}/burn permanently removes a skill; requires reason + admin permission; burn is audit-logged and cannot be undone"
+  - "Every promote / demote / burn writes to AuditLog with {actor, skill_id, action, before_tier, after_tier, reason}"
+  - "Forge-authored skills arrive with a security-scan verdict attached; skills that failed scan cannot be promoted above skull via the API (reject 409)"
+  - "The console proxies and does not rewrite Forge's scan logic; all scans run inside the existing Forge implementation"
+  - "skills-lab.html mounts a React SkillsLab.App with four panels: Pending (Forge queue), Registry (by tier), Detail (manifest + actions), Request (new-skill form)"
+
+invariants:
+  - name: forge_authored_skills_start_at_skull
+    description: "Every skill produced via POST /api/skills-lab/request is persisted at trust_tier = skull"
+    kind: postcondition
+    expression: "new_skill.trust_tier == TrustTier.SKULL"
+    severity: critical
+
+  - name: security_scan_required_for_promotion
+    description: "A skill whose security-scan verdict is BLOCK cannot be promoted above skull"
+    kind: precondition
+    expression: "skill.scan.verdict != BLOCK OR promote() returns 409"
+    severity: critical
+
+  - name: promotion_is_single_step
+    description: "Each promote call advances at most one tier (skull→T3, T3→T2, T2→T1); skipping tiers returns 422"
+    kind: precondition
+    expression: "abs(current_tier.level - new_tier.level) <= 1 OR response.status == 422"
+    severity: high
+
+  - name: t0_never_settable_via_api
+    description: "The promote endpoint rejects NEW_TIER == T0 regardless of actor permissions"
+    kind: precondition
+    expression: "new_tier != TrustTier.T0 OR response.status == 403"
+    severity: critical
+
+  - name: burn_requires_reason
+    description: "burn() rejects requests without a non-empty reason"
+    kind: precondition
+    expression: "len(request.reason.strip()) > 0 OR response.status == 400"
+    severity: critical
+
+  - name: audit_entry_on_every_mutation
+    description: "Every 2xx POST to promote / demote / burn produces exactly one new AuditLog entry"
+    kind: postcondition
+    expression: "audit_log.count() == audit_log.count() + 1 after mutation"
+    severity: critical
+
+  - name: admin_only_mutations
+    description: "POST endpoints require dossier_write OR skills_promote permission; non-admin auth returns 403"
+    kind: precondition
+    expression: "'skills_promote' in caller.permissions OR response.status == 403"
+    severity: critical
+
+  - name: pending_queue_is_read_only
+    description: "GET /api/skills-lab/pending is read-only; there is no endpoint that modifies the Forge queue directly (reject/cancel go through Forge, not this console)"
+    kind: state_invariant
+    expression: "for /api/skills-lab/pending, allowed_methods == {GET}"
+    severity: high

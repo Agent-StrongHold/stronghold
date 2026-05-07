@@ -36,7 +36,6 @@ from stronghold.types.memory import Learning
 
 from ..fakes import FakeLLMClient
 
-
 # =====================================================================
 # CRITICAL: Multi-tenant isolation — PgAgentRegistry
 # =====================================================================
@@ -327,55 +326,62 @@ class TestHighArtificerMissingSecurity:
     OWASP: LLM01 (Prompt Injection), LLM06 (Excessive Agency)
     """
 
+    @staticmethod
+    def _artificer_security_surface() -> str:
+        """Return source of ArtificerStrategy + the ToolLoop it composes.
+
+        ArtificerStrategy delegates the per-tool-call security pipeline to
+        ``ToolLoop``; both modules together form the surface that must
+        contain the regression markers.
+        """
+        from stronghold.agents.artificer import strategy as artificer_mod
+        from stronghold.agents.strategies import tool_loop as tool_loop_mod
+
+        return inspect.getsource(artificer_mod) + inspect.getsource(tool_loop_mod)
+
     def test_h5_sentinel_pre_call_fires(self) -> None:
         """ArtificerStrategy invokes sentinel.pre_call() on tool arguments."""
-        from stronghold.agents.artificer import strategy as artificer_mod
-
-        source = inspect.getsource(artificer_mod)
+        source = self._artificer_security_surface()
         assert "pre_call" in source, (
-            "REGRESSION: sentinel.pre_call() missing from ArtificerStrategy. "
+            "REGRESSION: sentinel.pre_call() missing from Artificer pipeline. "
             "Tool args must be permission-checked and schema-validated."
         )
 
     def test_h5_sentinel_post_call_fires(self) -> None:
         """ArtificerStrategy invokes sentinel.post_call() on tool results."""
-        from stronghold.agents.artificer import strategy as artificer_mod
-
-        source = inspect.getsource(artificer_mod)
+        source = self._artificer_security_surface()
         assert "post_call" in source, (
-            "REGRESSION: sentinel.post_call() missing from ArtificerStrategy. "
+            "REGRESSION: sentinel.post_call() missing from Artificer pipeline. "
             "Tool results must pass through Warden scan + PII filter."
         )
 
     def test_h5_arg_size_limit_enforced(self) -> None:
         """ArtificerStrategy enforces the 32KB tool argument size limit."""
-        from stronghold.agents.artificer import strategy as artificer_mod
-
-        source = inspect.getsource(artificer_mod)
+        source = self._artificer_security_surface()
         has_check = (
             "32768" in source
             or "32_768" in source
             or "32 * 1024" in source
             or "_TOOL_ARGS_MAX_BYTES" in source
+            or "_MAX_ARG_BYTES" in source
         )
         assert has_check, (
-            "REGRESSION: 32KB arg size check missing from ArtificerStrategy. "
+            "REGRESSION: 32KB arg size check missing from Artificer pipeline. "
             "LLM could generate massive tool arguments (JSON bomb)."
         )
 
     def test_h5_result_truncation_enforced(self) -> None:
         """ArtificerStrategy truncates tool results over 16KB."""
-        from stronghold.agents.artificer import strategy as artificer_mod
-
-        source = inspect.getsource(artificer_mod)
+        source = self._artificer_security_surface()
         has_truncation = (
             "16384" in source
             or "16_384" in source
             or "16 * 1024" in source
             or "_TOOL_RESULT_MAX_BYTES" in source
+            or "_MAX_TOOL_RESULT_BYTES" in source
         )
         assert has_truncation, (
-            "REGRESSION: 16KB result truncation missing from ArtificerStrategy. "
+            "REGRESSION: 16KB result truncation missing from Artificer pipeline. "
             "Large tool results could exhaust the context window."
         )
 
@@ -440,14 +446,14 @@ class TestHighJWTKeyReuse:
         )
         assert "router_api_key" not in source, "Login must NOT use router_api_key for JWT signing."
 
-    def test_h7_demo_cookie_warns_but_does_not_reject_short_key(self) -> None:
-        """DemoCookieAuthProvider only warns on short keys, does not reject.
+    def test_h7_session_cookie_warns_but_does_not_reject_short_key(self) -> None:
+        """SessionCookieAuthProvider only warns on short keys, does not reject.
         This is a security weakness — short keys are brute-forceable.
         """
-        from stronghold.security.auth_demo_cookie import DemoCookieAuthProvider
+        from stronghold.security.auth_session_cookie import SessionCookieAuthProvider
 
         # BUG: short key only logs a warning, doesn't raise
-        provider = DemoCookieAuthProvider(api_key="too-short")
+        provider = SessionCookieAuthProvider(api_key="too-short")
         assert provider is not None, (
             "BUG CONFIRMED: short key accepted with only a warning. "
             "Fix: raise ValueError for keys < 32 bytes."

@@ -1,4 +1,4 @@
-"""Middleware: inject Authorization header from demo session cookie.
+"""Middleware: inject Authorization header from session cookie.
 
 Pure ASGI middleware (not BaseHTTPMiddleware) so that scope["headers"]
 is modified BEFORE Starlette constructs the Request object. This ensures
@@ -17,8 +17,8 @@ if TYPE_CHECKING:
     from starlette.types import ASGIApp, Receive, Scope, Send
 
 
-class DemoCookieMiddleware:
-    """Extract demo JWT from session cookie, inject auth header into ASGI scope."""
+class SessionCookieMiddleware:
+    """Extract session JWT from cookie, inject auth header into ASGI scope."""
 
     def __init__(self, app: ASGIApp) -> None:
         self.app = app
@@ -69,7 +69,7 @@ class DemoCookieMiddleware:
             await self.app(scope, receive, send)
             return
 
-        # Validate HS256 demo JWT
+        # Validate HS256 session JWT
         try:
             pyjwt.decode(
                 morsel.value,
@@ -81,13 +81,13 @@ class DemoCookieMiddleware:
             await self.app(scope, receive, send)
             return
 
-        # Valid demo session — inject the user's JWT as Authorization Bearer.
-        # The DemoCookieAuthProvider in the composite chain will decode it
+        # Valid session — inject the user's JWT as Authorization Bearer.
+        # The SessionCookieAuthProvider in the composite chain will decode it
         # and extract per-user claims (sub, org_id, team_id, roles).
         # CRITICAL: inject the JWT, NOT the raw API key. The API key would
         # grant SYSTEM_AUTH and discard the user's identity.
         new_headers = list(raw_headers)
-        new_headers.append((b"authorization", f"Bearer demo-jwt:{morsel.value}".encode()))
+        new_headers.append((b"authorization", f"Bearer session-jwt:{morsel.value}".encode()))
         scope["headers"] = new_headers
 
         await self.app(scope, receive, send)

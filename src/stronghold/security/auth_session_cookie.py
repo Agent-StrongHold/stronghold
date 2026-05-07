@@ -1,8 +1,8 @@
-"""Demo cookie authentication provider.
+"""Session cookie authentication provider.
 
 Validates HS256 JWTs signed with the router API key.
 Accepts tokens from two sources:
-  1. Authorization header: "Bearer demo-jwt:<token>" (injected by middleware)
+  1. Authorization header: "Bearer session-jwt:<token>" (injected by middleware)
   2. Session cookie (direct cookie reads, when headers are passed)
 """
 
@@ -14,26 +14,26 @@ import jwt as pyjwt
 
 from stronghold.types.auth import AuthContext, IdentityKind
 
-_PREFIX = "Bearer demo-jwt:"
+_PREFIX = "Bearer session-jwt:"
 
 
 _MIN_KEY_LENGTH = 32
-_logger = __import__("logging").getLogger("stronghold.auth.demo_cookie")
+_logger = __import__("logging").getLogger("stronghold.auth.session_cookie")
 
 
-class DemoCookieAuthProvider:
+class SessionCookieAuthProvider:
     """Authenticates via HS256 JWT from middleware-injected header or cookie.
 
     H5: This provider uses symmetric HS256 signing with the router API key.
     In production, configure JWKS_URL to enable RS256 JWT auth, which takes
-    priority in the composite auth chain. The demo cookie provider is then
+    priority in the composite auth chain. The session cookie provider is then
     only used for the built-in login page flow.
     """
 
     def __init__(self, api_key: str, cookie_name: str = "stronghold_session") -> None:
         if len(api_key) < _MIN_KEY_LENGTH:
             _logger.warning(
-                "DemoCookieAuthProvider: API key is %d bytes, minimum recommended "
+                "SessionCookieAuthProvider: API key is %d bytes, minimum recommended "
                 "is %d for HS256 security. Set a longer ROUTER_API_KEY.",
                 len(api_key),
                 _MIN_KEY_LENGTH,
@@ -59,7 +59,7 @@ class DemoCookieAuthProvider:
                 sc: SimpleCookie = SimpleCookie()
                 try:
                     sc.load(cookie_header)
-                except Exception:  # noqa: BLE001
+                except Exception:  # noqa: BLE001  # nosec B110 - malformed cookie treated as absent
                     pass
                 else:
                     morsel = sc.get(self._cookie_name)
@@ -67,7 +67,7 @@ class DemoCookieAuthProvider:
                         token = morsel.value
 
         if not token:
-            msg = "No demo session token"
+            msg = "No session token"
             raise ValueError(msg)
 
         try:
@@ -76,10 +76,10 @@ class DemoCookieAuthProvider:
                 self._key,
                 algorithms=["HS256"],
                 audience="stronghold",
-                issuer="stronghold-demo",
+                issuer="stronghold-session",
             )
         except pyjwt.PyJWTError as e:
-            msg = f"Invalid demo session: {e}"
+            msg = f"Invalid session: {e}"
             raise ValueError(msg) from e
 
         roles_raw = claims.get("roles", [])
@@ -92,5 +92,5 @@ class DemoCookieAuthProvider:
             org_id=claims.get("organization_id", ""),
             team_id=claims.get("team_id", ""),
             kind=IdentityKind.USER,
-            auth_method="demo_cookie",
+            auth_method="session_cookie",
         )

@@ -87,6 +87,10 @@ class Learning:
     hit_count: int = 0
     status: str = "active"
     id: int | None = None
+    rca_category: str | None = None
+    rca_prevention: str = ""
+    success_after_use: int = 0
+    failure_after_use: int = 0
 
 
 @dataclass

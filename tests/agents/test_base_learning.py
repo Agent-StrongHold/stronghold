@@ -424,6 +424,138 @@ class TestTraceFinalization:
         ]
 
 
+class TestOutcomeFeedbackLoop:
+    """Spec C: base.py calls learning_store.mark_outcome for injected learnings."""
+
+    @pytest.mark.asyncio
+    async def test_success_increments_success_counts_on_matched_learnings(self) -> None:
+        """Invariant: outcome_counts_learning — all injected ids get +1 on success."""
+        from stronghold.types.memory import Learning, MemoryScope
+
+        llm = FakeLLMClient()
+        store = InMemoryLearningStore()
+        # Pre-populate a learning that will match the user's query
+        await store.store(
+            Learning(
+                category="tool_correction",
+                trigger_keys=["bedroom", "light"],
+                learning="Use light.bedroom_lamp for bedroom",
+                tool_name="ha_control",
+                agent_id="test-learning-agent",
+                org_id="org-feedback",
+                scope=MemoryScope.AGENT,
+            )
+        )
+
+        llm.set_responses(
+            _tool_call_response("ha_control", {"entity_id": "light.bedroom_lamp"}),
+            _text_response("Done."),
+        )
+
+        agent = await _make_learning_agent(
+            llm=llm,
+            learning_store=store,
+            tool_executor=_always_succeed_executor,
+        )
+        auth = build_auth_context(org_id="org-feedback", team_id="team-fb")
+        result = await agent.handle(
+            [{"role": "user", "content": "turn on the bedroom light"}],
+            auth,
+        )
+
+        assert not result.blocked
+        matched = [lr for lr in store._learnings if "bedroom" in lr.trigger_keys]
+        assert matched, "expected the seeded learning to match"
+        assert matched[0].success_after_use >= 1
+        assert matched[0].failure_after_use == 0
+
+    @pytest.mark.asyncio
+    async def test_failure_increments_failure_counts(self) -> None:
+        """When the tool run fails, the injected learning's failure counter is bumped."""
+        from stronghold.types.memory import Learning, MemoryScope
+
+        llm = FakeLLMClient()
+        store = InMemoryLearningStore()
+        await store.store(
+            Learning(
+                category="tool_correction",
+                trigger_keys=["bedroom", "light"],
+                learning="Prefer light.bedroom_lamp",
+                tool_name="ha_control",
+                agent_id="test-learning-agent",
+                org_id="org-feedback",
+                scope=MemoryScope.AGENT,
+            )
+        )
+
+        # Two tool calls both error → outcome.success becomes False
+        async def _always_fail(tool_name: str, args: dict[str, Any]) -> str:
+            return "Error: hardware offline"
+
+        llm.set_responses(
+            _tool_call_response("ha_control", {"entity_id": "light.bedroom_lamp"}),
+            _tool_call_response(
+                "ha_control", {"entity_id": "light.bedroom"}, call_id="call-2"
+            ),
+            _text_response("Sorry, I couldn't do that."),
+        )
+
+        agent = await _make_learning_agent(
+            llm=llm,
+            learning_store=store,
+            tool_executor=_always_fail,
+        )
+        auth = build_auth_context(org_id="org-feedback", team_id="team-fb")
+        result = await agent.handle(
+            [{"role": "user", "content": "turn on the bedroom light"}],
+            auth,
+        )
+
+        assert not result.blocked
+        matched = [lr for lr in store._learnings if "bedroom" in lr.trigger_keys]
+        assert matched
+        assert matched[0].failure_after_use >= 1
+        assert matched[0].success_after_use == 0
+
+    @pytest.mark.asyncio
+    async def test_no_injected_learnings_no_mutation(self) -> None:
+        """Invariant: no_injection_no_change — no matches → no counter mutation."""
+        from stronghold.types.memory import Learning, MemoryScope
+
+        llm = FakeLLMClient()
+        store = InMemoryLearningStore()
+        # Seed a learning whose trigger keys do NOT match the query
+        await store.store(
+            Learning(
+                category="tool_correction",
+                trigger_keys=["kitchen", "oven"],
+                learning="Never leave oven on",
+                tool_name="ha_control",
+                agent_id="test-learning-agent",
+                org_id="org-feedback",
+                scope=MemoryScope.AGENT,
+            )
+        )
+
+        llm.set_responses(_text_response("Hi!"))
+
+        agent = await _make_learning_agent(
+            llm=llm,
+            learning_store=store,
+            tool_executor=_always_succeed_executor,
+        )
+        auth = build_auth_context(org_id="org-feedback", team_id="team-fb")
+        await agent.handle(
+            [{"role": "user", "content": "hello there friend"}],
+            auth,
+        )
+
+        unmatched = [lr for lr in store._learnings if "kitchen" in lr.trigger_keys]
+        assert unmatched
+        assert unmatched[0].success_after_use == 0
+        assert unmatched[0].failure_after_use == 0
+
+
 class TestNoLearningWithoutHistory:
     """No RCA extraction when all tools succeed."""
 

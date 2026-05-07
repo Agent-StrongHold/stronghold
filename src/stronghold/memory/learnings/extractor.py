@@ -8,10 +8,48 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 
 from stronghold.types.memory import Learning, MemoryScope
 
 logger = logging.getLogger("stronghold.extractor")
+
+RCA_CATEGORIES: frozenset[str] = frozenset(
+    {
+        "missing_precondition",
+        "tool_contract_mismatch",
+        "permission_gap",
+        "rate_limit",
+        "input_validation",
+        "ambiguous_intent",
+        "unknown",
+    }
+)
+
+_RCA_LINE_RE = re.compile(r"^\s*(CATEGORY|ROOT CAUSE|PREVENTION)\s*:\s*(.+?)\s*$", re.IGNORECASE)
+
+
+def _parse_rca_output(text: str) -> tuple[str, str]:
+    """Parse the LLM's RCA output.
+
+    Returns (category, prevention). Category is always a member of
+    RCA_CATEGORIES — unrecognized or absent categories become 'unknown'.
+    Prevention is the raw value or '' if missing.
+    """
+    category = "unknown"
+    prevention = ""
+    for line in text.splitlines():
+        m = _RCA_LINE_RE.match(line)
+        if not m:
+            continue
+        label = m.group(1).upper().replace(" ", "_")
+        value = m.group(2).strip()
+        if label == "CATEGORY":
+            normalized = value.lower().strip()
+            category = normalized if normalized in RCA_CATEGORIES else "unknown"
+        elif label == "PREVENTION":
+            prevention = value
+    return category, prevention
 
 
 class ToolCorrectionExtractor:
@@ -158,6 +196,8 @@ class RCAExtractor:
             f"User request: {user_text[:200]}\n\n"
             f"Failed tool calls:\n" + "\n".join(failure_summary) + "\n\n"
             "Respond in exactly this format:\n"
+            "CATEGORY: <one of: missing_precondition, tool_contract_mismatch, "
+            "permission_gap, rate_limit, input_validation, ambiguous_intent, unknown>\n"
             "ROOT CAUSE: <one sentence>\n"
             "PREVENTION: <one sentence describing how to avoid this in future>"
         )
@@ -169,6 +209,7 @@ class RCAExtractor:
         words = user_text.lower().split()
         trigger_keys = [w for w in words if len(w) > 2][:5]
         tool_names = list({str(f.get("tool_name", "")) for f in failures})
+        category, prevention = _parse_rca_output(rca_text)
 
         return Learning(
             category="rca",
@@ -177,6 +218,8 @@ class RCAExtractor:
             tool_name="|".join(tool_names),
             source_query=user_text[:200],
             scope=MemoryScope.AGENT,
+            rca_category=category,
+            rca_prevention=prevention,
         )
 
     async def _call_llm(self, prompt: str) -> str | None:

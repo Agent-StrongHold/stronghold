@@ -72,14 +72,17 @@ jobs:
 
       # Quality gates (issue #1035, #1036 — CI debt closeout)
 
-      - name: "Xenon complexity (warn-only baseline)"
-        # Rationale (#1036): current state has rank-E blocks (skills/fixer.py)
-        # and rank-D modules (agents/base.py, api/routes/admin.py). Shipping
-        # as warn-only for v1 rollout so CI goes green on merge; follow-up
-        # refactors will progressively tighten to --max-absolute C, then B.
-        # This mirrors pip-audit (also warn-only) and the staged rollout
-        # pattern in docs/test-quality-audit-and-ci-gate-proposal.md.
-        run: xenon --max-absolute C --max-modules C --max-average C src/stronghold/ || true
+      - name: "Xenon complexity — module/average gate (blocking)"
+        # Blocks if any module's average complexity reaches rank E/F, or the
+        # codebase average exceeds B. The two rank-F blocks (conduit.route_request
+        # score=103, agents/base.handle score=70) require dedicated refactoring
+        # tracked in issue #1036; block-level enforcement is informational below.
+        run: xenon --max-modules D --max-average B src/stronghold/
+
+      - name: "Xenon complexity — block level (informational)"
+        # Reports per-block violations without failing CI. Remove || true once
+        # the rank-F/E refactors in issue #1036 land.
+        run: xenon --max-absolute C src/stronghold/ || true
 
       - name: "Vulture dead-code (min confidence 100)"
         # Rationale (#1035): Protocol method parameters are "unused" by definition.
@@ -252,6 +255,8 @@ jobs:
       - name: Start CI postgres
         run: |
           docker rm -f ci-postgres 2>/dev/null || true
+          # Pre-pull so that the readiness timer isn't charged for network time.
+          docker pull pgvector/pgvector:pg17
           docker run -d --name ci-postgres \
             -e POSTGRES_USER=stronghold \
             -e POSTGRES_PASSWORD=stronghold \
@@ -261,7 +266,7 @@ jobs:
             pgvector/pgvector:pg17
           echo "Waiting for postgres to be ready..."
           READY=false
-          for i in $(seq 1 30); do
+          for i in $(seq 1 60); do
             if pg_isready -h localhost -p 5433 -U stronghold 2>/dev/null; then
               echo "Postgres ready after ${i}s"
               READY=true
@@ -270,8 +275,8 @@ jobs:
             sleep 1
           done
           if [ "$READY" != "true" ]; then
-            echo "::error::Postgres failed to start within 30s"
-            docker logs ci-postgres 2>&1 | tail -20
+            echo "::error::Postgres failed to start within 60s"
+            docker logs ci-postgres 2>&1 | tail -40
             exit 1
           fi
 

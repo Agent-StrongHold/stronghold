@@ -148,12 +148,12 @@ class Container:
 def _wire_auth(
     config: StrongholdConfig,
 ) -> tuple[StaticKeyAuthProvider, PermissionTable]:
-    """Wire auth provider chain: demo cookie → cookie (BFF) → JWT → static key."""
+    """Wire auth provider chain: session cookie → cookie (BFF) → JWT → static key."""
     from stronghold.security.auth_composite import CompositeAuthProvider  # noqa: PLC0415
-    from stronghold.security.auth_demo_cookie import DemoCookieAuthProvider  # noqa: PLC0415
+    from stronghold.security.auth_session_cookie import SessionCookieAuthProvider  # noqa: PLC0415
 
     static_auth = StaticKeyAuthProvider(api_key=config.router_api_key)
-    demo_cookie_auth = DemoCookieAuthProvider(
+    session_cookie_auth = SessionCookieAuthProvider(
         api_key=config.router_api_key,
         cookie_name=config.auth.session_cookie_name,
     )
@@ -167,7 +167,7 @@ def _wire_auth(
             issuer=config.auth.issuer,
             audience=config.auth.audience,
         )
-        providers: list[StaticKeyAuthProvider] = [demo_cookie_auth, jwt_auth, static_auth]  # type: ignore[list-item]
+        providers: list[StaticKeyAuthProvider] = [session_cookie_auth, jwt_auth, static_auth]  # type: ignore[list-item]
 
         if config.auth.client_id and config.auth.token_url:
             cookie_auth = CookieAuthProvider(
@@ -182,12 +182,12 @@ def _wire_auth(
 
         auth_provider: StaticKeyAuthProvider = CompositeAuthProvider(providers)  # type: ignore[assignment]
         logger.info(
-            "Auth: composite (demo + cookie + JWT + static key) — JWKS: %s",
+            "Auth: composite (session + cookie + JWT + static key) — JWKS: %s",
             config.auth.jwks_url,
         )
     else:
-        auth_provider = CompositeAuthProvider([demo_cookie_auth, static_auth])  # type: ignore[assignment]
-        logger.info("Auth: composite (demo cookie + static key)")
+        auth_provider = CompositeAuthProvider([session_cookie_auth, static_auth])  # type: ignore[assignment]
+        logger.info("Auth: composite (session cookie + static key)")
 
     permission_table = PermissionTable.from_config(config.permissions)
     return auth_provider, permission_table
@@ -448,6 +448,20 @@ async def create_container(config: StrongholdConfig) -> Container:
 
     coin_ledger = PgCoinLedger(db_pool, config) if db_pool else NoOpCoinLedger()
 
+    # Learning approval gate + promoter must exist before create_agents so each
+    # Agent receives the promoter at construction. Wiring them after create_agents
+    # leaves agent._learning_promoter as None and the auto-promotion path in
+    # Agent.handle silently no-ops.
+    from stronghold.memory.learnings.approval import LearningApprovalGate  # noqa: PLC0415
+    from stronghold.memory.learnings.promoter import LearningPromoter  # noqa: PLC0415
+
+    approval_gate = LearningApprovalGate()
+    learning_promoter = LearningPromoter(
+        learning_store,
+        threshold=config.learnings.promotion_threshold,
+        approval_gate=approval_gate,
+    )
+
     agents = await create_agents(
         agents_dir=agents_dir,
         prompt_manager=prompt_manager,
@@ -464,6 +478,8 @@ async def create_container(config: StrongholdConfig) -> Container:
         tracer=tracer,
         tool_executor=_tool_exec,
         sa_engine=sa_engine,
+        learning_promoter=learning_promoter,
+        tool_registry=tool_registry,
     )
 
     reactor = Reactor()
@@ -477,20 +493,6 @@ async def create_container(config: StrongholdConfig) -> Container:
     from stronghold.skills.canary import CanaryManager  # noqa: PLC0415
 
     canary_manager = CanaryManager()
-
-    # Learning approval gate
-    from stronghold.memory.learnings.approval import LearningApprovalGate  # noqa: PLC0415
-
-    approval_gate = LearningApprovalGate()
-
-    # Learning promoter (with approval gate)
-    from stronghold.memory.learnings.promoter import LearningPromoter  # noqa: PLC0415
-
-    learning_promoter = LearningPromoter(
-        learning_store,
-        threshold=5,
-        approval_gate=approval_gate,
-    )
 
     # MCP server registry + K8s deployer
     from stronghold.mcp.registry import MCPRegistry  # noqa: PLC0415

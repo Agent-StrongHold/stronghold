@@ -1,0 +1,5 @@
+[run]
+source = turing
+omit =
+    */turing/postgres_repo.py
+    */turing/runtime/smoke.py

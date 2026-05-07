@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from stronghold.agents.messages import extract_user_text
 from stronghold.types.agent import ReasoningResult
 
 
@@ -34,16 +35,9 @@ class DelegateStrategy:
                 delegate_to=None,
             )
 
-        # Extract user text for delegation
-        user_text = ""
-        for msg in reversed(messages):
-            if msg.get("role") == "user":
-                user_text = str(msg.get("content", ""))
-                break
-
         return ReasoningResult(
             response=None,
             done=False,
             delegate_to=target,
-            delegate_message=user_text,
+            delegate_message=extract_user_text(messages),
         )

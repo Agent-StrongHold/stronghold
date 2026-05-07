@@ -8,24 +8,21 @@ Covers every CRITICAL and HIGH finding from the audit:
   H2: Admin user ops missing org isolation
   H3: Strike management cross-org leak
   H4: Agent import zip path traversal (Zip Slip)
-  H5: DemoCookieAuthProvider HS256 with short API key
+  H5: SessionCookieAuthProvider HS256 with short API key
 """
 
 from __future__ import annotations
 
 import io
 import zipfile
-from unittest.mock import AsyncMock
 
 import pytest
 
 from stronghold.agents.store import InMemoryAgentStore
 from stronghold.memory.learnings.store import InMemoryLearningStore
-from stronghold.security.auth_demo_cookie import DemoCookieAuthProvider
+from stronghold.security.auth_session_cookie import SessionCookieAuthProvider
 from stronghold.security.strikes import InMemoryStrikeTracker
 from stronghold.sessions.store import validate_session_ownership
-from stronghold.types.auth import AuthContext, IdentityKind
-
 
 # ═══════════════════════════════════════════════════════════════
 # C1: Agent Import Trust Tier Bypass
@@ -328,32 +325,32 @@ class TestZipSlipProtection:
 
 
 # ═══════════════════════════════════════════════════════════════
-# H5: DemoCookieAuthProvider HS256 Security
+# H5: SessionCookieAuthProvider HS256 Security
 # ═══════════════════════════════════════════════════════════════
 
 
-class TestDemoCookieAuthSecurity:
-    """H5: Demo cookie auth must not be exploitable in production."""
+class TestSessionCookieAuthSecurity:
+    """H5: Session cookie auth must not be exploitable in production."""
 
     @pytest.mark.asyncio
     async def test_wrong_key_rejected(self) -> None:
         """JWT signed with wrong key must be rejected."""
         import jwt as pyjwt
 
-        provider = DemoCookieAuthProvider(
+        provider = SessionCookieAuthProvider(
             api_key="correct-production-key-at-least-32-bytes!",
         )
 
         # Sign with wrong key
         token = pyjwt.encode(
             {"sub": "attacker", "organization_id": "victim-org", "roles": ["admin"],
-             "aud": "stronghold", "iss": "stronghold-demo"},
+             "aud": "stronghold", "iss": "stronghold-session"},
             "wrong-key-that-attacker-guessed-12345678",
             algorithm="HS256",
         )
 
-        with pytest.raises(ValueError, match="Invalid demo session"):
-            await provider.authenticate(f"Bearer demo-jwt:{token}")
+        with pytest.raises(ValueError, match="Invalid session"):
+            await provider.authenticate(f"Bearer session-jwt:{token}")
 
     @pytest.mark.asyncio
     async def test_forged_org_id_with_correct_key(self) -> None:
@@ -365,7 +362,7 @@ class TestDemoCookieAuthSecurity:
         import jwt as pyjwt
 
         api_key = "shared-secret-key-at-least-32-bytes!!"
-        provider = DemoCookieAuthProvider(api_key=api_key)
+        provider = SessionCookieAuthProvider(api_key=api_key)
 
         # Forge a token claiming to be from a different org with admin role
         token = pyjwt.encode(
@@ -375,14 +372,14 @@ class TestDemoCookieAuthSecurity:
                 "roles": ["admin", "org_admin"],
                 "preferred_username": "admin@victim.com",
                 "aud": "stronghold",
-                "iss": "stronghold-demo",
+                "iss": "stronghold-session",
             },
             api_key,
             algorithm="HS256",
         )
 
         # This SUCCEEDS — documenting the risk
-        auth = await provider.authenticate(f"Bearer demo-jwt:{token}")
+        auth = await provider.authenticate(f"Bearer session-jwt:{token}")
         assert auth.org_id == "victim-org"
         assert auth.has_role("admin")
         # RISK: In production, the API key is effectively the master key
@@ -601,7 +598,6 @@ class TestSentinelCoverage:
         was called with the response content.
         """
         from stronghold.agents.strategies.direct import DirectStrategy
-
         from tests.fakes import FakeLLMClient
 
         class _RecWarden:
@@ -638,7 +634,6 @@ class TestSentinelCoverage:
         "tool_result" and the tool's output text.
         """
         from stronghold.agents.strategies.react import ReactStrategy
-
         from tests.fakes import FakeLLMClient
 
         class _RecWarden:

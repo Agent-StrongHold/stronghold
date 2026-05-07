@@ -11,6 +11,8 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, Any
 
+from stronghold.agents.messages import extract_user_text
+
 if TYPE_CHECKING:
     from stronghold.protocols.memory import LearningStore
     from stronghold.protocols.prompts import PromptManager
@@ -49,19 +51,22 @@ class ContextBuilder:
         team_id: str = "",
         system_token_budget: int = _DEFAULT_SYSTEM_TOKEN_BUDGET,
         enable_cache_breakpoints: bool = False,
-    ) -> list[dict[str, Any]]:
+    ) -> tuple[list[dict[str, Any]], list[int]]:
         """Build the full message list with injected context.
 
-        Returns messages with system prompt assembled from (priority order):
+        Returns (messages, kept_learning_ids) where kept_learning_ids contains
+        the ids of learnings that actually made it into the system prompt
+        (i.e. survived the token budget). Callers wanting feedback-loop
+        accuracy should mark_outcome against these ids, not all queried ones.
+
+        System prompt assembly priority:
         1. Agent soul (always included, never truncated)
         2. Promoted learnings (org-scoped, trimmed to budget)
         3. Matched learnings (keyword-based, org-scoped, trimmed to budget)
-
-        Token budget enforcement: soul is always included. Learnings are
-        added until the budget is exhausted, then remaining are dropped.
         """
         system_parts: list[str] = []
         budget_chars = system_token_budget * _CHARS_PER_TOKEN
+        kept_ids: list[int] = []
 
         # 1. Fetch soul from prompt library (highest priority — always included)
         soul_name = identity.soul_prompt_name or f"agent.{identity.name}.soul"
@@ -88,12 +93,15 @@ class ContextBuilder:
                 used = overhead
                 added = 0
                 for lr in promoted:
-                    entry = f"- {lr.learning}"
+                    prefix = f"[{lr.rca_category}] " if lr.rca_category else ""
+                    entry = f"- {prefix}{lr.learning}"
                     if used + len(entry) + 1 > budget_chars:
                         break
                     lines.append(entry)
                     used += len(entry) + 1
                     added += 1
+                    if lr.id is not None:
+                        kept_ids.append(lr.id)
                 if added > 0:
                     lines.append(footer)
                     block = "\n".join(lines)
@@ -107,11 +115,7 @@ class ContextBuilder:
                     )
 
         # 3. Matched learnings (keyword-based, org-scoped, boundary-isolated)
-        user_text = ""
-        for msg in reversed(messages):
-            if msg.get("role") == "user":
-                user_text = str(msg.get("content", ""))
-                break
+        user_text = extract_user_text(messages)
 
         if (
             learning_store
@@ -138,6 +142,8 @@ class ContextBuilder:
                     lines.append(entry)
                     used += len(entry) + 1
                     added += 1
+                    if lr.id is not None:
+                        kept_ids.append(lr.id)
                 if added > 0:
                     lines.append(footer)
                     block = "\n".join(lines)
@@ -166,7 +172,7 @@ class ContextBuilder:
         if enable_cache_breakpoints:
             result_messages = inject_cache_breakpoints(result_messages)
 
-        return result_messages
+        return result_messages, kept_ids
 
 
 def inject_cache_breakpoints(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:

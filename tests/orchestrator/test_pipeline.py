@@ -362,11 +362,17 @@ class TestBuilderPipelineDefault:
         names = [s.name for s in BUILDER_PIPELINE]
         assert names == ["decompose", "scaffold", "implement", "review", "cleanup"]
 
-    def test_decompose_skips_on_atomic(self) -> None:
-        assert BUILDER_PIPELINE[0].skip_if == "atomic"
+    def test_decompose_skip_if_is_callable(self) -> None:
+        skip_if = BUILDER_PIPELINE[0].skip_if
+        assert callable(skip_if)
+        assert skip_if({"skip_decompose": True}) is True
+        assert skip_if({}) is False
 
-    def test_cleanup_skips_on_review_clean(self) -> None:
-        assert BUILDER_PIPELINE[4].skip_if == "review_clean"
+    def test_cleanup_skip_if_is_callable(self) -> None:
+        skip_if = BUILDER_PIPELINE[4].skip_if
+        assert callable(skip_if)
+        assert skip_if({"review": "no violations found"}) is True
+        assert skip_if({"review": "many issues"}) is False
 
 
 # ── Spec-driven pipeline tests ────────────────────────────────────

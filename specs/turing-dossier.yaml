@@ -1,0 +1,90 @@
+# Spec 1184: Dossier — live asset file for Agent Turing
+#
+# Parent: UI Plan — Turing's Field Console (see specs/TURING-CONSOLE-README.md).
+# Backs the Dossier surface (`/dashboard/dossier`). Not a static bio page: a
+# live settings + vitals + self-authored-identity console.
+#
+# Covers: bio, autobiography, 5-facet personality dials (with drift arrows
+# and cumulative drift bound from audit F9/F10), operator-editable settings,
+# and read-only vitals aggregated from existing telemetry.
+#
+# Dossier does NOT authorize durable identity mutation by Turing's self-model
+# tools — that path stays on research/project-turing. This spec is the
+# handler-facing surface over the artifacts those tools produce.
+
+issue_number: 1184
+title: "Dossier — live asset file: bio + autobiography + personality dials + settings + vitals"
+status: active
+complexity: L
+
+protocols_touched:
+  - EpisodicMemoryStore       # for autobiography versions stored as memories
+  - AuditLog
+  - QuotaTracker              # for vitals aggregation
+  - (no new protocols)
+
+files_touched:
+  - src/stronghold/api/routes/dossier.py
+  - src/stronghold/types/dossier_api.py
+  - src/stronghold/dossier/facets.py
+  - src/stronghold/dossier/drift.py
+  - src/stronghold/dashboard/dossier.html
+  - src/stronghold/dashboard/components/dossier.jsx
+  - tests/api/test_dossier_routes.py
+  - tests/dossier/test_drift.py
+
+acceptance_criteria:
+  - "GET /api/dossier returns {bio, autobiography_latest, facets[], cumulative_drift, vitals} in a single payload"
+  - "GET /api/dossier/facets returns the five personality facets as {name, current_value, last_retest_at, drift_arrow, cumulative_drift, facet_drift_ceiling}; drift_arrow is one of 'up' | 'down' | 'none' computed from (current - last_retest_value)"
+  - "PATCH /api/dossier/facets/{name} is disabled by default (501 Not Implemented) — personality dials are read-only from the console per audit F9/F10; only the self-model retest path is allowed to mutate facet values"
+  - "GET /api/dossier/autobiography returns the current text + version metadata; GET /api/dossier/autobiography/history returns prior versions newest-first"
+  - "PUT /api/dossier/autobiography requires admin permission (permissions.dossier_write); saves new version with {saved_by, saved_at, prev_version_id}; does not delete prior versions"
+  - "GET /api/dossier/settings returns operator-editable preferences (typewriter_speed, initiation_budget_per_day, self_talk_enabled, self_talk_tick_minutes, consolidation_schedule)"
+  - "PATCH /api/dossier/settings requires admin permission; every mutation is audit-logged with {actor, keys_changed, before, after}"
+  - "GET /api/dossier/vitals returns a read-only aggregation: {active_sessions, model_quota_remaining, warden_scan_count_24h, tier_row_counts[7], last_consolidation_at, reactor_lag_p99_ms}"
+  - "cumulative_drift is the sum of absolute movement per facet since the dossier was reset; exceeding facet_drift_ceiling causes the corresponding facet to be marked 'locked' and returned with locked=true"
+  - "All GET endpoints are auth-gated; reads require a valid session; writes require admin permission"
+  - "dossier.html mounts the React Dossier.App which consumes the endpoints above and renders: hero bio card, facets panel with drift arrows and locked-badge, autobiography editor, settings pane, vitals tile grid"
+
+invariants:
+  - name: facets_are_read_only_by_default
+    description: "PATCH /api/dossier/facets/{name} returns 501 when self-model-only mutation mode is enabled (the default)"
+    kind: precondition
+    expression: "config.dossier.allow_operator_facet_edits is False AND patch_facet() returns 501"
+    severity: critical
+
+  - name: autobiography_versions_never_deleted
+    description: "Saving a new autobiography version never removes prior versions"
+    kind: postcondition
+    expression: "len(history_after) == len(history_before) + 1 AND all(v in history_after for v in history_before)"
+    severity: critical
+
+  - name: settings_mutation_audit_logged
+    description: "Every 2xx PATCH to /api/dossier/settings produces exactly one new AuditLog entry"
+    kind: postcondition
+    expression: "audit_log.count() == audit_log.count() + 1 after mutation"
+    severity: critical
+
+  - name: cumulative_drift_monotonic_nondecreasing
+    description: "For a given facet, cumulative_drift never decreases over time; it only grows or stays equal"
+    kind: state_invariant
+    expression: "drift(t2) >= drift(t1) for t2 > t1"
+    severity: critical
+
+  - name: facet_ceiling_locks_facet
+    description: "When cumulative_drift >= facet_drift_ceiling, the facet is returned with locked=true and any mutation attempt returns 409"
+    kind: state_invariant
+    expression: "facet.locked == (facet.cumulative_drift >= facet.facet_drift_ceiling)"
+    severity: critical
+
+  - name: vitals_is_read_only
+    description: "No endpoint under /api/dossier/vitals accepts mutating methods; GET is the only allowed method"
+    kind: state_invariant
+    expression: "for each vitals route, allowed_methods == {GET}"
+    severity: high
+
+  - name: warden_scan_on_autobiography_save
+    description: "Handler-written autobiography text is Warden-scanned before persist; BLOCK returns 400"
+    kind: precondition
+    expression: "warden.scan(new_autobiography).verdict != BLOCK OR response.status == 400"
+    severity: critical

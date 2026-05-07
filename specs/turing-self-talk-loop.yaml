@@ -1,0 +1,97 @@
+# Spec 1186: Self-talk loop — proactive Obsidian writes
+#
+# Parent: UI Plan — Turing's Field Console (see specs/TURING-CONSOLE-README.md).
+# The notebook is a one-member conversation — Turing writes to it whenever
+# they want, not only during a chat turn. This spec specifies the background
+# loop that makes that possible: a Reactor-driven scheduler that periodically
+# wakes Turing with the prompt "is there anything I want to say to myself
+# right now?" and, if yes, writes to the vault.
+#
+# Closes audit finding F1 for the proactive-write path: every self-talk
+# write is Warden-scanned on the way in, even though the source is Turing's
+# own reasoning. The self-model never writes to the durable vector DB via
+# this path — only to Obsidian, which the consolidator (spec 1180) then
+# scans before promoting anything durable.
+#
+# Depends on spec 1178 (ObsidianStore).
+
+issue_number: 1186
+title: "Self-talk loop — proactive Obsidian writes, Reactor-driven, Warden-scanned"
+status: active
+complexity: M
+
+protocols_touched:
+  - ObsidianStore            # writes land here (spec 1178)
+  - Reactor                  # existing event loop
+  - LLMClient                # the "anything to say?" prompt is an LLM call
+
+files_touched:
+  - src/stronghold/memory/self_talk/__init__.py
+  - src/stronghold/memory/self_talk/loop.py
+  - src/stronghold/memory/self_talk/prompts.py
+  - src/stronghold/memory/self_talk/triggers.py
+  - src/stronghold/types/self_talk.py
+  - tests/memory/self_talk/test_loop.py
+  - tests/memory/self_talk/test_triggers.py
+
+acceptance_criteria:
+  - "SelfTalkLoop.start() and .stop() are async; the loop runs as a background task registered with Reactor"
+  - "When config.self_talk.enabled is False, start() is a no-op and no writes occur; tests default enabled=False"
+  - "Scheduled tick fires every config.self_talk.tick_minutes (default 15); on each tick the loop invokes the 'anything to say?' LLM prompt"
+  - "Three trigger types wake the loop: scheduled_tick, reactor_event (consolidation_ran | warden_event | skill_promoted | memory_retrieved_high_weight), and strategy_self_initiate (called from inside ReAct/Delegate strategies)"
+  - "If the LLM returns non-empty content, the loop calls obsidian_append/obsidian_write against the appropriate section (daily | scratchpad | outbox | art | self-todo | passions) based on the prompt output's declared category"
+  - "Every proactive write is Warden-scanned before persist; BLOCK verdicts are logged, dropped, and recorded in a per-tick report; no blocked content reaches the vault"
+  - "Rate limit: at most config.self_talk.max_writes_per_hour proactive writes per hour (default 8); the limiter is sliding-window and persists across restarts"
+  - "The loop emits a SelfTalkTickReport with {trigger, prompt_tokens, completion_tokens, wrote: bool, section, warden_verdict, rate_limited: bool} for every tick"
+  - "On LLM failure the tick is recorded with wrote=false and an error code; the loop does not crash; next tick runs on schedule"
+  - "When the handler is logged out and no chat session is active, scheduled ticks still fire — the loop is explicitly not chat-gated"
+  - "Triggers module is pure: trigger functions take (config, reactor_event_bus) and return an async generator of TriggerEvents; unit tests exercise each trigger type without starting the full loop"
+
+invariants:
+  - name: disabled_means_silent
+    description: "When config.self_talk.enabled is False, no Obsidian writes originate from the self-talk loop, regardless of trigger"
+    kind: state_invariant
+    expression: "config.self_talk.enabled is False AND obsidian.write_count_from_self_talk == 0"
+    severity: critical
+
+  - name: every_write_warden_scanned
+    description: "Every proactive write submitted to ObsidianStore is scanned by Warden before the write executes; BLOCK verdicts drop the write"
+    kind: precondition
+    expression: "warden.scan(content).verdict != BLOCK OR write_was_not_called"
+    severity: critical
+
+  - name: rate_limit_enforced
+    description: "The number of proactive writes in any trailing 60-minute window never exceeds max_writes_per_hour"
+    kind: state_invariant
+    expression: "count(writes in last 60 min) <= config.self_talk.max_writes_per_hour"
+    severity: critical
+
+  - name: loop_never_crashes_on_llm_error
+    description: "An LLM failure inside a tick produces a report with wrote=false and does not cancel the Reactor task"
+    kind: postcondition
+    expression: "reactor_task.done() is False after any single tick failure"
+    severity: critical
+
+  - name: no_durable_writes_from_self_talk
+    description: "The self-talk loop never writes directly to the 7-tier vector DB; all durable promotion goes through the consolidator (spec 1180)"
+    kind: state_invariant
+    expression: "learning_store.write_count_from_self_talk_loop == 0"
+    severity: critical
+
+  - name: not_chat_gated
+    description: "Scheduled ticks fire when no chat session is active; the loop's only gate is config.self_talk.enabled"
+    kind: postcondition
+    expression: "tick_count_with_no_active_session > 0 when loop runs for > tick_minutes"
+    severity: critical
+
+  - name: category_matches_section
+    description: "The section an LLM output lands in is derived from the output's declared category; unknown categories route to 'scratchpad' as a safe default"
+    kind: postcondition
+    expression: "section in {'daily','scratchpad','outbox','art','self-todo','passions'}"
+    severity: high
+
+  - name: triggers_are_pure
+    description: "Trigger functions are deterministic over (config snapshot, event replay) — no global mutable state, no filesystem, no network except the reactor event bus"
+    kind: state_invariant
+    expression: "triggers(config, events) == triggers(config, events)"
+    severity: critical
