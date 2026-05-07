@@ -133,15 +133,15 @@ def test_pipeline_py_no_block_worse_than_c() -> None:
     """pipeline.py must have no cyclomatic-complexity block at rank D or worse."""
     import subprocess
     import sys
+    from pathlib import Path
 
+    repo_root = Path(__file__).resolve().parents[2]
+    target = repo_root / "src" / "stronghold" / "orchestrator" / "pipeline.py"
     result = subprocess.run(
-        [
-            sys.executable, "-m", "radon", "cc", "-s", "-n", "D",
-            "src/stronghold/orchestrator/pipeline.py",
-        ],
+        [sys.executable, "-m", "radon", "cc", "-s", "-n", "D", str(target)],
         capture_output=True,
         text=True,
-        cwd="/home/user/stronghold",
+        check=False,
     )
     assert result.stdout.strip() == "", (
         f"pipeline.py has complexity blocks rated D or worse:\n{result.stdout}"

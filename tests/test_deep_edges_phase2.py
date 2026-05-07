@@ -407,13 +407,24 @@ class TestAgentFactoryEdges:
         assert identity.tools == ()
 
     def test_sec012_manifest_with_string_tools(self) -> None:
-        """SEC-012: tools: "shell" in YAML must not iterate as chars."""
-        from stronghold.agents.factory import _build_identity_from_manifest
+        """SEC-012: tools: "shell" in YAML must not iterate as chars.
 
-        identity = _build_identity_from_manifest({"name": "n", "tools": "shell"})
-        # Accept either single-element tuple (lenient) or empty (strict)
+        The factory now strict-rejects (raises ConfigError) on a bare string
+        rather than silently iterating it as characters. Either the strict
+        rejection or the lenient single-element wrap is acceptable; what
+        the security regression forbids is the char-iteration bug.
+        """
+        from stronghold.agents.factory import _build_identity_from_manifest
+        from stronghold.types.errors import ConfigError
+
+        try:
+            identity = _build_identity_from_manifest({"name": "n", "tools": "shell"})
+        except ConfigError:
+            return  # Strict-reject path — secure.
+
+        # Lenient path: single-element tuple or empty are both acceptable.
         assert identity.tools in (("shell",), ())
-        # But NEVER chars
+        # But NEVER chars.
         assert identity.tools != ("s", "h", "e", "l", "l")
 
     def test_sec011_all_list_fields_none_safe(self) -> None:
