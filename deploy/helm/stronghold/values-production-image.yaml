@@ -11,7 +11,7 @@
 #
 # To roll back: `git revert` the bump commit on main, merge, then sync.
 image:
-  tag: production-init
+  tag: "production-1f1666a"
 strongholdApi:
   image:
-    tag: production-init
+    tag: "production-1f1666a"
