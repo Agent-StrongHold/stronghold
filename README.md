@@ -2,41 +2,43 @@
 
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 
-**Security-first agent governance platform.** Every design decision in Stronghold starts with "how can this be exploited?" and works backward to function. It wraps any LLM in a zero-trust execution harness with defense-in-depth threat detection, intelligent model routing, self-improving memory, and protocol-driven extensibility.
+**Multi-tenant enterprise agent governance platform.** Every design decision in Stronghold starts with "how can this be exploited?" and works backward to function. It wraps any LLM in a zero-trust execution harness with defense-in-depth threat detection, intelligent model routing, self-improving memory, and protocol-driven extensibility — deployed across hardened tenants on Kubernetes or on-prem, with policy-as-code at every boundary.
 
 See [ARCHITECTURE.md](ARCHITECTURE.md) for the full system design.
 
----
+## Position in the four-repo system
 
-## Project Turing — Research Track
+Stronghold is one of three products built on the [`maistro-engine`](https://github.com/BlakeMatthews-dev/maistro-engine) substrate (per [`engine#ADR-030`](https://github.com/BlakeMatthews-dev/maistro-engine/blob/main/docs/adr/ADR-030-four-repo-governance.md)).
 
-**→ Start here: [project_turing.research.md](project_turing.research.md)** — research arc across CoinSwarm, mAIstro, Stronghold, and Turing; the two principles the portfolio applies; and an honest read of where the Turing sketch breaks (with pointers to the 34-finding audit).
+| Repo | Dominant constraint |
+|---|---|
+| [`maistro-engine`](https://github.com/BlakeMatthews-dev/maistro-engine) | substrate — shared Python runtime + canonical ADRs |
+| `Project_mAIstro` | ease of self-hosting (single-tenant secure multi-user) |
+| [`AgentTuring`](https://github.com/BlakeMatthews-dev/AgentTuring) | continuity of self (autonoetic experiment) |
+| **`stronghold`** (this repo) | **multi-tenant isolation** (enterprise) |
 
+The three products are Copier-templated peers. Stronghold's specs and ADRs cite engine ADRs via `substrate:` cross-refs. Cluster-shape and multi-tenant policy ADRs (the `ADR-K8S-*` set, today still living in `AgentTuring` as a legacy of the mirror split) migrate to this repo per [`engine#ADR-030`](https://github.com/BlakeMatthews-dev/maistro-engine/blob/main/docs/adr/ADR-030-four-repo-governance.md) section 4.
 
-> **An autonoetic Conduit.** The central routing pipeline carries a persistent, self-indexed memory and routes from first-person experience — personality, mood, passions, skills, and todos — rather than stateless classification. One global self, no tenant scoping. Structurally incompatible with `main`'s multi-tenant posture; lives as a pseudo-fork on its own branch.
+### What Stronghold is not
 
-**Branches:** `project_Turing` (integration / "main" of the pseudo-fork) · `research/project-turing` (active research) · `claude/autonoetic-self-tranche-6` (example feature branch) — feature work flows `feature → research/project-turing → project_Turing → main`.
+- Not a single-tenant household product — that's `Project_mAIstro`.
+- Not an autonoetic / continuous self-aware agent — that's `AgentTuring`.
+- Not a library you embed — that's [`maistro-engine`](https://github.com/BlakeMatthews-dev/maistro-engine).
 
-**What it is:**
-- A near-fork experiment that promotes the Conduit from noetic router (classify → route → forget) into an autonoetic reasoning layer (remembers its own prior routings as first-person experience, projects itself into future routings, can regret, can commit).
-- A 7-tier episodic memory (OBSERVATION → HYPOTHESIS → OPINION → LESSON → REGRET → AFFIRMATION → WISDOM) extended with a self-model: HEXACO-24 personality with weekly re-test, passions / hobbies / interests / skills (with decay) / preferences, mood vector, self-authored todos with required provenance, and an activation graph whose edges the self itself authors.
-- 30 specs covering invariants, acceptance criteria, and edge cases; a runnable SQLite sketch with 370 green tests (209 memory/runtime + 161 self-model).
+## v1.0 — compliance-first
 
-**What it is not:** a roadmap item, a competitor to the enterprise codebase, or a claim that any of this is production-ready. Findings may or may not feed back to `main`; if anything works, it gets redesigned for multi-tenancy before landing in `src/`.
+v1.0 is defined as **compliance-first multi-tenant deployment** (per [`engine#ADR-030`](https://github.com/BlakeMatthews-dev/maistro-engine/blob/main/docs/adr/ADR-030-four-repo-governance.md)):
 
-**Reading order:**
-1. [`research/project-turing/DESIGN.md`](research/project-turing/DESIGN.md) — thesis, Tulving-taxonomy mapping, what the Conduit becomes when it has a self.
-2. [`research/project-turing/autonoetic-self.md`](research/project-turing/autonoetic-self.md) — the content of the self the Conduit carries.
-3. [`research/project-turing/specs/`](research/project-turing/specs/) — 30 individually reviewable specs, read in order.
-4. [`research/project-turing/sketches/`](research/project-turing/sketches/) — runnable scaffold + tests.
+- On-prem **and** cloud deployment paths, both proven
+- OPA / Cedar policy authoring (declarative, auditable)
+- [`COMPLIANCE.md`](COMPLIANCE.md) shipped — OWASP Agentic Top 10 mapping with control evidence
+- NIST AI RMF and EU AI Act mapping stubs ready for regulator review
 
-**Lineage:** CoinSwarm (Nov 2025) → 7-tier crystallization (Jan 15, 2026) → Stronghold import (Mar 25, 2026) → Project Turing (Apr 2026).
-
----
+See [`ROADMAP-v1.0.md`](ROADMAP-v1.0.md) for workstreams and acceptance criteria.
 
 ## Origin
 
-**Project Maistro** (a.k.a. Conductor, Feb 19, 2026 – present) is a parallel project — a more secure implementation of the autonomous agent harness popularized by OpenClaw. Maistro proved the core concepts: routing, memory, multi-agent orchestration, and functional security. It remains an active project.
+**Project Maistro** (a.k.a. Conductor, Feb 19, 2026 — present) proved the core concepts: routing, memory, multi-agent orchestration, and functional security. The shared runtime now lives in [`maistro-engine`](https://github.com/BlakeMatthews-dev/maistro-engine) per [`engine#ADR-019`](https://github.com/BlakeMatthews-dev/maistro-engine/blob/main/docs/adr/ADR-019-canonical-source-split.md), and three downstream products consume it as templated peers per [`engine#ADR-030`](https://github.com/BlakeMatthews-dev/maistro-engine/blob/main/docs/adr/ADR-030-four-repo-governance.md). Stronghold is the multi-tenant enterprise product in that family.
 
 **Stronghold is a complete redesign**, not a port. Built from the learnings of Maistro and Conductor, Stronghold was designed from first principles with security as the unitary architectural foundation. Maistro was *security and function*. Stronghold is **security-first design, then function** — every architectural decision is derived from the security model, not constrained by it after the fact.
 
@@ -55,6 +57,7 @@ The initial commit (March 25, 2026) established the security-first architecture 
 | Apr 12 | 95% test coverage — 550+ tests, 6 bug fixes |
 | **Apr 16** | Feature comparison; RASO direction shift influenced by [Hyperagents](https://arxiv.org/abs/2603.19461) paper |
 | **Apr 18** | Spec-driven verification system — Spec type, pipeline wiring, property-test gen, planner triage, Quartermaster + Archie agents |
+| **May 7** | **Four-repo governance landed** ([`engine#ADR-030`](https://github.com/BlakeMatthews-dev/maistro-engine/blob/main/docs/adr/ADR-030-four-repo-governance.md)) — Stronghold's role as multi-tenant enterprise product is formal; Turing extracted to its own repo; Copier templates planned. |
 
 ## Changelog
 
@@ -67,6 +70,7 @@ Major methodology and architectural shifts. For feature milestones see Timeline 
 | **2026-04-17** | **Assertion-strength CI gates** proposed for the `feature/* → integration` merge path. Three stages, rolled out progressively: **(1)** AST pattern linter (status-tolerance, `isinstance`-after-construction, no-assert tests); **(2)** LLM assertion judge seeded with this PR's 3,775-example catalog; **(3)** targeted mutation testing on changed src files (opt-in per PR diff, `mutmut` as the engine). Blocks on `BAD`, warns on `WEAK`, runs between Auditor and Gatekeeper in the agent pipeline. | Auditor currently validates test *presence* and pytest-green, not assertion strength. Gates catch the over-tolerant-status, BDD-comment-mismatch, and AC-wording-duplication patterns that slip past Auditor today without requiring Mason prompt changes. |
 | **2026-04-18** | **Spec-driven verification system implemented end-to-end.** `Spec` type (invariants, acceptance criteria, property tests) flows through the builder pipeline: Quartermaster emits → Archie enriches with Hypothesis property tests → Mason implements against → Auditor gates on `SPEC_COVERAGE_GAP`. `InvariantVerifier` checks coverage; `SpecTemplateStore` enables plan reuse across similar issues. Prompt caching via `inject_cache_breakpoints()` marks stable system prompts with `cache_control`. Complexity-based planner triage routes simple issues to Sonnet, reserves Opus for complex. Nine YAML specs in `specs/` bootstrap the pattern on itself. | The Apr 17 audit identified spec-driven modules as the highest-quality test output (99.4% coverage, zero weak/bad). This commit operationalizes that finding: specs become a runtime data structure flowing through the pipeline, not just a methodology. Quartermaster and Archie agents (P4/P5 tiers) formalize the planning and scaffolding stages. Property tests derived from invariants via Hypothesis replace hand-written edge cases for spec-governed modules. **Pre/post: tests 3,854 → 3,897, new modules 12, property tests 35+, YAML specs 9.** |
 | **2026-04-18** | **CI-debt closeout — 5 quality/security gates wired as blocking**: Xenon (complexity, rank C max), Vulture (dead code, min-confidence 100 + whitelist), Semgrep (SAST, p/flask + p/secrets + p/python), Gitleaks (secret-scan, doc-fixture allowlist), Hadolint (Dockerfile). Joins the existing Bandit + pip-audit + CodeQL + Ruff + Mypy-strict gates. Closes #1026 (epic) plus 7 child issues. See [COMPARISON.md §9](COMPARISON.md#9-ci--quality-gates) for the per-tool comparison against industry baselines. | The epic tracked 10 failing jobs from the self-hosted runner rollout. Root causes ranged from real bugs (helm vault nil pointer, Flask format-string vuln, 5 logger-credential-disclosures Semgrep caught that Bandit missed) to tool-config gaps (missing Gitleaks allowlist, missing Vulture whitelist for decorator-indirection). Shipping the gates wired + the findings fixed in one PR keeps the comparison table honest — we claim blocking gates only when they're actually blocking. |
+| **2026-05-07** | **Four-repo governance landed** ([`engine#ADR-030`](https://github.com/BlakeMatthews-dev/maistro-engine/blob/main/docs/adr/ADR-030-four-repo-governance.md)). Stronghold is the multi-tenant enterprise product. AgentTuring (autonoetic experiment) and Project_mAIstro (single-tenant secure multi-user) are siblings. All three are Copier-templated peers ([`engine#ADR-033`](https://github.com/BlakeMatthews-dev/maistro-engine/blob/main/docs/adr/ADR-033-templates-and-copier-workflow.md)) rebasing from `maistro-engine`. Project Turing research extracted to AgentTuring repo. K8S-* ADRs migrate from AgentTuring to here. v1.0 = compliance-first ([`COMPLIANCE.md`](COMPLIANCE.md), OPA/Cedar, on-prem + cloud). | Three teams describing overlapping subsystems was the highest drift risk; AgentTuring and stronghold being blob-identical mirrors was the most visible symptom. ADR-030 names roles and constraints; ADR-031 enforces them via front-matter; ADR-033 keeps templates in sync via Copier. |
 
 ## Quick Start
 
@@ -133,9 +137,10 @@ How Stronghold compares to other agent frameworks and platforms. Stronghold is a
 | Cost tracking | ✅ | MS Agent Framework, Archestra, Pi | All four track per-request costs |
 | **Enterprise & Multi-Tenant** | | | |
 | SSO / OIDC | ✅ | MS Agent Framework, LangGraph Platform | Stronghold supports both Keycloak and Entra ID |
-| Multi-tenant isolation | 🗺️ v1.3 | MS Agent Framework, Archestra, LangGraph Platform | All three have production multi-tenancy today |
-| Namespace-scoped secrets | 🗺️ v1.3 | MS Agent Framework, Archestra | Both have per-tenant secret management |
+| Multi-tenant isolation | 🗺️ v1.0 | MS Agent Framework, Archestra, LangGraph Platform | v1.0 critical path; was previously v1.3 in legacy ROADMAP. See [`ROADMAP-v1.0.md`](ROADMAP-v1.0.md). |
+| Namespace-scoped secrets | 🗺️ v1.0 | MS Agent Framework, Archestra | Both have per-tenant secret management |
 | Agent marketplace | 🗺️ v1.3 | MS Agent Framework, Archestra | Both have agent/tool registries |
+| Compliance mappings (OWASP / NIST / EU AI Act) | 🗺️ v1.0 | ❌ | See [`COMPLIANCE.md`](COMPLIANCE.md) |
 | **CI & Quality Gates** | | | |
 | Security gates (Bandit + Semgrep + pip-audit + Gitleaks + Hadolint + CodeQL) | ✅ all blocking | Most ship dependabot + 1-2 SAST | Full 5+1 blocking is uncommon in OSS; matches OWASP ASVS L2 baseline |
 | Code quality gates (Ruff + Mypy-strict + Xenon + Vulture) | ✅ blocking | Ruff + Mypy typical | Xenon (complexity) and Vulture (dead code) rare in OSS; typical only in regulated sectors |
@@ -160,11 +165,22 @@ Most agent frameworks give you **building blocks** (LangGraph, OpenAI Agents SDK
 - **Protocol-driven DI with zero direct external imports** — 20 protocols, 32+ Protocol classes. Business logic depends only on protocols. Standard software engineering pattern but no other agent framework applies it at this scale.
 
 **Roadmapped** (inner loop shipped, meta-layer planned):
-- **RASO (v1.2–v1.3)** — Reflexive Agentic Self-Optimization. The Auditor→Mason feedback cycle is shipped and functional. The meta-agent that modifies the graph structure itself is roadmapped. Meta FAIR's Hyperagents paper describes the theoretical construct; Stronghold's inner feedback loop predates it (CoinSwarm January 2026, Maistro February 2026), but the self-referential framing was influenced by the paper after discovery on April 16.
+- **RASO (v1.2–v1.3)** — Reflexive Agentic Self-Optimization. The Auditor→Mason feedback cycle is shipped and functional. The meta-agent that modifies the graph structure itself is roadmapped.
 - **Forge iteration loop (v1.2)** — Currently generate→scan→save. Test→iterate loop with sample/adversarial inputs planned.
-- **Multi-tenant isolation (v1.3)** — K8s namespace-per-tenant, scoped secrets, agent marketplace.
+- **Multi-tenant isolation (v1.0 — promoted)** — K8s namespace-per-tenant, scoped secrets. Was v1.3 in the legacy ROADMAP; promoted to v1.0 by ADR-030. See [`ROADMAP-v1.0.md`](ROADMAP-v1.0.md).
 
-**Roadmap — Reflexive Agentic Self-Optimization (RASO):** Stronghold's builders loop implements plan → execute → review → learn → iterate with automatic learning extraction and correction promotion. The underlying concept — agents improving via structured feedback from other agents — traces back to CoinSwarm's evolutionary fitness loops (January 2026, where agent populations self-improve through evaluation pressure, memory reinforcement, and trait inheritance) and Maistro's trace reviewer (February 2026, where an agent reviews another agent's execution traces and produces structured corrections). Stronghold's feedback module (April 2, 2026) was developed independently of Meta's [Hyperagents](https://arxiv.org/abs/2603.19461) paper (published March 19, 2026; discovered April 16, 2026). The RASO roadmap — wrapping a meta-agent around the builders graph so it can modify its own structure — was influenced by HyperAgents after discovery. Previously called "naive RLHF" internally; renamed because the feedback is primarily agent-driven (tournaments, learning extraction, quality gates), with optional human feedback via PR comments. *Direction shifted April 16, 2026 based on influence of Hyperagents paper.*
+## Substrate ADR ladder
+
+This product inherits the engine ADR ladder. Key references:
+
+- [`engine#ADR-019`](https://github.com/BlakeMatthews-dev/maistro-engine/blob/main/docs/adr/ADR-019-canonical-source-split.md) — canonical source split
+- [`engine#ADR-030`](https://github.com/BlakeMatthews-dev/maistro-engine/blob/main/docs/adr/ADR-030-four-repo-governance.md) — four-repo governance (this product's role)
+- [`engine#ADR-031`](https://github.com/BlakeMatthews-dev/maistro-engine/blob/main/docs/adr/ADR-031-front-matter-and-registry.md) — front-matter and registry conventions
+- [`engine#ADR-032`](https://github.com/BlakeMatthews-dev/maistro-engine/blob/main/docs/adr/ADR-032-contracts-as-acceptance-criteria.md) — contracts as acceptance criteria
+- [`engine#ADR-033`](https://github.com/BlakeMatthews-dev/maistro-engine/blob/main/docs/adr/ADR-033-templates-and-copier-workflow.md) — Copier-templated products
+- [`engine#ADR-035`](https://github.com/BlakeMatthews-dev/maistro-engine/blob/main/docs/adr/ADR-035-catalog-ownership-split.md) — catalog ownership split (Stronghold owns multi-tenant variant)
+- [`engine#ADR-037`](https://github.com/BlakeMatthews-dev/maistro-engine/blob/main/docs/adr/ADR-037-observability-taxonomy.md) — observability taxonomy
+- [`engine#ADR-038`](https://github.com/BlakeMatthews-dev/maistro-engine/blob/main/docs/adr/ADR-038-reliability-taxonomy.md) — reliability taxonomy
 
 ## License
 
