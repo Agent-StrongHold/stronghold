@@ -125,12 +125,12 @@ def test_check_quota_below(repo):
 
 
 def test_check_quota_at_limit(repo):
-    increment_quota(repo, _SID, "user-a")
+    increment_quota(repo, _SID, "user-a", now=NOW)
     assert not check_quota(repo, _SID, "user-a", NOW)
 
 
 def test_check_quota_different_user_independent(repo):
-    increment_quota(repo, _SID, "user-a")
+    increment_quota(repo, _SID, "user-a", now=NOW)
     assert check_quota(repo, _SID, "user-b", NOW)
 
 

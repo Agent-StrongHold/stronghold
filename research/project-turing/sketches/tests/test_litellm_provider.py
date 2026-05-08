@@ -86,10 +86,14 @@ def test_500_retries_once() -> None:
 
 
 @respx.mock
-def test_500_twice_raises_unavailable() -> None:
+def test_500_all_retries_exhausted_raises_unavailable(monkeypatch) -> None:
+    monkeypatch.setattr("time.sleep", lambda _: None)
+    # New retry logic: 4 total attempts (3 with backoff + 1 final).
     respx.post(f"{BASE}/chat/completions").mock(
         side_effect=[
             httpx.Response(500, text="down"),
+            httpx.Response(500, text="still down"),
+            httpx.Response(500, text="still down"),
             httpx.Response(500, text="still down"),
         ]
     )
@@ -158,3 +162,113 @@ def test_missing_virtual_key_raises() -> None:
 def test_missing_base_url_raises() -> None:
     with pytest.raises(ValueError, match="base_url"):
         LiteLLMProvider(pool_config=_pool(), base_url="", virtual_key="sk-virtual")
+
+
+# ---- Retry / backoff / quota tests ----------------------------------------
+
+
+@respx.mock
+def test_500_retries_up_to_three_times(monkeypatch) -> None:
+    monkeypatch.setattr("time.sleep", lambda _: None)
+    route = respx.post(f"{BASE}/chat/completions").mock(
+        side_effect=[
+            httpx.Response(500),
+            httpx.Response(500),
+            httpx.Response(200, json=_reply("ok-on-third")),
+        ]
+    )
+    provider = LiteLLMProvider(pool_config=_pool(), base_url=BASE, virtual_key="sk-virtual")
+    assert provider.complete("x") == "ok-on-third"
+    assert route.call_count == 3
+
+
+@respx.mock
+def test_500_exhausted_raises_and_charges_failure_tokens(monkeypatch) -> None:
+    monkeypatch.setattr("time.sleep", lambda _: None)
+    respx.post(f"{BASE}/chat/completions").mock(
+        side_effect=[
+            httpx.Response(500),
+            httpx.Response(500),
+            httpx.Response(500),
+            httpx.Response(500),  # would be attempt 4; should never be reached
+        ]
+    )
+    provider = LiteLLMProvider(
+        pool_config=_pool(tokens_allowed=10_000), base_url=BASE, virtual_key="sk-virtual"
+    )
+    with pytest.raises(ProviderUnavailable):
+        provider.complete("hello")
+    window = provider.quota_window()
+    assert window is not None
+    # Failure tokens should be non-zero after exhausted retries.
+    assert window.tokens_used > 0
+
+
+@respx.mock
+def test_429_charges_failure_tokens() -> None:
+    respx.post(f"{BASE}/chat/completions").mock(return_value=httpx.Response(429))
+    provider = LiteLLMProvider(
+        pool_config=_pool(tokens_allowed=10_000), base_url=BASE, virtual_key="sk-virtual"
+    )
+    with pytest.raises(RateLimited):
+        provider.complete("hello world")
+    window = provider.quota_window()
+    assert window is not None
+    assert window.tokens_used > 0
+
+
+@respx.mock
+def test_429_parses_retry_after_header() -> None:
+    respx.post(f"{BASE}/chat/completions").mock(
+        return_value=httpx.Response(429, headers={"Retry-After": "42"})
+    )
+    provider = LiteLLMProvider(pool_config=_pool(), base_url=BASE, virtual_key="sk-virtual")
+    with pytest.raises(RateLimited, match="retry-after=42"):
+        provider.complete("x")
+
+
+@respx.mock
+def test_complete_chat_sends_system_role() -> None:
+    route = respx.post(f"{BASE}/chat/completions").mock(
+        return_value=httpx.Response(200, json=_reply("response"))
+    )
+    provider = LiteLLMProvider(pool_config=_pool(), base_url=BASE, virtual_key="sk-virtual")
+    result = provider.complete_chat(
+        system="You are an agent.",
+        messages=[{"role": "user", "content": "hello"}],
+    )
+    assert result == "response"
+    body = json.loads(route.calls.last.request.content.decode())
+    msgs = body["messages"]
+    assert msgs[0] == {"role": "system", "content": "You are an agent."}
+    assert msgs[1] == {"role": "user", "content": "hello"}
+
+
+@respx.mock
+def test_complete_chat_default_max_tokens() -> None:
+    route = respx.post(f"{BASE}/chat/completions").mock(
+        return_value=httpx.Response(200, json=_reply("ok"))
+    )
+    provider = LiteLLMProvider(pool_config=_pool(), base_url=BASE, virtual_key="sk-virtual")
+    provider.complete_chat(system="sys", messages=[{"role": "user", "content": "q"}])
+    body = json.loads(route.calls.last.request.content.decode())
+    assert body.get("max_tokens") == 800
+
+
+@respx.mock
+def test_complete_chat_multi_turn_preserves_order() -> None:
+    route = respx.post(f"{BASE}/chat/completions").mock(
+        return_value=httpx.Response(200, json=_reply("ok"))
+    )
+    provider = LiteLLMProvider(pool_config=_pool(), base_url=BASE, virtual_key="sk-virtual")
+    provider.complete_chat(
+        system="sys",
+        messages=[
+            {"role": "user", "content": "turn1"},
+            {"role": "assistant", "content": "reply1"},
+            {"role": "user", "content": "turn2"},
+        ],
+    )
+    body = json.loads(route.calls.last.request.content.decode())
+    roles = [m["role"] for m in body["messages"]]
+    assert roles == ["system", "user", "assistant", "user"]

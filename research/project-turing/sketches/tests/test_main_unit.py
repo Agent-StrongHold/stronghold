@@ -171,7 +171,7 @@ class TestLoadBasePrompt:
 
 class TestBuildChatPrompt:
     def test_basic_prompt_no_extras(self, repo, self_id) -> None:
-        prompt = _build_chat_prompt(
+        prompt, _ = _build_chat_prompt(
             message="hello",
             history=[],
             repo=repo,
@@ -187,7 +187,7 @@ class TestBuildChatPrompt:
     def test_with_working_memory(self, repo, self_id) -> None:
         wm = WorkingMemory(repo.conn)
         wm.add(self_id, "remember this", priority=0.8)
-        prompt = _build_chat_prompt(
+        prompt, _ = _build_chat_prompt(
             message="test",
             history=[],
             repo=repo,
@@ -204,7 +204,7 @@ class TestBuildChatPrompt:
             {"role": "user", "content": "hi"},
             {"role": "assistant", "content": "hello"},
         ]
-        prompt = _build_chat_prompt(
+        prompt, _ = _build_chat_prompt(
             message="next",
             history=history,
             repo=repo,
@@ -220,7 +220,7 @@ class TestBuildChatPrompt:
     def test_truncates_history_to_twenty(self, repo, self_id) -> None:
         # History window is 20 turns; 10 items all fit, so all appear.
         history = [{"role": "user", "content": f"msg{i}"} for i in range(10)]
-        prompt = _build_chat_prompt(
+        prompt, _ = _build_chat_prompt(
             message="current",
             history=history,
             repo=repo,
@@ -233,7 +233,7 @@ class TestBuildChatPrompt:
         assert "msg9" in prompt
         # Items beyond 20 are dropped: send 25 items, oldest 5 should not appear.
         long_history = [{"role": "user", "content": f"longmsg{i}"} for i in range(25)]
-        long_prompt = _build_chat_prompt(
+        long_prompt, _ = _build_chat_prompt(
             message="current",
             history=long_history,
             repo=repo,
@@ -278,7 +278,7 @@ class TestBuildChatPrompt:
             context={"supersedes_via_lineage": ["lesson1"]},
         )
         repo.insert(m)
-        prompt = _build_chat_prompt(
+        prompt, _ = _build_chat_prompt(
             message="test",
             history=[],
             repo=repo,
@@ -303,7 +303,7 @@ class TestBuildChatPrompt:
         repo.insert(m)
         idx = EmbeddingIndex(embed_fn=FakeProvider(name="fake").embed)
         idx.add(m.memory_id, m.content, meta={"tier": m.tier.value})
-        prompt = _build_chat_prompt(
+        prompt, _ = _build_chat_prompt(
             message="kindness",
             history=[],
             repo=repo,

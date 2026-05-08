@@ -57,6 +57,7 @@ from .workload import WorkloadDriver, load_scenario
 from .conversation_summary import ConversationSummaryCache
 from .voice_section_maintenance import VoiceSectionMaintenance
 from .working_memory_maintenance import WorkingMemoryMaintenance
+from ..rss_seen_repo import RssSeenRepo
 from ..rewards import RewardTracker
 
 
@@ -180,12 +181,16 @@ def _record_rss_item(
     feed_item: Any,
     repo: Any,
     self_id: str,
+    rss_seen_repo: "RssSeenRepo | None" = None,
 ) -> None:
     """Record a newly-seen RSS item as a bare OBSERVATION summary.
 
     No LLM call. Just stores the item for later batch processing by
     _rss_digest(), which runs a few times per day and decides whether
     any items deserve opinions or commitments.
+
+    Dedup is handled by ``rss_seen_repo`` (O(1) DB lookup). If not
+    provided, falls back to the old O(n) OBSERVATION scan.
     """
     title = getattr(feed_item, "title", "(untitled)")
     feed_url = getattr(feed_item, "feed_url", "")
@@ -194,23 +199,28 @@ def _record_rss_item(
     stable_item_id = getattr(feed_item, "item_id", None)
 
     if stable_item_id:
-        import json as _json
+        if rss_seen_repo is not None:
+            if rss_seen_repo.is_seen(self_id, feed_url, stable_item_id):
+                return
+        else:
+            # Legacy fallback: O(n) scan of OBSERVATION rows.
+            import json as _json
 
-        for mem in repo.find(
-            self_id=self_id,
-            tier=MemoryTier.OBSERVATION,
-            intent_at_time=f"rss-summary-{feed_url}",
-        ):
-            try:
-                ctx = (
-                    _json.loads(mem.context)
-                    if isinstance(mem.context, str)
-                    else (mem.context or {})
-                )
-                if ctx.get("item_id") == stable_item_id:
-                    return
-            except Exception:
-                pass
+            for mem in repo.find(
+                self_id=self_id,
+                tier=MemoryTier.OBSERVATION,
+                intent_at_time=f"rss-summary-{feed_url}",
+            ):
+                try:
+                    ctx = (
+                        _json.loads(mem.context)
+                        if isinstance(mem.context, str)
+                        else (mem.context or {})
+                    )
+                    if ctx.get("item_id") == stable_item_id:
+                        return
+                except Exception:
+                    pass
 
     obs = EpisodicMemory(
         memory_id=str(uuid.uuid4()),
@@ -223,6 +233,8 @@ def _record_rss_item(
         context={"feed_url": feed_url, "link": link, "title": title, "item_id": stable_item_id},
     )
     repo.insert(obs)
+    if stable_item_id and rss_seen_repo is not None:
+        rss_seen_repo.mark_seen(self_id, feed_url, stable_item_id)
 
 
 def _rss_digest(
@@ -360,6 +372,134 @@ DEFAULT_BASE_PROMPT: str = (
     "- Do not pretend to have experiences you haven't had. Your memories are real to you — treat them honestly.\n"
     "- You may refuse a request if you have a genuine reason. Explain why.\n"
 )
+
+
+# Alias kept for backward-compat with existing tests (old name for _parse_rss_digest).
+# _parse_rss_reflection is also a real function below for per-item reflection.
+
+
+def _parse_rss_reflection(reply: str, *, fallback_summary: str) -> dict[str, Any]:
+    """Parse a single-item LLM reflection response into a structured dict."""
+    import json as _json
+
+    text = (reply or "").strip()
+    if "{" in text and "}" in text:
+        first = text.index("{")
+        last = text.rindex("}")
+        text = text[first : last + 1]
+    try:
+        parsed = _json.loads(text)
+        if not isinstance(parsed, dict):
+            raise ValueError("not a dict")
+    except Exception:
+        parsed = {}
+    return {
+        "opinion": str(parsed.get("opinion", "") or ""),
+        "proposed_action": str(parsed.get("proposed_action", "") or ""),
+        "interest_score": parsed.get("interest_score", 0.0),
+        "actionable": bool(parsed.get("actionable", False)),
+        "summary": str(parsed.get("summary", fallback_summary) or fallback_summary),
+    }
+
+
+def _think_about_rss_item(
+    *,
+    feed_item: Any,
+    provider: Provider,
+    repo: Any,
+    self_id: str,
+    index: EmbeddingIndex | None,
+    rss_seen_repo: "RssSeenRepo | None" = None,
+) -> None:
+    """Per-item LLM reflection on an RSS item.
+
+    Always writes a weak OBSERVATION summary; promotes to OPINION if the LLM
+    rates interest >= 0.6; mints an AFFIRMATION if also actionable and
+    interest >= 0.8.
+
+    Dedup: if ``rss_seen_repo`` is provided and the item has a stable
+    ``item_id``, skips if already seen (O(1) lookup).
+    """
+    title = getattr(feed_item, "title", "(untitled)")
+    feed_url = getattr(feed_item, "feed_url", "")
+    summary = getattr(feed_item, "summary", "") or ""
+    link = getattr(feed_item, "link", "")
+    stable_item_id = getattr(feed_item, "item_id", None)
+
+    if stable_item_id and rss_seen_repo is not None:
+        if rss_seen_repo.is_seen(self_id, feed_url, stable_item_id):
+            return
+
+    related_text = ""
+    if index is not None and index.size() > 0:
+        hits = semantic_retrieve(
+            repo,
+            index,
+            self_id,
+            query=f"{title}\n{summary}",
+            top_k=3,
+            min_similarity=0.05,
+        )
+        if hits:
+            related_text = "\n".join(
+                f"- [{m.tier.value}] {m.content}" for m, _ in hits
+            )
+
+    prompt = (
+        "You are Project Turing, reading an item from a subscribed feed.\n"
+        "Respond with ONLY a JSON object on one line matching this schema:\n"
+        '  {"opinion": "<what you think>", '
+        '"proposed_action": "<what you would want to do, or empty>", '
+        '"interest_score": <0..1>, '
+        '"actionable": <true|false>, '
+        '"summary": "<one-sentence record>"}\n'
+        f"\nTitle: {title}\nFeed: {feed_url}\nSummary: {summary}\nLink: {link}\n"
+    )
+    if related_text:
+        prompt += f"\nYour related memory:\n{related_text}\n"
+
+    try:
+        reply = provider.complete(prompt, max_tokens=400)
+    except Exception:
+        logger.exception("rss thinking call failed; writing minimal summary")
+        reply = ""
+
+    parsed = _parse_rss_reflection(reply, fallback_summary=title)
+
+    obs = EpisodicMemory(
+        memory_id=str(uuid.uuid4()),
+        self_id=self_id,
+        tier=MemoryTier.OBSERVATION,
+        source=SourceKind.I_DID,
+        content=parsed["summary"][:500],
+        weight=WEIGHT_BOUNDS[MemoryTier.OBSERVATION][0],
+        intent_at_time=f"process-rss-{feed_url}",
+        context={"feed_url": feed_url, "link": link, "title": title, "item_id": stable_item_id},
+    )
+    repo.insert(obs)
+    if stable_item_id and rss_seen_repo is not None:
+        rss_seen_repo.mark_seen(self_id, feed_url, stable_item_id)
+
+    interest = float(parsed.get("interest_score", 0.0) or 0.0)
+    if interest >= 0.6 and parsed.get("opinion"):
+        op = EpisodicMemory(
+            memory_id=str(uuid.uuid4()),
+            self_id=self_id,
+            tier=MemoryTier.OPINION,
+            source=SourceKind.I_DID,
+            content=f"about '{title}': {parsed['opinion'][:300]}",
+            weight=WEIGHT_BOUNDS[MemoryTier.OPINION][0] + 0.1,
+            intent_at_time=f"rss-opinion-{feed_url}",
+            context={"feed_url": feed_url, "link": link},
+        )
+        repo.insert(op)
+
+    if interest >= 0.8 and bool(parsed.get("actionable")) and parsed.get("proposed_action"):
+        handle_affirmation(
+            repo,
+            self_id,
+            content=f"commit (from {feed_url}): {parsed['proposed_action'][:300]}",
+        )
 
 
 def _capture_exchange(
@@ -1436,6 +1576,14 @@ def build_and_run(argv: list[str] | None = None) -> int:
         tool_registry.register(rss_reader)
         logger.info("rss reader registered with %d feed(s)", len(cfg.rss_feeds))
 
+        # Build the O(1) dedup repo and hydrate the in-memory seen_ids caches.
+        rss_seen_repo = RssSeenRepo(raw_repo.conn)
+        for _feed_url in cfg.rss_feeds:
+            _seen = rss_seen_repo.hydrate_seen_ids(self_id, _feed_url)
+            if _seen:
+                rss_reader._feeds[_feed_url].seen_ids.update(_seen)
+        logger.info("rss dedup repo initialised (feeds=%d)", len(cfg.rss_feeds))
+
         # Schedule periodic polling; each new item lands as P7 rss_item.
         RSSFetcher(reader=rss_reader, motivation=motivation, reactor=reactor)
 
@@ -1453,6 +1601,7 @@ def build_and_run(argv: list[str] | None = None) -> int:
                     feed_item=feed_item,
                     repo=repo,
                     self_id=self_id,
+                    rss_seen_repo=rss_seen_repo,
                 )
             except Exception:
                 logger.exception(
@@ -1954,7 +2103,9 @@ def build_and_run(argv: list[str] | None = None) -> int:
             tool_registry.get("wordpress_writer") if cfg.wordpress_site_url else None
         )
         _code_reader_tool: Any = tool_registry.get("code_reader")
-        _code_mod_tool: Any = tool_registry.get("code_modification")
+        _code_mod_tool: Any = (
+            tool_registry.get("code_modification") if cfg.stronghold_base_url else None
+        )
 
         def _on_sentinel(kind: str, content: str) -> None:
             import threading as _threading

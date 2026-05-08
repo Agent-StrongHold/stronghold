@@ -84,7 +84,7 @@ def test_ac_61_4_validate_name_hyphenated():
 
 # AC-61.5
 def test_ac_61_5_trigger_no_display_name_no_durable(repo, self_id):
-    assert naming_trigger_check(repo, self_id) is False
+    assert naming_trigger_check(repo.conn, self_id) is False
 
 
 # AC-61.6
@@ -95,7 +95,7 @@ def test_ac_61_6_trigger_existing_display_name(repo, self_id):
     )
     repo.conn.commit()
     _insert_durable(repo, self_id, DURABLE_MEMORY_THRESHOLD)
-    assert naming_trigger_check(repo, self_id) is False
+    assert naming_trigger_check(repo.conn, self_id) is False
 
 
 # AC-61.7
@@ -108,7 +108,7 @@ def test_ac_61_7_insert_proposal_adds_row(repo, self_id, new_id):
         status="pending",
         proposed_at=datetime.now(UTC).isoformat(),
     )
-    insert_proposal(repo, proposal)
+    insert_proposal(repo.conn, proposal)
     row = repo.conn.execute(
         "SELECT proposed_name, status FROM self_name_proposals WHERE proposal_id = ?",
         (proposal.proposal_id,),
@@ -128,8 +128,8 @@ def test_ac_61_8_ack_approve_sets_display_name(repo, self_id, new_id):
         status="pending",
         proposed_at=datetime.now(UTC).isoformat(),
     )
-    insert_proposal(repo, proposal)
-    ack_name(repo, proposal.proposal_id, "approve", reviewed_by="operator")
+    insert_proposal(repo.conn, proposal)
+    ack_name(repo.conn, proposal.proposal_id, "approve", reviewed_by="operator")
     row = repo.conn.execute(
         "SELECT display_name, naming_source FROM self_identity WHERE self_id = ?",
         (self_id,),

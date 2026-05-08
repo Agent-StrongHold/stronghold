@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 
 SURPRISE_THRESHOLD: float = 0.4
@@ -20,7 +20,7 @@ def get_agg_counts() -> dict[str, int]:
 
 def compute_specialist_stats(repo, self_id: str, specialist: str) -> dict:
     now = datetime.now(UTC)
-    cutoff = now.replace(day=max(1, now.day - 30)).isoformat()
+    cutoff = (now - timedelta(days=30)).isoformat()
     rows = repo.conn.execute(
         "SELECT surprise_delta, predicted_confidence FROM prospective_predictions "
         "WHERE self_id = ? AND candidate_specialist = ? AND surprise_delta IS NOT NULL "

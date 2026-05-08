@@ -388,35 +388,88 @@ export function buildBackgroundPrompt(template, settingDesc) {
   return parts.filter(Boolean).join(". ");
 }
 
-export function buildCharacterPrompt(template, characterDesign, sceneAction) {
+export function buildCharacterPrompt(template, characterDesign, sceneAction, handheldProps) {
   const { style, mood, lighting } = template.generation_params;
   const { pose } = template.character_slot;
+  const propNames = (handheldProps || []).map((p) => p.name).filter(Boolean);
+  const propDescs = (handheldProps || []).map((p) => p.description).filter(Boolean);
+  const propInstruction = propNames.length > 0
+    ? `The child is HOLDING and INTERACTING WITH ${propNames.join(" and ")}: ${propDescs.join("; ")}. Show the props IN the child's hands or arms, child-sized.`
+    : "";
   const parts = [
     style.technique,
-    "a child character on PURE WHITE background for compositing",
+    "children's book illustration on PURE WHITE background for compositing",
     characterDesign,
-    pose.body,
-    pose.arm_position,
+    sceneAction || pose.body,
+    propInstruction,
+    pose.arm_position !== "arms at sides" ? pose.arm_position : "",
     `facing ${pose.facing.replace(/_/g, " ")}`,
-    sceneAction || "",
+    "child-sized proportions — this is a young child, NOT an adult, everything should be proportionally small",
     lighting.color_temp.replace(/_/g, " ") + " lighting",
     `detail level: ${style.detail_level}`,
     mood.tension < 0.2 ? "gentle expression" : mood.tension > 0.4 ? "excited expression" : "curious expression",
     "consistent character design, same child as reference sheet",
-    "NO background, NO scenery, clean white only",
+    "The pose and action MUST look natural and active — the child is doing something specific, not standing still",
+    "If holding items, show them gripped in hands or tucked under arms at CHILD scale (smaller than you think)",
+    "NO background scenery, NO environment, clean white only",
   ];
   return parts.filter(Boolean).join(". ");
 }
 
-export function buildPropPrompt(template, prop) {
+export function buildCombinedCharacterPrompt(template, characterDesigns, charactersPresent, bookSpec, sceneAction, handheldProps) {
+  const { style, mood, lighting } = template.generation_params;
+  const { pose } = template.character_slot;
+  const propNames = (handheldProps || []).map((p) => p.name).filter(Boolean);
+  const propDescs = (handheldProps || []).map((p) => p.description).filter(Boolean);
+  const propInstruction = propNames.length > 0
+    ? `Characters are HOLDING and INTERACTING WITH ${propNames.join(" and ")}: ${propDescs.join("; ")}. Show props IN hands, child-sized.`
+    : "";
+  const chars = bookSpec?.characters || [];
+  const names = (charactersPresent || []).map((n) => n.toLowerCase().trim());
+  const presentDesigns = characterDesigns.filter((_, i) => {
+    if (names.length === 0) return i === 0;
+    return names.includes((chars[i]?.name || "").toLowerCase().trim());
+  });
+  const designText = presentDesigns.length > 0
+    ? presentDesigns.join(". ALSO PRESENT: ")
+    : characterDesigns[0];
+  const charCount = presentDesigns.length || 1;
+  const countNote = charCount > 1
+    ? `${charCount} children together in the scene, interacting naturally with each other`
+    : "single child in the scene";
+  const parts = [
+    style.technique,
+    "children's book illustration on PURE WHITE background for compositing",
+    designText,
+    countNote,
+    sceneAction || pose.body,
+    propInstruction,
+    pose.arm_position !== "arms at sides" ? pose.arm_position : "",
+    `facing ${pose.facing.replace(/_/g, " ")}`,
+    "child-sized proportions — all characters are young children, NOT adults",
+    lighting.color_temp.replace(/_/g, " ") + " lighting",
+    `detail level: ${style.detail_level}`,
+    mood.tension < 0.2 ? "gentle expressions" : mood.tension > 0.4 ? "excited expressions" : "curious expressions",
+    "consistent character designs matching their reference sheets",
+    "Poses and actions MUST look natural and active",
+    "NO background scenery, NO environment, clean white only",
+  ];
+  return parts.filter(Boolean).join(". ");
+}
+
+export function buildPropPrompt(template, prop, sceneAction) {
   const { style, lighting } = template.generation_params;
   const parts = [
     style.technique,
+    "children's book illustration — large scene element (building, vehicle, tree, furniture, etc.)",
     prop.description,
+    sceneAction ? `as seen in scene: "${sceneAction}"` : "",
+    "This is a LARGE environment element that a child character would stand NEXT TO or INSIDE",
+    "Rendered at the correct scale relative to a child — not miniature, not gigantic",
     "on PURE WHITE background for compositing",
     lighting.color_temp.replace(/_/g, " ") + " lighting",
     `detail level: ${style.detail_level}`,
-    "NO characters, NO hands, isolated object",
+    "NO characters, NO people, isolated object only",
   ];
   return parts.filter(Boolean).join(". ");
 }
@@ -506,18 +559,21 @@ export function generateScenePlan(decomposition, bookSpec) {
       lightingToken
     );
 
+    const allProps = raw.props || [];
+    const handheldProps = allProps.filter((p) => (p.scale || "handheld") === "handheld");
+    const environmentProps = allProps.filter((p) => p.scale === "environment");
+
     return {
       id: raw.id || idx + 1,
       ...template,
-      bg_prompt: sceneTypeDef.has_character === false
-        ? buildBackgroundPrompt(template, raw.description || "")
-        : buildBackgroundPrompt(template, raw.description || ""),
+      bg_prompt: buildBackgroundPrompt(template, raw.description || ""),
       character_prompt: sceneTypeDef.has_character === false
         ? null
-        : buildCharacterPrompt(template, characterDesign, raw.character_action),
-      prop_prompts: (template.props || []).map((p) => ({
+        : buildCombinedCharacterPrompt(template, characterDesigns, raw.characters_present, bookSpec, raw.character_action, handheldProps),
+      characters_present: raw.characters_present || [],
+      prop_prompts: environmentProps.map((p) => ({
         name: p.name,
-        prompt: buildPropPrompt(template, p),
+        prompt: buildPropPrompt(template, p, raw.character_action),
         placement: p.placement,
       })),
     };

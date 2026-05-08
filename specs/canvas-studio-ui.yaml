@@ -1,0 +1,549 @@
+# Spec 1190: Canvas Studio UI — React layer editor for Da Vinci + Fabulist
+#
+# Companion backend: canvas-studio.yaml (spec 1189).
+# This is the 7th surface in the Phosphor/Noir operator console.
+#
+# The Studio surface is not Turing-specific — it backs any agent that uses
+# the canvas tool (Da Vinci, Fabulist, any future visual agent). It is
+# accessible at /dashboard/studio and follows the same Phosphor/Noir
+# design tokens as surfaces 1–6.
+#
+# Rendering engine: Konva.js (React-Konva) for the canvas viewport.
+# Drag-to-reorder in the layer panel: @dnd-kit/sortable.
+# No new CSS framework — existing Phosphor/Noir tokens only.
+
+issue_number: 1190
+title: "Canvas Studio UI — seventh console surface, React layer editor with AI generation"
+status: active
+complexity: XL
+
+protocols_touched:
+  - (frontend only — calls canvas API from spec 1189)
+
+files_touched:
+  - src/stronghold/dashboard/components/canvas-studio/CanvasStudio.jsx
+  - src/stronghold/dashboard/components/canvas-studio/CanvasViewport.jsx
+  - src/stronghold/dashboard/components/canvas-studio/LayerPanel.jsx
+  - src/stronghold/dashboard/components/canvas-studio/LayerItem.jsx
+  - src/stronghold/dashboard/components/canvas-studio/GenerationPanel.jsx
+  - src/stronghold/dashboard/components/canvas-studio/ModelSelector.jsx
+  - src/stronghold/dashboard/components/canvas-studio/VariantGallery.jsx
+  - src/stronghold/dashboard/components/canvas-studio/ToolBar.jsx
+  - src/stronghold/dashboard/components/canvas-studio/CompositePreview.jsx
+  - src/stronghold/dashboard/components/canvas-studio/ExportDialog.jsx
+  - src/stronghold/dashboard/components/canvas-studio/CanvasCreateDialog.jsx
+  - src/stronghold/dashboard/studio.html
+  - src/stronghold/dashboard/components/Topbar.jsx   # extend: add Studio nav item
+  - tests/ui/test_canvas_studio.jsx                  # component unit tests (vitest + RTL)
+
+
+# ─────────────────────────────────────────────────────────────────────
+# ACCEPTANCE CRITERIA
+# ─────────────────────────────────────────────────────────────────────
+
+acceptance_criteria:
+
+  # ── Shell & navigation ────────────────────────────────────────────────
+  - "The Studio surface is accessible at /dashboard/studio and appears as the 7th nav item in the topbar (label: STUDIO, icon: ◈)"
+  - "The topbar breadcrumb reads ◆ > STUDIO when on the studio route"
+  - "The Studio shell uses the standard Phosphor/Noir chrome: --ink-0 background, topbar, classification banner, CRT overlay toggle"
+  - "On first visit with no canvases, a full-page empty state shows a 'New Canvas' call-to-action"
+
+  # ── Canvas create / select ────────────────────────────────────────────
+  - "The CanvasCreateDialog accepts: name (required), width+height (numeric inputs) or aspect-ratio shorthand selector, optional background color picker"
+  - "Width and height fields show a real-time validation error if the value is not in [64,8192] or not divisible by 8"
+  - "Submitting a valid canvas calls POST /api/canvas and, on success, navigates to /dashboard/studio?canvas={id}"
+  - "A canvas picker dropdown (top-left of studio) lists the 20 most recently updated canvases; selecting one loads it"
+  - "Canvas name is editable in-place via double-click on the picker label; saves on blur/Enter via PATCH /api/canvas/{id}"
+
+  # ── Studio layout ────────────────────────────────────────────────────
+  - "The studio layout is three columns: ToolBar (left, narrow) | CanvasViewport (center, flex) | LayerPanel + GenerationPanel (right, fixed width)"
+  - "The layout is responsive down to 1024px wide; below that, LayerPanel and GenerationPanel collapse into a bottom drawer"
+  - "Each panel has a Phosphor/Noir header bar with section label (dashed-rule flanked) and collapse toggle"
+
+  # ── Canvas viewport (Konva.js) ─────────────────────────────────────────
+  - "CanvasViewport renders the canvas as a Konva Stage with checkerboard background (transparent representation) scaled to fit the viewport"
+  - "Each layer with an image_path renders as a Konva.Image at the layer's (x, y, scale, rotation, opacity); layers rendered back-to-front by z_index"
+  - "Selecting a layer in LayerPanel activates it in the viewport: shows a selection box with resize handles and a rotation knob"
+  - "Move tool: drag the selected layer in the viewport; x/y update in real time (local state) and PATCH /api/canvas/{id}/layers/{lid} fires on mouseup"
+  - "Scale tool: dragging a corner handle scales the layer proportionally (shift for free scale); fires PATCH on mouseup"
+  - "Rotate tool: dragging the rotation knob (above selection box) rotates the layer; PATCH fires on mouseup"
+  - "Clicking outside any layer deselects all layers"
+  - "Locked layers show a lock badge over their selection box; drag/resize/rotate is disabled in the viewport for locked layers"
+  - "Invisible layers (visible=false) are hidden in the viewport but still shown as greyed entries in the layer panel"
+  - "Viewport shows a crosshair cursor in the center during zoom; scroll-wheel zooms in/out (10% steps, 10%–400% range)"
+  - "Ctrl+0 resets viewport zoom to fit-canvas"
+
+  # ── Layer panel ────────────────────────────────────────────────────────
+  - "LayerPanel renders layers top-to-bottom in reverse z_index order (highest z at top of list = topmost visual layer)"
+  - "Each LayerItem shows: thumbnail (40×40 checkerboard if no image), layer name, layer_type badge, status dot, visibility eye toggle, lock toggle, delete button"
+  - "Status dot colours: grey=no image, amber=generating, green=has image, red=failed"
+  - "Clicking a LayerItem selects it (highlights row, activates in viewport)"
+  - "Visibility eye toggle calls PATCH /api/canvas/{id}/layers/{lid} visible=!current; toggles immediately in UI (optimistic)"
+  - "Lock toggle calls PATCH locked=!current; locked layers show a closed-lock icon"
+  - "Delete button shows a 1-step confirm ('Delete layer?') inline; calls DELETE /api/canvas/{id}/layers/{lid} on confirm"
+  - "Layers are drag-reorderable via @dnd-kit/sortable; dropping fires POST /api/canvas/{id}/layers/reorder with the new order"
+  - "An 'Add Layer' button at the bottom of LayerPanel opens a small inline form: name, layer_type selector"
+  - "Layer name is editable in-place via double-click; saves on blur/Enter via PATCH"
+
+  # ── Layer properties panel (inline, below LayerItem when selected) ─────
+  - "Selecting a layer expands an inline properties panel directly below the LayerItem row, showing: opacity slider, blend mode selector, x/y numeric inputs, scale numeric input, rotation dial + numeric input"
+  - "Opacity slider range: 0–100 (displayed as integer %, stored as 0.0–1.0); dragging fires PATCH with the new opacity on release"
+  - "Opacity numeric input is synced with the slider and accepts direct keyboard entry; Enter commits, Escape reverts"
+  - "Blend mode selector shows: Normal, Multiply, Screen, Overlay, Darken, Lighten; changing calls PATCH blend_mode immediately"
+  - "X and Y inputs show the layer's top-left position in canvas pixels; editing fires PATCH x or PATCH y on Enter/blur"
+  - "Scale input shows percentage (e.g. '100%' for 1.0); editing and confirming fires PATCH scale"
+  - "Rotation dial is a circular widget (0–360°) with a degree readout; dragging or editing the readout fires PATCH rotation on release"
+  - "Z-index up/down arrows in the properties panel call POST /api/canvas/{id}/layers/reorder (swapping this layer with its neighbour); keyboard shortcuts Ctrl+[ and Ctrl+] do the same"
+  - "Move-to-top and move-to-bottom buttons set the layer to z=N-1 or z=0 respectively via reorder"
+  - "All numeric controls snap to 1px increments for x/y, 0.01 increments for scale, 1° for rotation"
+  - "Real-time preview: while dragging a slider or dial (before mouseup), the viewport updates at every animation frame — no PATCH is fired until release"
+
+  # ── Generation panel ──────────────────────────────────────────────────
+  - "GenerationPanel is shown when a layer is selected; shows 'Select a layer to generate' placeholder otherwise"
+  - "GenerationPanel contains: prompt textarea, negative prompt (collapsible), ModelSelector dropdown, Tier radio (DRAFT / PROOF), Count stepper (1-4), Seed input (optional), Generate button"
+  - "Generate button is disabled when: no layer selected, job is pending/running for selected layer, prompt is empty (for generate action), or selected layer is a text layer"
+  - "Generate button label changes to 'Generating…' with a phosphor-green spinner during job execution"
+  - "Action selector shows: GENERATE (default) | REFINE | REFERENCE; REFINE is greyed if selected layer has no image; TEXT LAYER label shown with no action selector if layer_type==text"
+  - "Clicking Generate calls POST /api/canvas/{id}/layers/{lid}/generate; the UI then polls GET /api/canvas/jobs/{jid} every 2 seconds until done or failed"
+  - "On job failure, a burn-red toast shows the error_message; the Generate button re-enables"
+  - "On job done, VariantGallery appears below GenerationPanel"
+
+  # ── Variant gallery ────────────────────────────────────────────────────
+  - "VariantGallery shows N image thumbnails (matching count) with Accept and Discard buttons below each"
+  - "Clicking Accept on variant K calls POST /api/canvas/jobs/{jid}/accept/{K}; on success updates the layer thumbnail in LayerPanel and the viewport"
+  - "Clicking Discard on all variants closes the gallery without changing the layer; job remains done"
+  - "Clicking Accept dismisses the other variants; only one variant can be accepted per job"
+  - "Thumbnails are 192×192 (or aspect-ratio-matched) with a phosphor-green border on hover"
+
+  # ── Composite & preview ────────────────────────────────────────────────
+  - "A Composite button (topbar or toolbar) calls POST /api/canvas/{id}/composite and overlays the result in a CompositePreview modal"
+  - "CompositePreview modal: full-canvas image centered, close button, Export button shortcut"
+  - "A 'Compositing…' spinner covers the viewport during the composite request"
+  - "After composite completes, the layer thumbnails in LayerPanel remain independent (composite does not replace them)"
+
+  # ── Export dialog ──────────────────────────────────────────────────────
+  - "ExportDialog: format selector (PNG / WebP / JPG), quality slider (1-100, disabled for PNG), filename input (default: {canvas-name}.{ext}), Download button"
+  - "Download button calls GET /api/canvas/{id}/export?format=...&quality=... and triggers browser download"
+  - "Quality slider displays the numeric value next to it (e.g. '90')"
+
+  # ── Model selector ─────────────────────────────────────────────────────
+  - "ModelSelector dropdown groups models by tier_class (DRAFT / PROOF) with a divider"
+  - "Free models show a '⊘ FREE' badge; paid models show cost per image"
+  - "The currently selected model's display_name is shown in the dropdown trigger"
+  - "ModelSelector defaults to the first DRAFT-tier model when a layer is first selected"
+  - "ModelSelector is refreshed by calling GET /api/canvas/models on Studio mount; a Refresh button forces ?refresh=true"
+
+  # ── Keyboard shortcuts ────────────────────────────────────────────────
+  - "V — activate Move tool"
+  - "S — activate Scale tool"
+  - "R — activate Rotate tool"
+  - "T — activate Text tool (opens text config panel if layer_type==text)"
+  - "Delete/Backspace — delete selected layer (with confirm)"
+  - "Ctrl+Z — undo last PATCH (restores previous layer state from local history)"
+  - "Ctrl+[ / Ctrl+] — move selected layer down/up in z_index"
+  - "Ctrl+Shift+[ / Ctrl+Shift+] — move selected layer to bottom/top of stack"
+  - "Space+drag — pan viewport"
+  - "Ctrl+0 — fit canvas to viewport"
+
+  # ── Undo history ─────────────────────────────────────────────────────
+  - "The UI maintains a local undo stack of the last 30 PATCH operations (x, y, scale, rotation per layer)"
+  - "Ctrl+Z replays the inverse PATCH; the server is updated; the viewport reflects the restored state"
+  - "Undo stack is canvas-scoped and clears on canvas switch"
+  - "Undo is not available for delete or reorder operations (irreversible without snapshot)"
+
+
+# ─────────────────────────────────────────────────────────────────────
+# GHERKIN ACCEPTANCE SCENARIOS
+# ─────────────────────────────────────────────────────────────────────
+
+gherkin_scenarios: |
+
+  Feature: Studio navigation
+    Scenario: First visit empty state
+      Given I navigate to /dashboard/studio
+      And I have no canvases
+      Then I see a full-page empty state with a "New Canvas" button
+      And the topbar breadcrumb reads "◆ > STUDIO"
+
+    Scenario: Create canvas from dialog
+      Given I click "New Canvas"
+      When I enter name="hero-art", width=1024, height=1024
+      And I click Create
+      Then POST /api/canvas is called with {name, width, height}
+      And I am navigated to /dashboard/studio?canvas={new_id}
+      And the viewport shows a blank 1024×1024 canvas
+
+    Scenario: Invalid width shows error inline
+      Given the CanvasCreateDialog is open
+      When I enter width=1025
+      Then a red error appears: "Width must be divisible by 8"
+      And the Create button is disabled
+
+    Scenario: Select existing canvas from picker
+      Given canvases "alpha" and "beta" exist
+      When I open the canvas picker and click "beta"
+      Then the viewport loads beta's layers
+      And the breadcrumb updates to show beta's name
+
+  Feature: Layer panel interactions
+    Scenario: Add background layer
+      Given canvas "scene" is loaded with 0 layers
+      When I click "Add Layer" and select layer_type=background name="sky"
+      Then POST /api/canvas/{id}/layers is called
+      And "sky" appears at the top of the layer panel (z=0, displayed as top item with reverse ordering note)
+      And status dot is grey (no image)
+
+    Scenario: Toggle layer visibility
+      Given layer "hero" is visible
+      When I click the eye icon on "hero"
+      Then PATCH /api/canvas/{id}/layers/{hero.id} is called with visible=false
+      And the eye turns to a closed-eye icon immediately (optimistic)
+      And the layer fades in the viewport
+
+    Scenario: Drag reorder layers
+      Given layers A(top), B(middle), C(bottom) in the panel
+      When I drag B above A
+      Then POST /api/canvas/{id}/layers/reorder is called with new order [B, A, C]
+      And the panel reflects the new order immediately
+
+    Scenario: Delete layer with confirm
+      Given layer "temp" is selected
+      When I click the delete button on "temp"
+      Then an inline confirm "Delete layer?" appears
+      When I click Confirm
+      Then DELETE /api/canvas/{id}/layers/{temp.id} is called
+      And "temp" is removed from the panel
+
+    Scenario: Locked layer shows lock badge in viewport
+      Given layer "hero" is locked
+      Then the viewport shows a closed-lock badge over "hero"
+      And dragging "hero" in the viewport does nothing (no PATCH fired)
+
+  Feature: Generation workflow
+    Scenario: Generate draft variant
+      Given layer "sky" is selected (background, no image)
+      And model "gemini-flash" (draft) is chosen
+      When I type prompt "golden hour sunset" and click Generate
+      Then POST /api/canvas/{id}/layers/{sky.id}/generate is called with action=generate tier=draft
+      And the Generate button changes to "Generating…" with a spinner
+      And the status dot on "sky" turns amber
+
+    Scenario: Job completes — variant gallery appears
+      Given a generation job for "sky" completes with 2 variants
+      Then the Generate button re-enables (but shows "Regenerate")
+      And VariantGallery shows 2 thumbnails below GenerationPanel
+      And the status dot on "sky" stays amber until Accept is clicked
+
+    Scenario: Accept first variant
+      Given VariantGallery shows variants [V0, V1]
+      When I click Accept under V0
+      Then POST /api/canvas/jobs/{jid}/accept/0 is called
+      And the layer "sky" thumbnail updates to V0 in LayerPanel
+      And V0 appears in the viewport
+      And the status dot on "sky" turns green
+
+    Scenario: Job fails — error toast shown
+      Given the image model returns an error
+      Then the status dot on "sky" turns red
+      And a burn-red toast shows the error_message
+      And the Generate button re-enables
+
+    Scenario: Generate disabled for text layer
+      Given layer "title" has layer_type=text
+      When I select "title"
+      Then the GenerationPanel shows "TEXT LAYER" label
+      And the Generate button is absent (not just disabled)
+
+    Scenario: Generate disabled while job running
+      Given a generation job is running for "sky"
+      When I select "sky"
+      Then the Generate button is disabled
+      And it shows "Generating…"
+
+    Scenario: Refine greyed with no image
+      Given layer "hero" has no image_path
+      When I select action=REFINE in the action selector
+      Then the REFINE option is greyed
+      And a tooltip reads "Add an image first to enable Refine"
+
+  Feature: Viewport manipulation — direct manipulation of layers
+    Scenario: Move layer via drag
+      Given layer "hero" is selected at x=100 y=100
+      When I drag "hero" 50px right and 30px down in the viewport
+      Then x and y update in real time in the viewport (no PATCH yet)
+      And on mouseup PATCH /api/canvas/{id}/layers/{hero.id} is called with x=150 y=130
+      And the properties panel x and y inputs update to 150 and 130
+
+    Scenario: Scale via corner handle proportionally
+      Given layer "hero" is selected with scale=1.0
+      When I drag the bottom-right corner handle inward by 10%
+      Then the layer shrinks proportionally in the viewport in real time
+      And PATCH is called on mouseup with the new scale value
+      And the scale input in the properties panel reflects the new value
+
+    Scenario: Scale freely with shift held
+      Given layer "hero" is selected
+      When I hold Shift and drag a corner handle
+      Then width and height scale independently (non-uniform)
+      And PATCH is called with separate width and height overrides on mouseup
+
+    Scenario: Rotate via knob drag
+      Given layer "hero" is selected with rotation=0
+      When I drag the rotation knob 45 degrees clockwise
+      Then the layer rotates in real time in the viewport
+      And PATCH is called on mouseup with rotation=45.0
+      And the rotation dial in the properties panel shows 45°
+
+    Scenario: Set opacity to 50% via slider
+      Given layer "hero" is selected with opacity=1.0
+      When I drag the opacity slider to 50%
+      Then the layer fades in the viewport in real time (each animation frame)
+      And on release PATCH is called with opacity=0.5
+
+    Scenario: Set opacity via numeric input
+      Given the properties panel is open for "hero"
+      When I type '30' in the opacity input and press Enter
+      Then PATCH is called with opacity=0.3
+      And the opacity slider moves to 30%
+
+    Scenario: Change blend mode
+      Given layer "hero" is selected with blend_mode='normal'
+      When I select 'Multiply' from the blend mode dropdown
+      Then PATCH is called immediately with blend_mode='multiply'
+      And the viewport re-renders with multiply compositing
+
+    Scenario: Move layer up in z-order via button
+      Given layers A(z=0) B(z=1) C(z=2) and B is selected
+      When I click the z-up arrow in the properties panel
+      Then POST /api/canvas/{id}/layers/reorder is called swapping B and C
+      And B is now at z=2 and C is at z=1
+      And the LayerPanel reflects the new order immediately
+
+    Scenario: Move layer to top via keyboard
+      Given layers A(z=0) B(z=1) C(z=2) and A is selected
+      When I press Ctrl+Shift+]
+      Then A moves to z=2 (top)
+      And B and C shift down to z=0 and z=1
+
+    Scenario: Move layer down via Ctrl+[
+      Given layers A(z=0) B(z=1) and B is selected
+      When I press Ctrl+[
+      Then B moves to z=0 and A moves to z=1
+
+    Scenario: Set x via numeric input
+      Given the properties panel shows x=0
+      When I type '200' in the x input and press Enter
+      Then PATCH is called with x=200
+      And the viewport moves the layer to x=200
+
+    Scenario: Undo move
+      Given layer "hero" was moved from x=100 to x=200 (one PATCH)
+      When I press Ctrl+Z
+      Then PATCH /api/canvas/{id}/layers/{hero.id} is called with x=100
+      And the viewport shows "hero" at x=100
+      And the properties panel x input shows 100
+
+    Scenario: Undo opacity change
+      Given layer "hero" had opacity changed from 1.0 to 0.5
+      When I press Ctrl+Z
+      Then PATCH is called restoring opacity=1.0
+      And the opacity slider returns to 100%
+
+    Scenario: No PATCH fired during real-time drag (only on mouseup)
+      Given I drag "hero" across the canvas over 20 pixels
+      When I am mid-drag
+      Then zero PATCH requests have been sent
+      When I release the mouse
+      Then exactly one PATCH request is sent
+
+    Scenario: Locked layer cannot be moved in viewport
+      Given layer "hero" is locked
+      When I attempt to drag "hero" in the viewport
+      Then the layer does not move
+      And no PATCH is fired
+
+    Scenario: Viewport zoom with scroll wheel
+      Given the viewport is at 100% zoom
+      When I scroll up twice
+      Then zoom becomes 120%
+      And the canvas appears larger but layer positions are unchanged
+
+    Scenario: Ctrl+0 resets zoom
+      Given the viewport is zoomed to 200%
+      When I press Ctrl+0
+      Then zoom resets so the full canvas fits in the viewport
+
+  Feature: Composite and export
+    Scenario: Composite layers
+      Given canvas has 3 visible layers with images
+      When I click Composite
+      Then POST /api/canvas/{id}/composite is called
+      And a "Compositing…" spinner overlays the viewport
+      And on success, CompositePreview modal shows the assembled image
+
+    Scenario: Export PNG
+      Given CompositePreview is open
+      When I click Export, select PNG, and click Download
+      Then GET /api/canvas/{id}/export?format=png is called
+      And the browser downloads the file as "{canvas-name}.png"
+
+    Scenario: Export WebP with quality 80
+      Given ExportDialog is open
+      When I select WebP and set quality to 80 and click Download
+      Then GET /api/canvas/{id}/export?format=webp&quality=80 is called
+
+    Scenario: Quality slider disabled for PNG
+      When I select PNG in ExportDialog
+      Then the quality slider is disabled and greyed
+
+  Feature: Model selector
+    Scenario: Models grouped by tier
+      When I open ModelSelector
+      Then I see a DRAFT section and a PROOF section separated by a divider
+      And free models show "⊘ FREE" badge
+
+    Scenario: Default model on layer select
+      Given models include "gemini-flash" (draft, free) as the first draft model
+      When I select any layer
+      Then ModelSelector defaults to "gemini-flash"
+
+
+# ─────────────────────────────────────────────────────────────────────
+# INVARIANTS
+# ─────────────────────────────────────────────────────────────────────
+
+invariants:
+
+  - name: layer_panel_reverse_z_order
+    description: "LayerPanel always renders layers with highest z_index at the top (Photoshop convention)"
+    kind: state_invariant
+    expression: "layer_panel_items[0].z_index == max(layer.z_index for layer in canvas.layers)"
+    severity: high
+
+  - name: viewport_matches_server_state
+    description: "After any PATCH response, the viewport reflects the server-authoritative state (not just local prediction)"
+    kind: postcondition
+    expression: "on 2xx PATCH response: viewport.layer.{x,y,scale,rotation} == response.layer.{x,y,scale,rotation}"
+    severity: high
+
+  - name: generate_button_mutex
+    description: "The Generate button is never enabled while a pending or running job exists for the selected layer"
+    kind: state_invariant
+    expression: "job.status in ('pending','running') => generate_button.disabled == true"
+    severity: critical
+
+  - name: accept_updates_thumbnail
+    description: "Accepting a variant always updates the LayerItem thumbnail before the user can click anything else"
+    kind: postcondition
+    expression: "after accept 2xx: LayerItem.thumbnail_url == accepted_variant_url"
+    severity: high
+
+  - name: undo_stack_capped
+    description: "The undo stack never exceeds 30 entries per canvas"
+    kind: state_invariant
+    expression: "len(undo_stack) <= 30"
+    severity: medium
+
+  - name: no_patch_on_locked_layer_drag
+    description: "Dragging a locked layer in the viewport never fires a PATCH request"
+    kind: postcondition
+    expression: "layer.locked => no PATCH fired during drag"
+    severity: critical
+
+  - name: text_layer_no_generate_button
+    description: "A text-type layer never shows the Generate button (the button is absent, not disabled)"
+    kind: state_invariant
+    expression: "layer.layer_type == 'text' => document.querySelector('[data-testid=generate-btn]') == null"
+    severity: high
+
+  - name: poll_stops_on_terminal_state
+    description: "The 2-second job polling loop stops when job.status reaches done, failed, or cancelled"
+    kind: postcondition
+    expression: "job.status in ('done','failed','cancelled') => polling_interval cleared"
+    severity: high
+
+  - name: no_patch_during_drag
+    description: "Zero PATCH requests are fired while a drag is in progress; exactly one fires on mouseup"
+    kind: state_invariant
+    expression: "mid_drag => PATCH_call_count == 0; mouseup => PATCH_call_count == 1"
+    severity: critical
+
+  - name: realtime_preview_every_frame
+    description: "Viewport re-renders on every animation frame while a slider or dial is held (opacity, rotation, scale) — not just on discrete steps"
+    kind: state_invariant
+    expression: "raf_callback_called == true while input.dragging == true"
+    severity: high
+
+  - name: properties_panel_synced
+    description: "After any PATCH 2xx, all numeric inputs in the properties panel reflect the server-authoritative value"
+    kind: postcondition
+    expression: "PATCH 2xx => properties_panel.{x,y,scale,rotation,opacity} == response.layer.{x,y,scale,rotation,opacity}"
+    severity: high
+
+  - name: opacity_stored_as_fraction
+    description: "Opacity is always stored and sent as a float in [0.0, 1.0] even though the UI displays it as 0–100%"
+    kind: state_invariant
+    expression: "PATCH opacity payload == displayed_percentage / 100"
+    severity: critical
+
+  - name: z_index_buttons_disabled_at_boundary
+    description: "Move-to-bottom button is disabled when layer is already at z=0; move-to-top is disabled at z=N-1"
+    kind: state_invariant
+    expression: "(layer.z_index == 0 => move_down_button.disabled) AND (layer.z_index == N-1 => move_up_button.disabled)"
+    severity: medium
+
+
+# ─────────────────────────────────────────────────────────────────────
+# EDGE CASES
+# ─────────────────────────────────────────────────────────────────────
+
+edge_cases:
+
+  - id: UI-EC-01
+    area: viewport
+    description: "Canvas with very large dimensions (8192×8192) renders in viewport without browser freeze; Konva scales it to fit"
+
+  - id: UI-EC-02
+    area: viewport
+    description: "Layer with large image (4096×4096) on a 1024×1024 canvas — Konva renders the scaled-down version; memory is not exhausted"
+
+  - id: UI-EC-03
+    area: generation
+    description: "User navigates away from Studio while a job is polling — the polling interval is cleared on component unmount (no memory leak, no stale setState)"
+
+  - id: UI-EC-04
+    area: generation
+    description: "Network request for generate fails (503) — toast shows error, Generate button re-enables, no spinner left running"
+
+  - id: UI-EC-05
+    area: layers
+    description: "Rapid-clicking the visibility eye faster than PATCH can respond — the last click wins; UI debounces to avoid double-toggle"
+
+  - id: UI-EC-06
+    area: layers
+    description: "Drag reorder while a composite is in flight — reorder fires normally; the in-flight composite uses the old order (race is acceptable)"
+
+  - id: UI-EC-07
+    area: undo
+    description: "Undo after 30 moves — the 31st undo is a no-op; no error shown"
+
+  - id: UI-EC-08
+    area: undo
+    description: "Undo immediately after switching canvases — the undo stack from the previous canvas is discarded; Ctrl+Z is a no-op"
+
+  - id: UI-EC-09
+    area: export
+    description: "Download fails (server error) — a burn-red toast shows 'Export failed'; the dialog stays open for retry"
+
+  - id: UI-EC-10
+    area: model_selector
+    description: "LiteLLM model list returns empty — ModelSelector shows 'No models available' and Generate is disabled"
+
+  - id: UI-EC-11
+    area: viewport
+    description: "Zoom to 400% then Ctrl+[ to move layer — layer moves but viewport doesn't reset zoom"
+
+  - id: UI-EC-12
+    area: layers
+    description: "50 layers loaded — LayerPanel virtualises the list (react-window or equivalent); no visible performance degradation"

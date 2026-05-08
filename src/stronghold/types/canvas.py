@@ -1,0 +1,290 @@
+"""Canvas Studio types — data models, enums, and error hierarchy.
+
+Defines the shared vocabulary for the canvas tool executor, compositor,
+REST API routes, and persistence layer.  All canvas domain errors extend
+CanvasError (which itself extends StrongholdError) so route handlers can
+map them to HTTP status codes uniformly.
+"""
+
+from __future__ import annotations
+
+import uuid
+from dataclasses import dataclass, field
+from datetime import UTC, datetime
+from enum import StrEnum
+from typing import Any
+
+from stronghold.types.errors import StrongholdError  # noqa: TCH002
+
+# ── Enums ─────────────────────────────────────────────────────────────
+
+
+class LayerType(StrEnum):
+    BACKGROUND = "background"
+    CHARACTER = "character"
+    OBJECT = "object"
+    TEXT = "text"
+
+
+class JobStatus(StrEnum):
+    PENDING = "pending"
+    RUNNING = "running"
+    DONE = "done"
+    FAILED = "failed"
+    CANCELLED = "cancelled"
+
+
+class JobAction(StrEnum):
+    GENERATE = "generate"
+    REFINE = "refine"
+    REFERENCE = "reference"
+    COMPOSITE = "composite"
+    TEXT = "text"
+
+
+_IMAGE_GEN_ACTIONS: frozenset[str] = frozenset(
+    {JobAction.GENERATE, JobAction.REFINE, JobAction.REFERENCE}
+)
+
+
+# ── Error hierarchy ──────────────────────────────────────────────────
+
+
+class CanvasError(StrongholdError):
+    """Base error for all canvas domain errors."""
+
+    code = "CANVAS_ERROR"
+
+
+class CanvasNotFoundError(CanvasError):
+    code = "CANVAS_NOT_FOUND"
+
+
+class CanvasArchivedError(CanvasError):
+    code = "CANVAS_ARCHIVED"
+
+
+class CanvasHasLayersError(CanvasError):
+    code = "CANVAS_HAS_LAYERS"
+
+
+class LayerNotFoundError(CanvasError):
+    code = "LAYER_NOT_FOUND"
+
+
+class LayerLockedError(CanvasError):
+    code = "LAYER_LOCKED"
+
+
+class LayerLimitExceededError(CanvasError):
+    code = "LAYER_LIMIT_EXCEEDED"
+
+
+class DuplicateZIndexError(CanvasError):
+    code = "DUPLICATE_Z_INDEX"
+
+
+class IncompleteReorderError(CanvasError):
+    code = "INCOMPLETE_REORDER"
+
+
+class JobNotFoundError(CanvasError):
+    code = "JOB_NOT_FOUND"
+
+
+class JobNotDoneError(CanvasError):
+    code = "JOB_NOT_DONE"
+
+
+class JobAlreadyTerminalError(CanvasError):
+    code = "JOB_ALREADY_TERMINAL"
+
+
+class JobInProgressError(CanvasError):
+    code = "JOB_IN_PROGRESS"
+
+
+class TextLayerNoGenError(CanvasError):
+    code = "TEXT_LAYER_NO_GEN"
+
+
+class UnknownModelError(CanvasError):
+    code = "UNKNOWN_MODEL"
+
+
+class PromptBlockedError(CanvasError):
+    code = "PROMPT_BLOCKED"
+
+
+class RefineNoSourceError(CanvasError):
+    code = "REFINE_NO_SOURCE"
+
+
+class VariantIndexOutOfRangeError(CanvasError):
+    code = "VARIANT_INDEX_OUT_OF_RANGE"
+
+
+class UnsupportedFormatError(CanvasError):
+    code = "UNSUPPORTED_FORMAT"
+
+
+class InvalidDimensionsError(CanvasError):
+    code = "INVALID_DIMENSIONS"
+
+
+class InvalidScaleError(CanvasError):
+    code = "INVALID_SCALE"
+
+
+# ── Data models ──────────────────────────────────────────────────────
+
+
+@dataclass
+class TextConfig:
+    content: str = ""
+    font: str = "sans-serif"
+    size: int = 48
+    color: str = "#000000"
+    weight: str = "normal"
+    alignment: str = "center"
+    shadow_color: str | None = None
+    shadow_offset: tuple[int, int] = (2, 2)
+
+
+@dataclass
+class CanvasRecord:
+    id: str = field(default_factory=lambda: str(uuid.uuid4()))
+    name: str = ""
+    width: int = 1024
+    height: int = 1024
+    background_color: str = "#FFFFFF"
+    org_id: str = ""
+    layer_count: int = 0
+    archived_at: datetime | None = None
+    created_at: datetime = field(default_factory=lambda: datetime.now(UTC))
+    updated_at: datetime = field(default_factory=lambda: datetime.now(UTC))
+
+    def is_archived(self) -> bool:
+        return self.archived_at is not None
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "id": self.id,
+            "name": self.name,
+            "width": self.width,
+            "height": self.height,
+            "background_color": self.background_color,
+            "org_id": self.org_id,
+            "layer_count": self.layer_count,
+            "archived_at": self.archived_at.isoformat() if self.archived_at else None,
+            "created_at": self.created_at.isoformat(),
+            "updated_at": self.updated_at.isoformat(),
+        }
+
+
+@dataclass
+class LayerRecord:
+    id: str = field(default_factory=lambda: str(uuid.uuid4()))
+    canvas_id: str = ""
+    name: str = ""
+    layer_type: str = "background"
+    z_index: int = 0
+    x: float = 0.0
+    y: float = 0.0
+    scale: float = 1.0
+    rotation: float = 0.0
+    opacity: float = 1.0
+    blend_mode: str = "normal"
+    visible: bool = True
+    locked: bool = False
+    image_path: str | None = None
+    prompt: str | None = None
+    model_id: str | None = None
+    tier: str = "draft"
+    text_config: TextConfig | None = None
+    updated_at: datetime = field(default_factory=lambda: datetime.now(UTC))
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "id": self.id,
+            "canvas_id": self.canvas_id,
+            "name": self.name,
+            "layer_type": self.layer_type,
+            "z_index": self.z_index,
+            "x": self.x,
+            "y": self.y,
+            "scale": self.scale,
+            "rotation": self.rotation,
+            "opacity": self.opacity,
+            "blend_mode": self.blend_mode,
+            "visible": self.visible,
+            "locked": self.locked,
+            "image_path": self.image_path,
+            "prompt": self.prompt,
+            "model_id": self.model_id,
+            "tier": self.tier,
+        }
+
+
+@dataclass
+class GenerationJobRecord:
+    id: str = field(default_factory=lambda: str(uuid.uuid4()))
+    layer_id: str = ""
+    canvas_id: str = ""
+    action: str = "generate"
+    status: str = "pending"
+    model_id: str = ""
+    prompt: str = ""
+    params: dict[str, Any] = field(default_factory=dict)
+    result_paths: list[str] = field(default_factory=list)
+    selected_index: int | None = None
+    error_message: str | None = None
+    started_at: datetime | None = None
+    completed_at: datetime | None = None
+    created_at: datetime = field(default_factory=lambda: datetime.now(UTC))
+
+    def is_terminal(self) -> bool:
+        return self.status in (
+            JobStatus.DONE,
+            JobStatus.FAILED,
+            JobStatus.CANCELLED,
+        )
+
+    def is_active(self) -> bool:
+        return self.status in (JobStatus.PENDING, JobStatus.RUNNING)
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "id": self.id,
+            "layer_id": self.layer_id,
+            "canvas_id": self.canvas_id,
+            "action": self.action,
+            "status": self.status,
+            "model_id": self.model_id,
+            "prompt": self.prompt,
+            "params": self.params,
+            "result_paths": self.result_paths,
+            "selected_index": self.selected_index,
+            "error_message": self.error_message,
+            "started_at": self.started_at.isoformat() if self.started_at else None,
+            "completed_at": self.completed_at.isoformat() if self.completed_at else None,
+            "created_at": self.created_at.isoformat(),
+        }
+
+
+@dataclass
+class ImageData:
+    width: int
+    height: int
+    url: str
+    bytes_: bytes = field(default_factory=bytes)
+
+
+@dataclass
+class CompositeResult:
+    canvas_id: str
+    image_bytes: bytes
+    width: int
+    height: int
+    layer_snapshot: list[dict[str, Any]] = field(default_factory=list)
+    created_at: datetime = field(default_factory=lambda: datetime.now(UTC))

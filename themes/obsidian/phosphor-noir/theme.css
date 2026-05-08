@@ -1,0 +1,471 @@
+/*
+Phosphor / Noir — Obsidian theme
+A field-dossier vault: dark-mode retro-sci-fi greys to whites, CRT
+phosphor-green accent, IBM Plex + VT323 typography. Full coverage of
+file tree, editor, graph view, callouts, code blocks, tags, frontmatter.
+
+Install: drop this folder into .obsidian/themes/ then Appearance → Themes.
+*/
+
+@import url('https://fonts.googleapis.com/css2?family=VT323&family=IBM+Plex+Mono:ital,wght@0,300;0,400;0,500;0,600;0,700;1,400&family=IBM+Plex+Sans:ital,wght@0,300;0,400;0,500;0,600;0,700;1,400&family=IBM+Plex+Serif:ital,wght@0,400;0,500;1,400&display=swap');
+
+/* =========================================================
+   Tokens — dark theme only (brand is dark-mode always)
+   ========================================================= */
+.theme-dark {
+  /* Ink / bone */
+  --pn-ink-0: #050507;
+  --pn-ink-1: #0A0B0A;
+  --pn-ink-2: #0F1110;
+  --pn-ink-3: #141714;
+  --pn-ink-4: #1B1F1C;
+  --pn-ink-5: #222825;
+  --pn-line-1: #232925;
+  --pn-line-2: #334038;
+  --pn-line-3: #4E5C54;
+  --pn-grey-1: #6E7670;
+  --pn-grey-2: #8F9692;
+  --pn-grey-3: #B4BAB7;
+  --pn-grey-4: #D6D4CE;
+  --pn-bone-0: #F2F0EA;
+  --pn-bone-1: #ECEAE3;
+
+  /* Phosphor */
+  --pn-phosphor-hi: #A8FF8E;
+  --pn-phosphor:    #5EE88C;
+  --pn-phosphor-mid:#3EC172;
+  --pn-phosphor-dim:#1E7A3D;
+  --pn-phosphor-ink:#061007;
+  --pn-amber: #FFB547;
+  --pn-burn:  #FF5A4E;
+
+  --pn-glow-soft: 0 0 2px rgba(94,232,140,.55), 0 0 6px rgba(94,232,140,.3);
+  --pn-glow-med:  0 0 2px rgba(94,232,140,.8),  0 0 10px rgba(94,232,140,.5);
+  --pn-amber-glow: 0 0 2px rgba(255,181,71,.7), 0 0 8px rgba(255,181,71,.35);
+
+  /* ----- Obsidian core variables ----- */
+  --background-primary:        var(--pn-ink-1);
+  --background-primary-alt:    var(--pn-ink-2);
+  --background-secondary:      var(--pn-ink-2);
+  --background-secondary-alt:  var(--pn-ink-3);
+  --background-modifier-border:       var(--pn-line-1);
+  --background-modifier-border-hover: var(--pn-line-2);
+  --background-modifier-border-focus: var(--pn-phosphor);
+  --background-modifier-form-field:   var(--pn-ink-5);
+  --background-modifier-hover:        rgba(94,232,140,.08);
+  --background-modifier-active-hover: rgba(94,232,140,.14);
+  --background-modifier-success:      var(--pn-phosphor-ink);
+  --background-modifier-error:        #2a0e0c;
+  --background-modifier-cover:        rgba(5,5,7,.78);
+
+  --text-normal:    var(--pn-bone-1);
+  --text-muted:     var(--pn-grey-3);
+  --text-faint:     var(--pn-grey-2);
+  --text-on-accent: var(--pn-ink-0);
+  --text-accent:          var(--pn-phosphor);
+  --text-accent-hover:    var(--pn-phosphor-hi);
+  --text-error:           var(--pn-burn);
+  --text-success:         var(--pn-phosphor);
+  --text-warning:         var(--pn-amber);
+  --text-highlight-bg:    rgba(255,181,71,.22);
+  --text-selection:       rgba(94,232,140,.35);
+
+  --interactive-normal:       var(--pn-ink-3);
+  --interactive-hover:        var(--pn-ink-4);
+  --interactive-accent:       var(--pn-phosphor);
+  --interactive-accent-hover: var(--pn-phosphor-hi);
+  --interactive-success:      var(--pn-phosphor);
+
+  --text-bold:   var(--pn-bone-0);
+  --text-italic: var(--pn-grey-3);
+  --text-link:   var(--pn-phosphor);
+  --text-a:      var(--pn-phosphor);
+  --text-a-hover:var(--pn-phosphor-hi);
+
+  --code-background: var(--pn-phosphor-ink);
+  --code-normal:     var(--pn-phosphor);
+  --code-string:     var(--pn-phosphor-hi);
+  --code-keyword:    var(--pn-amber);
+  --code-comment:    var(--pn-grey-1);
+  --code-function:   var(--pn-phosphor-mid);
+  --code-important:  var(--pn-burn);
+
+  --tag-background: transparent;
+  --tag-background-hover: var(--pn-phosphor-ink);
+  --tag-color: var(--pn-phosphor);
+  --tag-color-hover: var(--pn-phosphor-hi);
+  --tag-border-color: var(--pn-phosphor);
+
+  --checkbox-color: var(--pn-phosphor);
+  --checkbox-color-hover: var(--pn-phosphor-hi);
+  --checkbox-border-color: var(--pn-line-2);
+  --checklist-done-color: var(--pn-grey-1);
+
+  /* Fonts */
+  --font-text-theme:       'IBM Plex Serif', Georgia, serif;
+  --font-text:             'IBM Plex Serif', Georgia, serif;
+  --font-text-override:    'IBM Plex Serif', Georgia, serif;
+  --font-interface-theme:  'IBM Plex Sans', system-ui, sans-serif;
+  --font-interface:        'IBM Plex Sans', system-ui, sans-serif;
+  --font-monospace-theme:  'IBM Plex Mono', 'SF Mono', Menlo, monospace;
+  --font-monospace:        'IBM Plex Mono', 'SF Mono', Menlo, monospace;
+  --font-monospace-override:'IBM Plex Mono', 'SF Mono', Menlo, monospace;
+
+  --font-family-editor:    'IBM Plex Serif', Georgia, serif;
+
+  /* Type scale / leading */
+  --font-text-size: 17px;
+  --line-height:    1.7;
+  --line-width:     42rem;
+
+  /* Headings use italic serif for H1/H2, uppercase mono for H3+ */
+  --h1-color: var(--pn-bone-0);
+  --h2-color: var(--pn-bone-0);
+  --h3-color: var(--pn-phosphor);
+  --h4-color: var(--pn-grey-3);
+
+  /* Graph view */
+  --graph-line: var(--pn-line-2);
+  --graph-node: var(--pn-phosphor);
+  --graph-node-unresolved: var(--pn-line-3);
+  --graph-node-focused:    var(--pn-phosphor-hi);
+  --graph-node-tag:        var(--pn-amber);
+  --graph-node-attachment: var(--pn-grey-2);
+  --graph-text:  var(--pn-grey-3);
+
+  /* UI chrome */
+  --titlebar-background: var(--pn-ink-2);
+  --titlebar-background-focused: var(--pn-ink-2);
+  --titlebar-text-color: var(--pn-grey-2);
+  --titlebar-text-color-focused: var(--pn-phosphor);
+
+  --nav-item-background-active: rgba(94,232,140,.08);
+  --nav-item-color: var(--pn-grey-3);
+  --nav-item-color-hover: var(--pn-phosphor);
+  --nav-item-color-active: var(--pn-phosphor-hi);
+
+  --radius-s: 0px;
+  --radius-m: 2px;
+  --radius-l: 2px;
+
+  --divider-color: var(--pn-line-1);
+  --divider-color-hover: var(--pn-phosphor-dim);
+
+  --scrollbar-thumb-bg: var(--pn-line-2);
+  --scrollbar-active-thumb-bg: var(--pn-phosphor-dim);
+  --scrollbar-bg: transparent;
+}
+
+/* =========================================================
+   Headings — brand-shaped
+   ========================================================= */
+.markdown-preview-view h1,
+.markdown-rendered h1,
+.cm-s-obsidian .HyperMD-header-1,
+.cm-s-obsidian .cm-header-1 {
+  font-family: 'IBM Plex Serif', Georgia, serif;
+  font-style: italic;
+  font-weight: 400;
+  font-size: 2.4em;
+  color: var(--pn-bone-0);
+  line-height: 1.1;
+}
+.markdown-preview-view h2,
+.markdown-rendered h2,
+.cm-s-obsidian .HyperMD-header-2,
+.cm-s-obsidian .cm-header-2 {
+  font-family: 'IBM Plex Serif', Georgia, serif;
+  font-style: italic;
+  font-weight: 400;
+  font-size: 1.7em;
+  color: var(--pn-bone-0);
+}
+.markdown-preview-view h3,
+.markdown-rendered h3,
+.cm-s-obsidian .HyperMD-header-3,
+.cm-s-obsidian .cm-header-3 {
+  font-family: 'IBM Plex Mono', monospace;
+  text-transform: uppercase;
+  letter-spacing: 0.18em;
+  font-size: 1.1em;
+  color: var(--pn-phosphor);
+  text-shadow: var(--pn-glow-soft);
+}
+.markdown-preview-view h4,
+.markdown-rendered h4,
+.cm-s-obsidian .HyperMD-header-4,
+.cm-s-obsidian .cm-header-4 {
+  font-family: 'IBM Plex Mono', monospace;
+  text-transform: uppercase;
+  letter-spacing: 0.22em;
+  font-size: 0.85em;
+  color: var(--pn-grey-3);
+}
+
+/* Inline code + code blocks */
+.markdown-rendered code,
+.cm-s-obsidian .cm-inline-code,
+.HyperMD-codeblock {
+  font-family: 'IBM Plex Mono', monospace;
+  color: var(--pn-phosphor);
+  text-shadow: var(--pn-glow-soft);
+  background: var(--pn-phosphor-ink);
+  border: 1px solid var(--pn-phosphor-dim);
+  padding: 1px 6px;
+  border-radius: 0;
+}
+.markdown-rendered pre {
+  background: var(--pn-phosphor-ink);
+  border: 1px solid var(--pn-phosphor-dim);
+  padding: 14px;
+}
+
+/* Blockquote — dossier pull */
+.markdown-rendered blockquote,
+.cm-s-obsidian .HyperMD-quote {
+  border-left: 2px solid var(--pn-phosphor);
+  background: transparent;
+  font-style: italic;
+  color: var(--pn-grey-3);
+  padding: 6px 16px;
+}
+
+/* Internal links — phosphor, no underline */
+.markdown-rendered a,
+.cm-hmd-internal-link,
+.cm-link {
+  color: var(--pn-phosphor);
+  text-shadow: var(--pn-glow-soft);
+  text-decoration: none;
+  border-bottom: 1px dashed rgba(94,232,140,.35);
+}
+.markdown-rendered a:hover,
+.cm-hmd-internal-link:hover {
+  color: var(--pn-phosphor-hi);
+  border-bottom-color: var(--pn-phosphor-hi);
+}
+
+/* Tags — capsule with phosphor border */
+.tag,
+.cm-hashtag {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 0.85em;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  padding: 2px 8px;
+  border: 1px solid var(--pn-phosphor);
+  border-radius: 9999px;
+  color: var(--pn-phosphor) !important;
+  background: transparent !important;
+  text-shadow: var(--pn-glow-soft);
+}
+
+/* Frontmatter YAML — amber classified */
+.metadata-container,
+.frontmatter-container {
+  background: transparent;
+  border: 1px solid var(--pn-amber);
+  box-shadow: var(--pn-amber-glow);
+  padding: 10px 14px;
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 12px;
+  color: var(--pn-amber);
+  margin-bottom: 20px;
+}
+.metadata-container::before {
+  content: "[ FRONTMATTER · CLASSIFIED ]";
+  display: block;
+  letter-spacing: 0.3em;
+  font-size: 10px;
+  margin-bottom: 8px;
+  opacity: 0.8;
+}
+
+/* Checkboxes — phosphor fills */
+.task-list-item-checkbox {
+  appearance: none;
+  width: 14px; height: 14px;
+  border: 1px solid var(--pn-line-3);
+  background: transparent;
+  margin-right: 8px;
+  vertical-align: middle;
+  border-radius: 0;
+}
+.task-list-item-checkbox:checked {
+  background: var(--pn-phosphor);
+  box-shadow: var(--pn-glow-soft);
+  border-color: var(--pn-phosphor);
+}
+.task-list-item-checkbox:checked::after {
+  content: "";
+  display: block;
+  width: 4px; height: 8px;
+  border-right: 2px solid var(--pn-ink-0);
+  border-bottom: 2px solid var(--pn-ink-0);
+  transform: rotate(45deg) translate(-1px,-2px);
+  margin: 1px auto;
+}
+
+/* =========================================================
+   Sidebar file tree
+   ========================================================= */
+.workspace-ribbon,
+.workspace-tab-header-container,
+.workspace-leaf-content[data-type="file-explorer"],
+.workspace-leaf-content[data-type="search"],
+.workspace-leaf-content[data-type="tag"] {
+  background: var(--pn-ink-2);
+}
+
+.nav-folder-title,
+.nav-file-title {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 12px;
+  letter-spacing: 0.06em;
+  color: var(--pn-grey-3);
+  padding: 3px 8px;
+  border-radius: 0;
+  border-left: 2px solid transparent;
+}
+.nav-folder-title {
+  color: var(--pn-phosphor-mid);
+  font-size: 10px;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+}
+.nav-file-title:hover {
+  background: rgba(94,232,140,.06);
+  color: var(--pn-phosphor);
+  text-shadow: var(--pn-glow-soft);
+}
+.nav-file-title.is-active,
+.nav-file.is-active > .nav-file-title {
+  background: rgba(94,232,140,.08);
+  color: var(--pn-phosphor);
+  text-shadow: var(--pn-glow-soft);
+  border-left: 2px solid var(--pn-phosphor);
+}
+
+/* =========================================================
+   Title bar / status bar
+   ========================================================= */
+.workspace-tab-header-inner-title {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--pn-grey-2);
+}
+.workspace-tab-header.is-active .workspace-tab-header-inner-title {
+  color: var(--pn-phosphor);
+  text-shadow: var(--pn-glow-soft);
+}
+
+.status-bar {
+  background: var(--pn-ink-2);
+  border-top: 1px solid var(--pn-line-1);
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 10px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--pn-grey-1);
+}
+
+.view-header {
+  background: var(--pn-ink-2);
+  border-bottom: 1px solid var(--pn-line-1);
+}
+.view-header-title {
+  font-family: 'IBM Plex Serif', Georgia, serif;
+  font-style: italic;
+  color: var(--pn-bone-0);
+}
+
+/* =========================================================
+   Graph view — brand it hard
+   ========================================================= */
+.graph-view.color-fill { color: var(--pn-phosphor); }
+.graph-view.color-line { color: var(--pn-line-2); }
+.graph-view.color-text { color: var(--pn-grey-3); }
+.graph-view.color-fill-focused { color: var(--pn-phosphor-hi); }
+.graph-view.color-fill-tag { color: var(--pn-amber); }
+.graph-view.color-fill-attachment { color: var(--pn-grey-2); }
+.graph-view.color-fill-unresolved { color: var(--pn-line-3); }
+
+/* =========================================================
+   Callouts — tuned to brand
+   ========================================================= */
+.callout[data-callout] {
+  background: transparent;
+  border: 1px solid var(--pn-line-2);
+  border-left-width: 2px;
+  padding: 10px 14px;
+}
+.callout[data-callout="note"]      { border-left-color: var(--pn-phosphor); color: var(--pn-grey-3); }
+.callout[data-callout="warning"],
+.callout[data-callout="caution"]   { border-left-color: var(--pn-amber); }
+.callout[data-callout="danger"],
+.callout[data-callout="error"],
+.callout[data-callout="burn"]      { border-left-color: var(--pn-burn); }
+.callout[data-callout="regret"]    { border-left-color: var(--pn-amber); }
+.callout[data-callout="wisdom"]    { border-left-color: var(--pn-bone-0); }
+.callout-title-inner {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 10px;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--pn-phosphor);
+  text-shadow: var(--pn-glow-soft);
+}
+
+/* =========================================================
+   Command palette / modals
+   ========================================================= */
+.modal,
+.prompt,
+.suggestion-container {
+  background: var(--pn-ink-3);
+  border: 1px solid var(--pn-phosphor-dim);
+}
+.prompt-input,
+.modal .setting-item-control input[type="text"] {
+  background: var(--pn-ink-5);
+  border: 1px solid var(--pn-line-2);
+  color: var(--pn-phosphor);
+  text-shadow: var(--pn-glow-soft);
+  font-family: 'IBM Plex Mono', monospace;
+  letter-spacing: 0.08em;
+}
+.suggestion-item.is-selected {
+  background: var(--pn-phosphor-ink);
+  color: var(--pn-phosphor-hi);
+  text-shadow: var(--pn-glow-soft);
+}
+
+/* =========================================================
+   Selection, scrollbar, cursor
+   ========================================================= */
+::selection { background: var(--pn-phosphor); color: var(--pn-ink-0); }
+
+.cm-content { caret-color: var(--pn-phosphor); }
+
+/* =========================================================
+   Cursor glyph for live typing — a phosphor block
+   ========================================================= */
+.cm-cursor,
+.cm-cursor-primary {
+  border-left: 2px solid var(--pn-phosphor) !important;
+  box-shadow: var(--pn-glow-med);
+}
+
+/* =========================================================
+   Vignette — subtle darkening at screen edges
+   ========================================================= */
+body.theme-dark::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  background: radial-gradient(ellipse at center, transparent 55%, rgba(0,0,0,.45) 100%);
+  z-index: 9999;
+}

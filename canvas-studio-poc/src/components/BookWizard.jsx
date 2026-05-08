@@ -1,9 +1,11 @@
 import { useState, useEffect } from "react";
 import { listTemplates, saveTemplate, deleteTemplate } from "../lib/templates";
+import { listCharacters, saveCharacter, deleteCharacter } from "../lib/characters";
+import { extractFeaturesFromPhotos } from "../lib/featureExtractor";
 
 const CHAR_FIELDS = [
   { key: "name", label: "Name", placeholder: "e.g. Emma" },
-  { key: "age", label: "Age range", type: "select", options: ["3-4", "5-6", "7-8", "9-10"] },
+  { key: "age", label: "Age range", type: "select", options: ["3-4", "5-6", "7-8", "9-10", "11-12", "12-14"] },
   { key: "pronouns", label: "Pronouns", type: "select", options: ["she/her", "he/him", "they/them"] },
   { key: "nickname", label: "Nickname (optional)", placeholder: "e.g. Em" },
   { key: "hair", label: "Hair", placeholder: "e.g. curly brown, shoulder length" },
@@ -16,7 +18,7 @@ const CHAR_FIELDS = [
 ];
 
 const STEPS = [
-  { key: "characters", title: "Who is in the story?", helper: "Add your recurring characters. Save them as a template to reuse." },
+  { key: "characters", title: "Who is in the story?", helper: "Add your recurring characters. Save them to reuse in other books." },
   { key: "style", title: "Illustration style", helper: "Sets the visual look for the entire book",
     fields: [
       { key: "art_style", label: "Art style", type: "select", options: ["Warm watercolor childrens book", "Soft pastel digital illustration", "Bold gouache with visible brushstrokes", "Gentle colored pencil sketch", "Clean flat vector illustration", "Whimsical ink and wash", "Dreamy airbrushed fantasy"] },
@@ -43,8 +45,9 @@ const STEPS = [
   },
 ];
 
-function CharacterCard({ char, onChange, onRemove, index }) {
+function CharacterCard({ char, onChange, onRemove, index, onSaveChar }) {
   const [expanded, setExpanded] = useState(index === 0);
+  const [saved, setSaved] = useState(false);
 
   const handlePhotoUpload = (e) => {
     const files = Array.from(e.target.files || []);
@@ -60,7 +63,14 @@ function CharacterCard({ char, onChange, onRemove, index }) {
         newPhotos.push(ev.target.result);
         loaded++;
         if (loaded === toProcess.length) {
-          onChange("reference_photos", [...currentPhotos, ...newPhotos]);
+          const allPhotos = [...currentPhotos, ...newPhotos];
+          onChange("reference_photos", allPhotos);
+          extractFeaturesFromPhotos(allPhotos).then((features) => {
+            if (!features) return;
+            if (features.hair_color) onChange("hair", features.hair_color);
+            if (features.skin_tone) onChange("skin_tone", features.skin_tone);
+            if (features.eye_color) onChange("eye_color", features.eye_color);
+          });
         }
       };
       reader.readAsDataURL(file);
@@ -71,6 +81,14 @@ function CharacterCard({ char, onChange, onRemove, index }) {
     const photos = [...(char.reference_photos || [])];
     photos.splice(photoIdx, 1);
     onChange("reference_photos", photos);
+  };
+
+  const handleSave = async () => {
+    if (!char.name?.trim()) return;
+    await saveCharacter({ ...char });
+    setSaved(true);
+    setTimeout(() => setSaved(false), 2000);
+    if (onSaveChar) onSaveChar();
   };
 
   return (
@@ -128,6 +146,87 @@ function CharacterCard({ char, onChange, onRemove, index }) {
               </div>
             ))}
           </div>
+          <div style={{ marginTop: 8, display: "flex", justifyContent: "flex-end" }}>
+            <button onClick={handleSave} disabled={!char.name?.trim()} style={{ fontSize: 11 }}>
+              {saved ? "Saved!" : "Save Character"}
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function TemplatePicker({ templates, onDelete, onAddChar, onReplaceAll }) {
+  const [expanded, setExpanded] = useState(null);
+
+  if (templates.length === 0) return null;
+
+  return (
+    <div style={{ marginBottom: 16 }}>
+      {templates.map((t) => (
+        <div key={t.key} style={{ background: "var(--ink-2)", border: "1px solid var(--border)", borderRadius: 4, marginBottom: 4 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 6, padding: "6px 10px" }}>
+            <span style={{ fontSize: 12, fontWeight: 600, color: "var(--text)" }}>{t.name}</span>
+            <span style={{ fontSize: 10, color: "var(--text-dim)" }}>({(t.characters || []).length} chars)</span>
+            <div style={{ flex: 1 }} />
+            <button style={{ fontSize: 10, padding: "2px 6px" }} onClick={() => setExpanded(expanded === t.key ? null : t.key)}>
+              {expanded === t.key ? "close" : "pick chars"}
+            </button>
+            <button style={{ fontSize: 9, padding: "2px 6px", color: "var(--text-dim)" }} onClick={() => onReplaceAll(t)}>Replace All</button>
+            <button className="danger" style={{ fontSize: 9, padding: "1px 4px" }} onClick={async () => { await deleteTemplate(t.key); onDelete(); }}>x</button>
+          </div>
+          {expanded === t.key && (
+            <div style={{ padding: "4px 10px 8px", borderTop: "1px solid var(--border)" }}>
+              {(t.characters || []).map((c, ci) => (
+                <div key={ci} style={{ display: "flex", alignItems: "center", gap: 6, padding: "3px 0" }}>
+                  <div style={{ width: 20, height: 20, borderRadius: "50%", background: "var(--ink-3)", overflow: "hidden", flexShrink: 0 }}>
+                    {(c.reference_photos || []).length > 0 ? (
+                      <img src={c.reference_photos[0]} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                    ) : (
+                      <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 9, color: "var(--text-dim)" }}>{ci + 1}</div>
+                    )}
+                  </div>
+                  <span style={{ fontSize: 11, flex: 1 }}>{c.name || `Char ${ci + 1}`}</span>
+                  <span style={{ fontSize: 9, color: "var(--text-dim)" }}>{c.role}</span>
+                  <button className="primary" style={{ fontSize: 9, padding: "1px 6px" }} onClick={() => onAddChar(c)}>+ Add</button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function SavedCharactersDrawer({ savedChars, onDelete, onAddChar }) {
+  const [open, setOpen] = useState(false);
+
+  if (savedChars.length === 0) return null;
+
+  return (
+    <div style={{ marginBottom: 16 }}>
+      <button onClick={() => setOpen(!open)} style={{ fontSize: 12, width: "100%", marginBottom: 4 }}>
+        {open ? "Hide Saved Characters" : `Saved Characters (${savedChars.length})`}
+      </button>
+      {open && (
+        <div style={{ background: "var(--ink-2)", borderRadius: 4, padding: 6, border: "1px solid var(--border)" }}>
+          {savedChars.map((c) => (
+            <div key={c.key} style={{ display: "flex", alignItems: "center", gap: 6, padding: "4px 2px", borderBottom: "1px solid var(--ink-3)" }}>
+              <div style={{ width: 22, height: 22, borderRadius: "50%", background: "var(--ink-3)", overflow: "hidden", flexShrink: 0 }}>
+                {(c.reference_photos || []).length > 0 ? (
+                  <img src={c.reference_photos[0]} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                ) : (
+                  <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, color: "var(--text-dim)" }}>{(c.name || "?")[0]}</div>
+                )}
+              </div>
+              <span style={{ fontSize: 11, flex: 1 }}>{c.name || c.key}</span>
+              <span style={{ fontSize: 9, color: "var(--text-dim)" }}>{c.role || "—"}</span>
+              <button className="primary" style={{ fontSize: 9, padding: "1px 6px" }} onClick={() => onAddChar(c)}>+ Add</button>
+              <button className="danger" style={{ fontSize: 9, padding: "1px 4px" }} onClick={async () => { await deleteCharacter(c.key); onDelete(); }}>x</button>
+            </div>
+          ))}
         </div>
       )}
     </div>
@@ -141,10 +240,15 @@ export default function BookWizard({ onComplete }) {
   const [storyData, setStoryData] = useState({});
   const [bookData, setBookData] = useState({});
   const [templates, setTemplates] = useState([]);
+  const [savedChars, setSavedChars] = useState([]);
   const [templateName, setTemplateName] = useState("");
   const [showTemplates, setShowTemplates] = useState(false);
+  const [dupNotice, setDupNotice] = useState("");
 
-  useEffect(() => { listTemplates().then(setTemplates); }, []);
+  const refreshTemplates = () => listTemplates().then(setTemplates);
+  const refreshSavedChars = () => listCharacters().then(setSavedChars);
+
+  useEffect(() => { refreshTemplates(); refreshSavedChars(); }, []);
 
   const current = STEPS[step];
   const isLast = step === STEPS.length - 1;
@@ -153,9 +257,17 @@ export default function BookWizard({ onComplete }) {
 
   const setField = (key, value) => setStepData((d) => ({ ...d, [key]: value }));
 
-  const allFilled = (current.fields || []).filter((f) => f.required).every((f) => stepData[f.key]?.toString().trim());
-
   const addCharacter = () => setCharacters((p) => [...p, { name: "", role: "sidekick" }]);
+
+  const addCharacterFromSource = (charData) => {
+    const name = (charData.name || "").trim().toLowerCase();
+    if (name && characters.some((c) => (c.name || "").trim().toLowerCase() === name)) {
+      setDupNotice(`"${charData.name}" is already added`);
+      setTimeout(() => setDupNotice(""), 3000);
+      return;
+    }
+    setCharacters((p) => [...p, { ...charData, reference_photos: charData.reference_photos || [] }]);
+  };
 
   const updateCharacter = (idx, key, value) => {
     setCharacters((p) => { const n = [...p]; n[idx] = { ...n[idx], [key]: value }; return n; });
@@ -167,14 +279,13 @@ export default function BookWizard({ onComplete }) {
     if (!templateName.trim()) return;
     const tmpl = { name: templateName, characters, style: styleData, savedAt: new Date().toISOString() };
     await saveTemplate(tmpl);
-    setTemplates(await listTemplates());
+    await refreshTemplates();
     setTemplateName("");
   };
 
-  const loadTemplate = (tmpl) => {
+  const handleReplaceAll = (tmpl) => {
     setCharacters(tmpl.characters || [{ name: "", role: "main character" }]);
     if (tmpl.style) setStyleData((d) => ({ ...d, ...tmpl.style }));
-    setShowTemplates(false);
   };
 
   const handleComplete = () => {
@@ -203,33 +314,39 @@ export default function BookWizard({ onComplete }) {
       <div style={{ flex: 1, overflow: "auto" }}>
         {step === 0 ? (
           <>
+            <SavedCharactersDrawer
+              savedChars={savedChars}
+              onDelete={refreshSavedChars}
+              onAddChar={addCharacterFromSource}
+            />
             {templates.length > 0 && (
               <div style={{ marginBottom: 16 }}>
                 <button onClick={() => setShowTemplates(!showTemplates)} style={{ fontSize: 12, width: "100%", marginBottom: 4 }}>
-                  {showTemplates ? "Hide Templates" : `Load from Template (${templates.length})`}
+                  {showTemplates ? "Hide Templates" : `Templates (${templates.length})`}
                 </button>
                 {showTemplates && (
-                  <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 8 }}>
-                    {templates.map((t) => (
-                      <div key={t.key} style={{ display: "flex", alignItems: "center", gap: 4, background: "var(--ink-2)", padding: "4px 8px", borderRadius: 4, border: "1px solid var(--border)" }}>
-                        <span style={{ fontSize: 12, cursor: "pointer", color: "var(--phosphor)" }} onClick={() => loadTemplate(t)}>{t.name}</span>
-                        <span style={{ fontSize: 10, color: "var(--text-dim)" }}>({(t.characters || []).length} chars)</span>
-                        <button className="danger" style={{ fontSize: 9, padding: "1px 4px" }} onClick={async () => { await deleteTemplate(t.key); setTemplates(await listTemplates()); }}>x</button>
-                      </div>
-                    ))}
-                  </div>
+                  <TemplatePicker
+                    templates={templates}
+                    onDelete={refreshTemplates}
+                    onAddChar={addCharacterFromSource}
+                    onReplaceAll={handleReplaceAll}
+                  />
                 )}
               </div>
+            )}
+            {dupNotice && (
+              <div style={{ fontSize: 11, color: "var(--amber)", marginBottom: 8, padding: "4px 8px", background: "rgba(255,170,0,0.1)", borderRadius: 4 }}>{dupNotice}</div>
             )}
             {characters.map((char, idx) => (
               <CharacterCard key={idx} char={char} index={idx}
                 onChange={(key, val) => updateCharacter(idx, key, val)}
                 onRemove={characters.length > 1 ? () => removeCharacter(idx) : null}
+                onSaveChar={refreshSavedChars}
               />
             ))}
             <button onClick={addCharacter} style={{ width: "100%", marginTop: 4, marginBottom: 16 }}>+ Add Character</button>
             <div style={{ borderTop: "1px solid var(--border)", paddingTop: 12, marginBottom: 16 }}>
-              <div style={{ fontSize: 11, color: "var(--text-dim)", marginBottom: 6 }}>Save these characters as a template for reuse:</div>
+              <div style={{ fontSize: 11, color: "var(--text-dim)", marginBottom: 6 }}>Save all characters as a template for reuse:</div>
               <div style={{ display: "flex", gap: 8 }}>
                 <input value={templateName} onChange={(e) => setTemplateName(e.target.value)} placeholder="Template name" style={{ flex: 1, fontSize: 12 }} />
                 <button onClick={handleSaveTemplate} disabled={!templateName.trim()}>Save Template</button>

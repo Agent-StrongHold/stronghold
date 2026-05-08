@@ -360,6 +360,8 @@ async def create_container(config: StrongholdConfig) -> Container:
     )
     from stronghold.tools.workspace import WORKSPACE_TOOL_DEF, WorkspaceManager  # noqa: PLC0415
 
+    from stronghold.tools.canvas_book import CANVAS_BOOK_TOOL_DEF, CanvasBookExecutor  # noqa: PLC0415
+
     github_tool = GitHubToolExecutor()
     tool_registry.register(GITHUB_TOOL_DEF, github_tool.execute)
 
@@ -371,6 +373,9 @@ async def create_container(config: StrongholdConfig) -> Container:
 
     workspace = WorkspaceManager()
     tool_registry.register(WORKSPACE_TOOL_DEF, workspace.execute)
+
+    canvas_book = CanvasBookExecutor()
+    tool_registry.register(CANVAS_BOOK_TOOL_DEF, canvas_book.execute)
 
     # Quality gate convenience tools
     qg = QualityGateExecutor(shell)

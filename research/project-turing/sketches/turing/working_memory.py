@@ -76,14 +76,28 @@ class WorkingMemory:
         truncated = content[:WORKING_MEMORY_MAX_CONTENT_LEN]
         entry_id = str(uuid4())
         now_iso = datetime.now(UTC).isoformat()
-        self._conn.execute(
-            "INSERT INTO working_memory "
-            "(entry_id, self_id, content, priority, created_at, updated_at) "
-            "VALUES (?, ?, ?, ?, ?, ?)",
-            (entry_id, self_id, truncated, priority, now_iso, now_iso),
-        )
-        self._conn.commit()
-        self._evict_over_capacity(self_id, max_entries)
+        # INSERT + eviction in a single transaction so the table never exceeds
+        # max_entries even under concurrent inserts.
+        with self._conn:
+            self._conn.execute(
+                "INSERT INTO working_memory "
+                "(entry_id, self_id, content, priority, created_at, updated_at) "
+                "VALUES (?, ?, ?, ?, ?, ?)",
+                (entry_id, self_id, truncated, priority, now_iso, now_iso),
+            )
+            (total,) = self._conn.execute(
+                "SELECT COUNT(*) FROM working_memory WHERE self_id = ?",
+                (self_id,),
+            ).fetchone()
+            overflow = int(total) - max_entries
+            if overflow > 0:
+                self._conn.execute(
+                    "DELETE FROM working_memory WHERE entry_id IN ("
+                    "  SELECT entry_id FROM working_memory WHERE self_id = ?"
+                    "  ORDER BY priority ASC, created_at ASC LIMIT ?"
+                    ")",
+                    (self_id, overflow),
+                )
         return entry_id
 
     def remove(self, self_id: str, entry_id: str) -> bool:
@@ -127,23 +141,3 @@ class WorkingMemory:
             lines.append(f"{prefix} {entry.content}")
         return "\n".join(lines)
 
-    def _evict_over_capacity(self, self_id: str, max_entries: int) -> None:
-        cur = self._conn.execute(
-            "SELECT COUNT(*) FROM working_memory WHERE self_id = ?",
-            (self_id,),
-        )
-        total = int(cur.fetchone()[0])
-        overflow = total - max_entries
-        if overflow <= 0:
-            return
-        # Lowest priority + oldest created_at gets evicted first.
-        rows = self._conn.execute(
-            "SELECT entry_id FROM working_memory WHERE self_id = ? "
-            "ORDER BY priority ASC, created_at ASC LIMIT ?",
-            (self_id, overflow),
-        ).fetchall()
-        for (entry_id,) in rows:
-            self._conn.execute(
-                "DELETE FROM working_memory WHERE entry_id = ?", (entry_id,)
-            )
-        self._conn.commit()

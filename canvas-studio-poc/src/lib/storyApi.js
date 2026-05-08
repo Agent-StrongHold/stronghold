@@ -184,7 +184,7 @@ Return ONLY valid JSON:
     "recurring_elements": ["elements across scenes"],
     "negative_prompts": "no text in images, no watermarks, no photorealism, no scary imagery"
   },
-  "scenes": [
+      "scenes": [
     {
       "id": 1,
       "title": "Scene title",
@@ -194,8 +194,9 @@ Return ONLY valid JSON:
       "pose": "standing_3q_left",
       "composition": "center_focus",
       "character_action": "what the character is doing",
+      "characters_present": ["Name1", "Name2"],
       "props": [
-        {"name": "prop name", "description": "visual description", "placement": "right"}
+        {"name": "prop name", "description": "visual description", "scale": "handheld|environment", "placement": "right"}
       ]
     }
   ]
@@ -223,7 +224,12 @@ RULES:
 - Vary poses and compositions across scenes — avoid repeating the same combo
 - Use action_beat for high-energy moments, emotional_beat for close-ups
 - Page text: age-appropriate (${bookSpec.age || "5-6"}), 1-3 short sentences, simple vocabulary
-- Props: 0-2 per scene, each with name, description, placement (left/right/center)
+- Props: 0-2 per scene, each with name, description, scale, and placement
+- Prop scale "handheld" = small items the character holds/touches (toys, tools, food, wands, baskets, traps). These are GENERATED AS PART OF the character image.
+- Prop scale "environment" = large objects the character stands near or inside (houses, boats, trees, castles, furniture, vehicles). These are SEPARATE layers.
+- If no scale provided, default to "handheld"
+- character_action should describe what ALL characters present are doing together — e.g. "Emma and Jack carefully placing gold coins in a tiny leprechaun trap" not just "standing"
+- characters_present: list which named characters appear in this scene by their exact name. All listed characters will be generated together in a single image.
 - Description: describe the SETTING/ENVIRONMENT only — the rendering pipeline handles character/prop generation
 - Do NOT include any "prompt" fields — the rendering pipeline builds prompts from your structured data`,
     },
@@ -231,19 +237,21 @@ RULES:
       role: "user",
       content: `Create a ${numPages}-scene children's book storyboard.
 
-Main character: ${bookSpec.name || "a child"} (${bookSpec.age || "5-6"}, ${bookSpec.pronouns || "they/them"})
-Appearance: ${[bookSpec.hair, bookSpec.skin_tone, bookSpec.eye_color, bookSpec.face_shape, bookSpec.signature_features, bookSpec.build].filter(Boolean).join(", ") || "generic child character"}
-${bookSpec.nickname ? `Called: ${bookSpec.nickname}` : ""}
+CAST OF CHARACTERS:
+${(bookSpec.characters || []).map((c, i) => {
+  const appearance = [c.hair, c.skin_tone, c.eye_color, c.face_shape, c.signature_features, c.build].filter(Boolean).join(", ") || "generic child character";
+  return `${i + 1}. ${c.name || "Unnamed"} (${c.age || "5-6"}, ${c.pronouns || "they/them"}, role: ${c.role || "main character"})${c.nickname ? ` — called "${c.nickname}"` : ""}
+   Appearance: ${appearance}`;
+}).join("\n")}
 
 Story: ${bookSpec.premise}
 Setting: ${bookSpec.setting || "not specified"}
 ${bookSpec.lessons ? `Theme: ${bookSpec.lessons}` : ""}
-${bookSpec.side_characters ? `Side characters: ${bookSpec.side_characters}` : ""}
 Ending: ${bookSpec.ending || "happy"}
 ${bookSpec.title ? `Title: ${bookSpec.title}` : "Generate an appropriate title"}
 ${bookSpec.dedication ? `Dedication: ${bookSpec.dedication}` : ""}
 
-Remember: output structured scene data with type, pose, composition, props — NOT freeform prompts.`,
+Remember: output structured scene data with type, pose, composition, characters_present, props — NOT freeform prompts.`,
     },
   ], "gemini-flash");
 

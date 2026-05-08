@@ -1,0 +1,749 @@
+# Spec 1189: Canvas Studio — layer-based image compositing engine
+#
+# Covers: types, protocols, tool executor, compositor service, REST API.
+# The Da Vinci and Fabulist agents both call the canvas tool; this spec
+# turns canvas.md (the stub) into a working implementation.
+#
+# Companion spec: canvas-studio-ui.yaml (spec 1190) covers the React frontend.
+#
+# Design constraints inherited from canvas.md:
+#   - Five actions: generate | refine | reference | composite | text
+#   - Two quality tiers: draft (free/cheap) | proof (premium)
+#   - Model list is open — any LiteLLM image model is valid
+#   - All text rendering is done by the compositor, never by an AI model
+#   - Layers are assembled back-to-front by z_index
+
+issue_number: 1189
+title: "Canvas Studio — layer-based compositing engine (types + executor + compositor + API)"
+status: active
+complexity: XL
+
+protocols_touched:
+  - CanvasStore        # new — CRUD for canvases, layers, jobs, composites
+  - ImageGenClient     # new — calls LiteLLM /images/generations
+  - CompositorService  # new — PIL-based layer assembly
+
+files_touched:
+  - src/stronghold/types/canvas.py
+  - src/stronghold/protocols/canvas.py
+  - src/stronghold/tools/canvas_executor.py
+  - src/stronghold/tools/canvas_compositor.py
+  - src/stronghold/persistence/pg_canvas.py
+  - src/stronghold/api/routes/canvas.py
+  - tests/tools/test_canvas_executor.py
+  - tests/tools/test_canvas_compositor.py
+  - tests/api/test_canvas_routes.py
+  - tests/fakes.py   # extend: FakeImageGenClient, FakeCanvasStore, FakeCompositorService
+
+
+# ─────────────────────────────────────────────────────────────────────
+# ACCEPTANCE CRITERIA
+# ─────────────────────────────────────────────────────────────────────
+
+acceptance_criteria:
+
+  # ── Canvas CRUD ─────────────────────────────────────────────────────
+  - "POST /api/canvas creates a canvas record; required fields: name, width, height; optional: background_color (#RRGGBB, default #FFFFFF), aspect_ratio label"
+  - "Canvas dimensions must satisfy: 64 ≤ width ≤ 8192, 64 ≤ height ≤ 8192, width % 8 == 0, height % 8 == 0; any violation returns 422 with a human-readable field error"
+  - "Aspect-ratio shorthand param ('1:1','16:9','9:16','3:2','2:3','4:3','3:4') auto-computes width+height from a default base of 1024; explicit width/height override the shorthand"
+  - "GET /api/canvas returns the caller's org-scoped canvases newest-first; archived canvases are excluded unless ?include_archived=true"
+  - "GET /api/canvas/{id} returns the canvas record plus its layers sorted by z_index ascending (0 = bottom)"
+  - "PATCH /api/canvas/{id} can update name and background_color; dimension changes are rejected with 409 if any layers exist"
+  - "DELETE /api/canvas/{id} sets archived_at and cancels all pending/running generation jobs on the canvas; does NOT hard-delete anything"
+  - "Accessing an archived canvas with GET /api/canvas/{id} returns 410 Gone"
+
+  # ── Layer CRUD ───────────────────────────────────────────────────────
+  - "POST /api/canvas/{id}/layers adds a layer; required: name, layer_type (background|character|object|text); optional: z_index (defaults to max+1), x (0), y (0), scale (1.0), rotation (0.0), opacity (1.0), blend_mode (normal)"
+  - "Layer opacity is in [0.0, 1.0]; rotation is in [0.0, 360.0) (values ≥ 360 are wrapped); scale must be > 0.0"
+  - "Canvas accepts at most 50 layers; the 51st add returns 409 with code LAYER_LIMIT_EXCEEDED"
+  - "GET /api/canvas/{id}/layers returns layers ordered z_index ascending; each includes a thumbnail_url if image_path is set"
+  - "PATCH /api/canvas/{id}/layers/{lid} can update: name, x, y, scale, rotation, opacity, blend_mode, visible, locked, prompt, negative_prompt, model_id, tier; model_id must be a registered image-gen model or null"
+  - "PATCH on a locked layer that changes x, y, scale, rotation, or opacity returns 409 with code LAYER_LOCKED; non-positional fields (name, visible, prompt) are still mutable on locked layers"
+  - "DELETE /api/canvas/{id}/layers/{lid} removes the layer and re-packs z_indices of all higher-z layers: each decrements by 1, preserving a dense 0..N-1 sequence"
+  - "POST /api/canvas/{id}/layers/reorder accepts [{layer_id, z_index}]; must cover ALL layers on the canvas, must have no duplicate z_index values; atomically updates all z_indices or rejects the entire request with 422"
+
+  # ── Generation jobs ───────────────────────────────────────────────────
+  - "POST /api/canvas/{id}/layers/{lid}/generate starts an async job; returns {job_id, status: 'pending'} immediately; required params: action (generate|refine|reference); optional: model_id (default: first draft-tier model), tier (draft), prompt, negative_prompt, count (1), seed"
+  - "generate action requires prompt; refine action requires prompt and the layer must already have an image_path; reference action requires prompt"
+  - "text layer_type rejects generate, refine, and reference actions with 400 (code TEXT_LAYER_NO_GEN); only composite and text actions are valid for text layers"
+  - "A second generate/refine/reference call while a pending or running job exists for that layer returns 409 (code JOB_IN_PROGRESS)"
+  - "GET /api/canvas/jobs/{jid} returns current job: status, model_id, started_at, completed_at, result_paths, selected_index, error_message"
+  - "Completed jobs (status=done) carry result_paths: a list of len(count) signed URLs valid for 24 hours"
+  - "Failed jobs carry error_message; raw provider error strings are stripped — only the provider name and HTTP status code are surfaced"
+  - "DELETE /api/canvas/jobs/{jid} cancels the job if pending; attempts graceful stop if running; returns 409 if already done or failed"
+  - "POST /api/canvas/jobs/{jid}/accept/{variant_index} atomically: sets layer.image_path = result_paths[variant_index] and job.selected_index = variant_index; variant_index must be in [0, len(result_paths)-1]; returns 422 on out-of-range"
+  - "accept on a job that is not in done state returns 409 (code JOB_NOT_DONE)"
+  - "After accept, the layer's updated_at timestamp advances; the canvas's updated_at also advances"
+
+  # ── Compositing ──────────────────────────────────────────────────────
+  - "POST /api/canvas/{id}/composite assembles all visible layers (visible=true) back-to-front by z_index and stores the result as a CompositeRecord"
+  - "Layers with image_path=null are skipped (transparent gap in the stack)"
+  - "Invisible layers (visible=false) are never included regardless of image_path"
+  - "A canvas with zero visible layers (or all visible layers have null image_path) produces a blank image at canvas dimensions — this is a 200, not an error"
+  - "Each layer is placed at (x, y) from the top-left of the canvas, scaled uniformly by scale, rotated by rotation around the layer's center, composited with opacity and blend_mode"
+  - "Layer areas extending beyond canvas bounds are clipped to the canvas rectangle"
+  - "GET /api/canvas/{id}/composite/latest returns the most recent CompositeRecord including image_url and layer_snapshot (array of layer states at composite time)"
+
+  # ── Export ────────────────────────────────────────────────────────────
+  - "GET /api/canvas/{id}/export?format=png triggers a fresh composite then returns the image as an attachment"
+  - "Supported formats: png (lossless, no quality param), webp (quality 1-100, default 90), jpg (quality 1-100, default 90)"
+  - "Unsupported format value returns 400 (code UNSUPPORTED_FORMAT)"
+  - "Quality outside [1, 100] returns 422"
+  - "Export on an archived canvas returns 404"
+
+  # ── Model registry ───────────────────────────────────────────────────
+  - "GET /api/canvas/models returns the list of image-generation-capable models known to LiteLLM; each entry: {id, display_name, provider, supports_generate, supports_refine, tier_class, cost_per_image_usd, is_free}"
+  - "Model list is refreshed from LiteLLM on server start and cached with a 5-minute TTL; ?refresh=true bypasses the cache"
+  - "A model_id not in the registry used in POST generate returns 400 (code UNKNOWN_MODEL)"
+
+  # ── Security / multi-tenancy ──────────────────────────────────────────
+  - "All canvas and layer endpoints are scoped to the caller's org_id; cross-org access returns 404 (not 403, to avoid enumeration)"
+  - "All mutating endpoints require the canvas_write permission; read endpoints require canvas_read"
+  - "Warden scans the prompt string before any image generation call; BLOCK verdicts abort the job with status=failed and error_message='prompt blocked by safety policy'"
+
+
+# ─────────────────────────────────────────────────────────────────────
+# GHERKIN ACCEPTANCE SCENARIOS
+# ─────────────────────────────────────────────────────────────────────
+
+gherkin_scenarios: |
+
+  Feature: Canvas lifecycle
+    Background:
+      Given I am an authenticated handler with canvas_read and canvas_write
+      And my org_id is "org-abc"
+
+    Scenario: Create a square canvas
+      When I POST /api/canvas with name="hero-art" width=1024 height=1024
+      Then the response is 201
+      And the body contains id, name="hero-art", width=1024, height=1024, background_color="#FFFFFF"
+      And layer_count=0
+
+    Scenario: Reject dimensions not divisible by 8
+      When I POST /api/canvas with width=1025 height=1024
+      Then the response is 422
+      And error.field is "width"
+      And error.code is "NOT_DIVISIBLE_BY_8"
+
+    Scenario: Reject dimensions below minimum
+      When I POST /api/canvas with width=32 height=64
+      Then the response is 422
+      And error.field is "width"
+
+    Scenario: Reject dimensions above maximum
+      When I POST /api/canvas with width=9000 height=1024
+      Then the response is 422
+      And error.field is "width"
+
+    Scenario: Aspect-ratio shorthand 16:9
+      When I POST /api/canvas with aspect_ratio="16:9"
+      Then width=1824 and height=1024 (nearest multiple-of-8 at base 1024)
+
+    Scenario: List canvases excludes archived
+      Given canvas "old-art" was archived yesterday
+      And canvas "new-art" is active
+      When I GET /api/canvas
+      Then the response contains "new-art"
+      And the response does not contain "old-art"
+
+    Scenario: List canvases includes archived when requested
+      Given canvas "old-art" was archived yesterday
+      When I GET /api/canvas?include_archived=true
+      Then the response contains "old-art"
+
+    Scenario: Cannot resize canvas with existing layers
+      Given canvas "my-canvas" has 1 layer
+      When I PATCH /api/canvas/{id} with width=512
+      Then the response is 409
+      And error.code is "CANVAS_HAS_LAYERS"
+
+    Scenario: Soft delete cancels running jobs
+      Given canvas "my-canvas" has a running generation job on layer "sky"
+      When I DELETE /api/canvas/{id}
+      Then the response is 200
+      And the canvas archived_at is set
+      And the running job status is "cancelled"
+      And GET /api/canvas/{id} returns 410
+
+    Scenario: Cross-org canvas returns 404
+      Given canvas "theirs" belongs to org "org-xyz"
+      When I GET /api/canvas/{theirs.id}
+      Then the response is 404
+
+  Feature: Layer stack management
+    Background:
+      Given canvas "scene" (1024×1024) exists with 0 layers
+
+    Scenario: First layer gets z_index 0
+      When I POST /api/canvas/{id}/layers with name="sky" layer_type="background"
+      Then the response is 201
+      And layer.z_index == 0
+
+    Scenario: Second layer gets z_index 1
+      Given layer "sky" at z_index 0 exists
+      When I POST /api/canvas/{id}/layers with name="hero" layer_type="character"
+      Then layer.z_index == 1
+
+    Scenario: Layer count ceiling enforced
+      Given the canvas has 50 layers
+      When I POST /api/canvas/{id}/layers with name="one-too-many" layer_type="object"
+      Then the response is 409
+      And error.code is "LAYER_LIMIT_EXCEEDED"
+
+    Scenario: Delete middle layer re-packs z_indices
+      Given layers at z_index [0,1,2,3] named [bg, mid, hero, text]
+      When I DELETE layer "mid" (z_index 1)
+      Then layer "hero" z_index becomes 1
+      And layer "text" z_index becomes 2
+      And layer "bg" z_index stays 0
+      And the canvas has 3 layers total
+
+    Scenario: Reorder layers atomically
+      Given layers A(z=0) B(z=1) C(z=2)
+      When I POST /api/canvas/{id}/layers/reorder with [{A,2},{B,0},{C,1}]
+      Then the response is 200
+      And A.z_index == 2, B.z_index == 0, C.z_index == 1
+
+    Scenario: Reorder with duplicate z_index rejected
+      Given layers A(z=0) B(z=1)
+      When I POST /api/canvas/{id}/layers/reorder with [{A,0},{B,0}]
+      Then the response is 422
+      And error.code is "DUPLICATE_Z_INDEX"
+
+    Scenario: Reorder missing a layer rejected
+      Given layers A(z=0) B(z=1) C(z=2)
+      When I POST /api/canvas/{id}/layers/reorder with [{A,0},{B,2}]
+      Then the response is 422
+      And error.code is "INCOMPLETE_REORDER"
+
+    Scenario: Lock prevents position mutations
+      Given layer "hero" is locked
+      When I PATCH layer "hero" with x=200
+      Then the response is 409
+      And error.code is "LAYER_LOCKED"
+
+    Scenario: Lock allows non-positional mutations
+      Given layer "hero" is locked
+      When I PATCH layer "hero" with name="protagonist"
+      Then the response is 200
+      And layer.name == "protagonist"
+
+    Scenario: Unlock then mutate position succeeds
+      Given layer "hero" is locked
+      When I PATCH layer "hero" with locked=false
+      And I PATCH layer "hero" with x=100
+      Then the response is 200
+
+    Scenario: Rotation wraps at 360
+      When I PATCH layer with rotation=400.0
+      Then layer.rotation == 40.0
+
+    Scenario: Scale zero rejected
+      When I PATCH layer with scale=0.0
+      Then the response is 422
+
+  Feature: Image generation
+    Background:
+      Given canvas "scene" with layer "sky" (background, no image yet)
+      And model "gemini-flash" is registered as draft-tier
+
+    Scenario: Start generate job returns immediately
+      When I POST /api/canvas/{id}/layers/{sky.id}/generate with action="generate" prompt="sunset sky" model_id="gemini-flash"
+      Then the response is 202
+      And body.status == "pending"
+      And body.job_id is a UUID
+
+    Scenario: Concurrent generate on same layer rejected
+      Given a pending job already exists for layer "sky"
+      When I POST /api/canvas/{id}/layers/{sky.id}/generate again
+      Then the response is 409
+      And error.code is "JOB_IN_PROGRESS"
+
+    Scenario: Text layer rejects generate
+      Given layer "title" has layer_type="text"
+      When I POST /api/canvas/{id}/layers/{title.id}/generate with action="generate"
+      Then the response is 400
+      And error.code is "TEXT_LAYER_NO_GEN"
+
+    Scenario: Job completes with result_paths
+      Given a generation job was started with count=2
+      When the image model returns 2 images
+      Then job.status == "done"
+      And len(job.result_paths) == 2
+      And each result_path is a signed URL
+
+    Scenario: Accept first variant
+      Given job is done with result_paths=[url0, url1]
+      When I POST /api/canvas/jobs/{jid}/accept/0
+      Then the response is 200
+      And layer.image_path == url0
+      And job.selected_index == 0
+
+    Scenario: Accept last variant
+      Given job is done with result_paths=[url0, url1, url2, url3]
+      When I POST /api/canvas/jobs/{jid}/accept/3
+      Then layer.image_path == url3
+
+    Scenario: Accept out-of-range variant
+      Given job is done with result_paths=[url0, url1]
+      When I POST /api/canvas/jobs/{jid}/accept/2
+      Then the response is 422
+      And error.code is "VARIANT_INDEX_OUT_OF_RANGE"
+
+    Scenario: Accept non-done job rejected
+      Given job.status == "running"
+      When I POST /api/canvas/jobs/{jid}/accept/0
+      Then the response is 409
+      And error.code is "JOB_NOT_DONE"
+
+    Scenario: Cancel pending job
+      Given job.status == "pending"
+      When I DELETE /api/canvas/jobs/{jid}
+      Then the response is 200
+      And job.status == "cancelled"
+
+    Scenario: Cancel done job rejected
+      Given job.status == "done"
+      When I DELETE /api/canvas/jobs/{jid}
+      Then the response is 409
+
+    Scenario: Refine requires existing image
+      Given layer "sky" has no image_path
+      When I POST generate with action="refine"
+      Then the response is 400
+      And error.code is "REFINE_NO_SOURCE"
+
+    Scenario: Provider rate-limit surfaces as failed job
+      Given the image model returns HTTP 429
+      When the generation job runs
+      Then job.status == "failed"
+      And job.error_message contains "rate limit" but not raw provider body
+      And no 500 is returned to the caller
+
+    Scenario: Warden blocks prompt
+      Given Warden returns BLOCK for prompt "forbidden content"
+      When I POST generate with that prompt
+      Then the response is 400
+      And error.code is "PROMPT_BLOCKED"
+
+    Scenario: Unknown model rejected
+      When I POST generate with model_id="does-not-exist"
+      Then the response is 400
+      And error.code is "UNKNOWN_MODEL"
+
+  Feature: Compositing
+    Background:
+      Given canvas "scene" (1024×1024) with layers:
+        - "sky" z=0 visible=true  image_path=sky.png
+        - "hero" z=1 visible=true  image_path=hero.png
+        - "fx"  z=2 visible=false image_path=fx.png
+        - "title" z=3 visible=true  image_path=null
+
+    Scenario: Composite skips invisible and imageless layers
+      When I POST /api/canvas/{id}/composite
+      Then the response is 200
+      And the composite includes: sky, hero (in that order, bottom to top)
+      And fx is excluded (invisible)
+      And title is excluded (no image_path)
+
+    Scenario: Composite produces image at canvas dimensions
+      When I POST /api/canvas/{id}/composite
+      Then composite.width == 1024 and composite.height == 1024
+
+    Scenario: All-invisible canvas returns blank image
+      Given all layers have visible=false
+      When I POST /api/canvas/{id}/composite
+      Then the response is 200
+      And the result is a 1024×1024 white image
+
+    Scenario: Latest composite reflects most recent call
+      Given composite C1 was created at T1
+      When I POST /api/canvas/{id}/composite at T2 (after C1)
+      And GET /api/canvas/{id}/composite/latest
+      Then the response refers to C2 (created at T2), not C1
+
+    Scenario: Layer clipped at canvas boundary
+      Given layer "hero" at x=900 y=900 with a 256×256 image
+      When I POST /api/canvas/{id}/composite
+      Then the output only shows the portion of hero within [0,1024]×[0,1024]
+
+  Feature: Export
+    Background:
+      Given canvas "final" (1024×1024) with a composite already stored
+
+    Scenario: Export PNG returns image attachment
+      When I GET /api/canvas/{id}/export?format=png
+      Then the response is 200
+      And Content-Type is image/png
+      And Content-Disposition contains "attachment"
+
+    Scenario: Export WebP with quality
+      When I GET /api/canvas/{id}/export?format=webp&quality=75
+      Then the response is 200
+      And Content-Type is image/webp
+
+    Scenario: Export triggers composite when none exists
+      Given no composite exists for the canvas
+      When I GET /api/canvas/{id}/export?format=png
+      Then a composite is created implicitly
+      And the image is returned
+
+    Scenario: Unsupported format rejected
+      When I GET /api/canvas/{id}/export?format=bmp
+      Then the response is 400
+      And error.code is "UNSUPPORTED_FORMAT"
+
+    Scenario: Quality out of range rejected
+      When I GET /api/canvas/{id}/export?format=jpg&quality=0
+      Then the response is 422
+
+    Scenario: Export archived canvas returns 404
+      Given canvas is archived
+      When I GET /api/canvas/{id}/export?format=png
+      Then the response is 404
+
+  Feature: Model registry
+    Scenario: List models returns registered image models
+      When I GET /api/canvas/models
+      Then the response contains entries with id, display_name, provider, supports_generate, supports_refine, tier_class, cost_per_image_usd, is_free
+
+    Scenario: Force refresh bypasses TTL cache
+      Given the model list was cached 2 minutes ago
+      When I GET /api/canvas/models?refresh=true
+      Then LiteLLM is queried again and the cache timestamp advances
+
+
+# ─────────────────────────────────────────────────────────────────────
+# INVARIANTS
+# ─────────────────────────────────────────────────────────────────────
+
+invariants:
+
+  - name: z_index_dense_packing
+    description: "After any layer create, delete, or reorder, the set of z_indices for a canvas is exactly {0, 1, ..., N-1} where N = layer_count"
+    kind: state_invariant
+    expression: "set(layer.z_index for layer in canvas.layers) == set(range(canvas.layer_count))"
+    severity: critical
+
+  - name: z_index_unique_per_canvas
+    description: "No two layers on the same canvas share a z_index at any point in time"
+    kind: state_invariant
+    expression: "len({l.z_index for l in canvas.layers}) == len(canvas.layers)"
+    severity: critical
+
+  - name: max_layers_per_canvas
+    description: "A canvas never has more than 50 layers"
+    kind: state_invariant
+    expression: "canvas.layer_count <= 50"
+    severity: critical
+
+  - name: canvas_dimensions_divisible_by_8
+    description: "Canvas width and height are always divisible by 8 (diffusion-model alignment)"
+    kind: state_invariant
+    expression: "canvas.width % 8 == 0 and canvas.height % 8 == 0"
+    severity: critical
+
+  - name: canvas_dimensions_in_range
+    description: "Canvas dimensions stay within [64, 8192]"
+    kind: state_invariant
+    expression: "64 <= canvas.width <= 8192 and 64 <= canvas.height <= 8192"
+    severity: critical
+
+  - name: one_active_job_per_layer
+    description: "At most one job per layer may be in pending or running state simultaneously"
+    kind: state_invariant
+    expression: "count(jobs where layer_id=L and status in ('pending','running')) <= 1 for every layer L"
+    severity: critical
+
+  - name: locked_layer_position_immutable
+    description: "A locked layer's x, y, scale, rotation, and opacity never change via the API"
+    kind: state_invariant
+    expression: "layer.locked => PATCH({x,y,scale,rotation,opacity}) returns 409"
+    severity: high
+
+  - name: text_layer_no_image_generation
+    description: "A text-type layer never has a running or done generate/refine/reference job"
+    kind: state_invariant
+    expression: "layer.layer_type == 'text' => no job with action in ('generate','refine','reference') for that layer"
+    severity: critical
+
+  - name: composite_excludes_invisible
+    description: "The pixel content of any invisible layer never appears in any CompositeRecord"
+    kind: postcondition
+    expression: "visible=false => pixel_contribution_to_composite == 0"
+    severity: critical
+
+  - name: accept_requires_done_job
+    description: "accept() only succeeds when the job is in done state"
+    kind: precondition
+    expression: "job.status == 'done' OR accept() returns 409"
+    severity: critical
+
+  - name: accept_variant_in_bounds
+    description: "The accepted variant index is always within result_paths bounds"
+    kind: precondition
+    expression: "0 <= variant_index < len(job.result_paths) OR accept() returns 422"
+    severity: critical
+
+  - name: soft_delete_only
+    description: "No canvas or layer record is ever hard-deleted via the public API; archived_at is the only deletion signal"
+    kind: state_invariant
+    expression: "no DELETE endpoint removes a row from the database"
+    severity: critical
+
+  - name: no_raw_provider_errors
+    description: "Provider stack traces and raw error bodies never appear in failed job error_message or API response bodies"
+    kind: postcondition
+    expression: "'Traceback' not in job.error_message and 'stack' not in job.error_message"
+    severity: critical
+
+  - name: layer_scale_positive
+    description: "Layer scale is always strictly positive"
+    kind: state_invariant
+    expression: "layer.scale > 0.0"
+    severity: high
+
+  - name: layer_rotation_bounded
+    description: "Layer rotation is always in [0.0, 360.0)"
+    kind: state_invariant
+    expression: "0.0 <= layer.rotation < 360.0"
+    severity: high
+
+  - name: layer_opacity_bounded
+    description: "Layer opacity is always in [0.0, 1.0]"
+    kind: state_invariant
+    expression: "0.0 <= layer.opacity <= 1.0"
+    severity: high
+
+  - name: org_isolation
+    description: "GET/PATCH/DELETE on a canvas or layer belonging to a different org returns 404, not the resource"
+    kind: postcondition
+    expression: "canvas.org_id != caller.org_id => response.status == 404"
+    severity: critical
+
+  - name: canvas_updated_on_layer_accept
+    description: "canvas.updated_at advances whenever a layer's image_path changes via accept()"
+    kind: postcondition
+    expression: "after accept(): canvas.updated_at > pre_accept_canvas.updated_at"
+    severity: high
+
+
+# ─────────────────────────────────────────────────────────────────────
+# METHOD-LEVEL CONTRACTS
+# ─────────────────────────────────────────────────────────────────────
+
+contracts:
+
+  - name: CanvasStore.create_canvas
+    signature: "(name, width, height, bg_color, org_id) -> CanvasRecord"
+    preconditions:
+      - "64 <= width <= 8192"
+      - "64 <= height <= 8192"
+      - "width % 8 == 0 and height % 8 == 0"
+      - "len(name.strip()) > 0"
+    postconditions:
+      - "result.id is a valid UUID"
+      - "result.archived_at is None"
+      - "result.layer_count == 0"
+      - "result.org_id == org_id"
+
+  - name: CanvasStore.add_layer
+    signature: "(canvas_id, name, layer_type, z_index=None, ...) -> LayerRecord"
+    preconditions:
+      - "canvas.archived_at is None"
+      - "canvas.layer_count < 50"
+    postconditions:
+      - "if z_index was None: result.z_index == old_max_z + 1 (or 0 if first layer)"
+      - "canvas.layer_count == old_layer_count + 1"
+      - "z_index_dense_packing holds after insertion"
+
+  - name: CanvasStore.remove_layer
+    signature: "(canvas_id, layer_id) -> None"
+    preconditions:
+      - "layer belongs to canvas"
+      - "canvas.archived_at is None"
+    postconditions:
+      - "all layers with old_z_index > removed.z_index have their z_index decremented by 1"
+      - "canvas.layer_count == old_layer_count - 1"
+      - "z_index_dense_packing holds after removal"
+
+  - name: CanvasStore.reorder_layers
+    signature: "(canvas_id, assignments: list[{layer_id, z_index}]) -> list[LayerRecord]"
+    preconditions:
+      - "len(assignments) == canvas.layer_count"
+      - "set(a.layer_id for a in assignments) == set(l.id for l in canvas.layers)"
+      - "set(a.z_index for a in assignments) == set(range(len(assignments)))"
+    postconditions:
+      - "each layer.z_index matches its assignment"
+      - "z_index_dense_packing holds"
+
+  - name: CanvasExecutor.start_job
+    signature: "(canvas_id, layer_id, action, model_id, prompt, ...) -> GenerationJobRecord"
+    preconditions:
+      - "layer.layer_type != 'text' (for generate/refine/reference actions)"
+      - "no pending or running job for layer_id"
+      - "model_id in model_registry"
+      - "if action=='refine': layer.image_path is not None"
+      - "warden.scan(prompt).verdict != BLOCK"
+    postconditions:
+      - "job.status == 'pending'"
+      - "job persisted in store before returning"
+
+  - name: CanvasExecutor.accept_variant
+    signature: "(job_id, variant_index) -> (GenerationJobRecord, LayerRecord)"
+    preconditions:
+      - "job.status == 'done'"
+      - "0 <= variant_index < len(job.result_paths)"
+    postconditions:
+      - "layer.image_path == job.result_paths[variant_index]"
+      - "job.selected_index == variant_index"
+      - "layer.updated_at > pre_accept_layer.updated_at"
+      - "canvas.updated_at > pre_accept_canvas.updated_at"
+
+  - name: ImageGenClient.generate
+    signature: "(model_id, prompt, width, height, count, seed, negative_prompt) -> list[ImageData]"
+    preconditions:
+      - "model_id in model_registry"
+      - "1 <= count <= 4"
+      - "width > 0 and height > 0"
+    postconditions:
+      - "len(result) == count"
+      - "all(img.width == width and img.height == height for img in result)"
+
+  - name: CompositorService.composite
+    signature: "(canvas: CanvasRecord, layers: list[LayerRecord]) -> CompositeResult"
+    preconditions:
+      - "all layers belong to canvas"
+      - "all(l.canvas_id == canvas.id for l in layers)"
+    postconditions:
+      - "result.width == canvas.width and result.height == canvas.height"
+      - "all invisible layers (visible=False) are absent from pixel output"
+      - "all layers with image_path=None contribute no pixels"
+      - "output is stable: same inputs with same seed produce byte-identical output"
+
+
+# ─────────────────────────────────────────────────────────────────────
+# EDGE CASES (exhaustive)
+# ─────────────────────────────────────────────────────────────────────
+
+edge_cases:
+
+  - id: EC-01
+    area: generation
+    description: "Generate with count=1 (minimum) — result_paths has exactly 1 entry"
+
+  - id: EC-02
+    area: generation
+    description: "Generate with count=4 (maximum) — result_paths has exactly 4 entries"
+
+  - id: EC-03
+    area: generation
+    description: "Accept variant_index=0 (first) and variant_index=N-1 (last) both succeed"
+
+  - id: EC-04
+    area: generation
+    description: "Accept variant_index=-1 or N returns 422 VARIANT_INDEX_OUT_OF_RANGE"
+
+  - id: EC-05
+    area: generation
+    description: "Provider returns HTTP 429 — job transitions to failed, error_message mentions 'rate limit', no 500 surfaces to the caller"
+
+  - id: EC-06
+    area: generation
+    description: "Provider returns HTTP 503 — job fails; retryable flag is set in job metadata but error_message does not expose raw body"
+
+  - id: EC-07
+    area: generation
+    description: "Provider returns non-image bytes (e.g., HTML error page) — job fails with IMAGE_DECODE_ERROR, not a crash"
+
+  - id: EC-08
+    area: generation
+    description: "Provider returns an image with wrong dimensions — compositor auto-resizes to layer dimensions before storing"
+
+  - id: EC-09
+    area: generation
+    description: "Refine called on layer with no image_path — 400 REFINE_NO_SOURCE (not a crash)"
+
+  - id: EC-10
+    area: generation
+    description: "Two concurrent generate calls for the same layer arrive simultaneously — exactly one succeeds (202) and one gets 409 JOB_IN_PROGRESS (no race condition)"
+
+  - id: EC-11
+    area: layers
+    description: "Layer x/y positioned entirely outside canvas bounds — stored without error; clipped to empty in composite"
+
+  - id: EC-12
+    area: layers
+    description: "Layer scale=0.0001 (near zero) — stored and treated as essentially invisible in composite (no div-by-zero)"
+
+  - id: EC-13
+    area: layers
+    description: "Layer rotation=360.0 — normalised to 0.0 before storage"
+
+  - id: EC-14
+    area: layers
+    description: "Layer rotation=-90.0 — normalised to 270.0 before storage"
+
+  - id: EC-15
+    area: layers
+    description: "Canvas exactly at 50-layer ceiling — 51st add returns 409 immediately, not after inserting"
+
+  - id: EC-16
+    area: layers
+    description: "Delete the only layer — canvas.layer_count goes to 0, z_index set is empty, invariant holds"
+
+  - id: EC-17
+    area: canvas
+    description: "DELETE canvas with active running job — job is cancelled first, then canvas archived atomically"
+
+  - id: EC-18
+    area: canvas
+    description: "PATCH canvas dimensions while layer_count==0 — allowed (no layers, safe to resize)"
+
+  - id: EC-19
+    area: compositing
+    description: "All layers invisible — 200 response with blank canvas image (not an error condition)"
+
+  - id: EC-20
+    area: compositing
+    description: "Composite requested while a generation job is running on one layer — composite uses the layer's current image_path (which may be null); the running job does not block compositing"
+
+  - id: EC-21
+    area: compositing
+    description: "Layer with image larger than canvas — scaled by layer.scale, then clipped; no allocation error"
+
+  - id: EC-22
+    area: compositing
+    description: "50-layer composite (maximum) — completes without OOM; images are streamed not fully buffered"
+
+  - id: EC-23
+    area: export
+    description: "Export from archived canvas — 404 (not a composite triggered then 410)"
+
+  - id: EC-24
+    area: export
+    description: "Export with quality=1 (minimum) and quality=100 (maximum) — both produce valid image bytes"
+
+  - id: EC-25
+    area: security
+    description: "Two orgs have canvases with the same UUID (collision) — org_id filter ensures neither sees the other's"
+
+  - id: EC-26
+    area: security
+    description: "Warden blocks prompt mid-flight (after job is pending) — job transitions to failed with PROMPT_BLOCKED; no image call is made"
+
+  - id: EC-27
+    area: models
+    description: "Model list refresh while a generation job is in flight — the job continues with the model_id it started with; no orphan condition"
+
+  - id: EC-28
+    area: layers
+    description: "Reorder where assignments list is empty (canvas has 0 layers) — 200 OK, no-op"
+
+  - id: EC-29
+    area: generation
+    description: "Reference action on a character layer with no reference_images — generates hero image + 3 turnaround views using img2img, returns a composite reference sheet URL"
+
+  - id: EC-30
+    area: generation
+    description: "Seed=0 is a valid seed (not treated as null/unset)"

@@ -11,6 +11,9 @@ import {
 } from "../lib/renderingPipeline";
 import { refineScene } from "../lib/refinementPass";
 import { saveState, loadState, clearState } from "../lib/persistence";
+import CanvasViewport from "./CanvasViewport";
+import { logGenerationAttempt, updateVerdict, saveLayoutVersion } from "../lib/generationTracker";
+import { exportBookPdf } from "../lib/exportPdf";
 
 const S = {
   loading: "loading",
@@ -22,15 +25,68 @@ const S = {
   done: "done",
 };
 
-function buildPageLayers(sp) {
+const DEFAULT_TEXT_STYLE = {
+  font_family: "Quicksand",
+  font_size: 14,
+  font_weight: "normal",
+  font_style: "normal",
+  color: "#333333",
+  line_height: 1.4,
+  letter_spacing: 0,
+  text_align: "center",
+};
+
+const DEFAULT_BOX_STYLE = {
+  background_color: "rgba(255,255,255,0.85)",
+  border_radius: 4,
+  padding: { top: 8, right: 12, bottom: 8, left: 12 },
+};
+
+const GOOGLE_FONTS = [
+  "Quicksand",
+  "Nunito",
+  "Patrick Hand",
+  "Bubblegum Sans",
+  "Fredoka One",
+  "Baloo 2",
+  "Comic Neue",
+  "Grandstander",
+  "Lilita One",
+  "Comfortaa",
+];
+
+function buildPageLayers(sp, bookPlan) {
+  const dw = bookPlan?.page_dims?.w || 1536;
+  const dh = bookPlan?.page_dims?.h || 1024;
   const layers = [];
-  layers.push({ id: `${sp.id}-bg`, name: "Background", type: "background", prompt: sp.bg_prompt, image_url: null, quality: "draft", z_index: 0, slot: "full_page" });
+  layers.push({ id: `${sp.id}-bg`, name: "Background", type: "background", prompt: sp.bg_prompt, image_url: null, quality: "draft", z_index: 0, slot: "full_page", x: 0, y: 0, width: dw, height: dh });
   if (sp.character_prompt) {
-    layers.push({ id: `${sp.id}-char`, name: "Character", type: "character", prompt: sp.character_prompt, image_url: null, quality: "draft", z_index: 10, slot: sp.character_slot?.slot_bounds || sp.composition?.character_slot, pose: sp.character_slot?.pose });
+    layers.push({ id: `${sp.id}-char`, name: "Character", type: "character", prompt: sp.character_prompt, image_url: null, quality: "draft", z_index: 10, slot: sp.character_slot?.slot_bounds || sp.composition?.character_slot, pose: sp.character_slot?.pose, x: Math.round(dw * 0.55), y: Math.round(dh * 0.1), width: Math.round(dw * 0.4), height: Math.round(dh * 0.8) });
   }
   for (let i = 0; i < (sp.prop_prompts || []).length; i++) {
     const p = sp.prop_prompts[i];
-    layers.push({ id: `${sp.id}-prop${i}`, name: p.name, type: "prop", prompt: p.prompt, image_url: null, quality: "draft", z_index: 5 + i, placement: p.placement });
+    layers.push({ id: `${sp.id}-prop${i}`, name: p.name, type: "prop", prompt: p.prompt, image_url: null, quality: "draft", z_index: 5 + i, placement: p.placement, x: Math.round(dw * 0.1 + i * dw * 0.2), y: Math.round(dh * 0.6), width: Math.round(dw * 0.15), height: Math.round(dh * 0.15) });
+  }
+  if (sp.scene_type === "title_page") {
+    layers.push({
+      id: `${sp.id}-title`, name: "Title Text", type: "text",
+      text_content: sp.title || bookPlan?.title || "", subtext: bookPlan?.dedication || "",
+      image_url: null, quality: "final", z_index: 20,
+      x: Math.round(dw * 0.1), y: Math.round(dh * 0.25),
+      width: Math.round(dw * 0.8), height: Math.round(dh * 0.5),
+      style: { ...DEFAULT_TEXT_STYLE, font_size: 36, font_weight: "bold", color: "#1a1a2e" },
+      box: { ...DEFAULT_BOX_STYLE, background_color: "rgba(255,255,255,0.9)" },
+    });
+  }
+  if (sp.page_text && sp.scene_type !== "title_page") {
+    layers.push({
+      id: `${sp.id}-text`, name: "Page Text", type: "text",
+      text_content: sp.page_text, image_url: null, quality: "final", z_index: 20,
+      x: Math.round(dw * 0.05), y: Math.round(dh * 0.75),
+      width: Math.round(dw * 0.9), height: Math.round(dh * 0.2),
+      style: { ...DEFAULT_TEXT_STYLE },
+      box: { ...DEFAULT_BOX_STYLE },
+    });
   }
   return layers;
 }
@@ -69,24 +125,24 @@ export default function BookWorkspace({ bookSpec, onReset }) {
   const [rawDecomp, setRawDecomp] = useState(null);
   const [styleVersions, setStyleVersions] = useState([]);
   const [styleIdx, setStyleIdx] = useState(0);
-  const [charVersions, setCharVersions] = useState([]);
-  const [charIdx, setCharIdx] = useState(0);
+  const [charSheets, setCharSheets] = useState([]);
   const [sbVersions, setSbVersions] = useState([]);
   const [sbIdx, setSbIdx] = useState(0);
   const [pageLayers, setPageLayers] = useState([]);
   const [currentScene, setCurrentScene] = useState(0);
   const [log, setLog] = useState([]);
-  const [selectedLayer, setSelectedLayer] = useState(null);
+  const [selectedLayerId, setSelectedLayerId] = useState(null);
   const [transformingLayer, setTransformingLayer] = useState(null);
   const [transformText, setTransformText] = useState("");
   const [generating, setGenerating] = useState("");
+  const [exporting, setExporting] = useState(false);
   const busyRef = useRef(false);
   const saveTimerRef = useRef(null);
+  const layoutSaveTimerRef = useRef(null);
 
   const addLog = useCallback((msg) => setLog((p) => [...p.slice(-100), msg]), []);
 
   const curStyle = styleVersions[styleIdx] || null;
-  const curChar = charVersions[charIdx] || null;
   const curSb = sbVersions[sbIdx] || null;
 
   const scheduleSave = useCallback((overrides = {}) => {
@@ -94,13 +150,13 @@ export default function BookWorkspace({ bookSpec, onReset }) {
     saveTimerRef.current = setTimeout(() => {
       const title = bookSpec?.title || bookSpec?.premise?.slice(0, 30) || bookSpec?._storageKey;
       if (!title) return;
-      saveState(title, { step, bookSpec, rawDecomp, bookPlan, styleVersions, styleIdx, charVersions, charIdx, sbVersions, sbIdx, pageLayers, currentScene, log: log.slice(-50), savedAt: new Date().toISOString(), ...overrides });
+      saveState(title, { step, bookSpec, rawDecomp, bookPlan, styleVersions, styleIdx, charSheets, sbVersions, sbIdx, pageLayers, currentScene, log: log.slice(-50), savedAt: new Date().toISOString(), ...overrides });
     }, 3000);
-  }, [step, bookSpec, rawDecomp, bookPlan, styleVersions, styleIdx, charVersions, charIdx, sbVersions, sbIdx, pageLayers, currentScene, log]);
+  }, [step, bookSpec, rawDecomp, bookPlan, styleVersions, styleIdx, charSheets, sbVersions, sbIdx, pageLayers, currentScene, log]);
 
   const persist = scheduleSave;
 
-  useEffect(() => { scheduleSave(); }, [step, styleVersions, charVersions, sbVersions, pageLayers, currentScene]);
+  useEffect(() => { scheduleSave(); }, [step, styleVersions, charSheets, sbVersions, pageLayers, currentScene]);
 
   useEffect(() => {
     (async () => {
@@ -113,8 +169,7 @@ export default function BookWorkspace({ bookSpec, onReset }) {
           if (saved.bookPlan) setBookPlan(saved.bookPlan);
           if (saved.styleVersions?.length) { setStyleVersions(saved.styleVersions); setStyleIdx(saved.styleIdx || 0); }
           else if (saved.styleSample) { setStyleVersions([saved.styleSample]); }
-          if (saved.charVersions?.length) { setCharVersions(saved.charVersions); setCharIdx(saved.charIdx || 0); }
-          else if (saved.characterSheet) { setCharVersions([saved.characterSheet]); }
+          if (saved.charSheets?.length) setCharSheets(saved.charSheets);
           if (saved.sbVersions?.length) { setSbVersions(saved.sbVersions); setSbIdx(saved.sbIdx || 0); }
           else if (saved.storyboardImg) { setSbVersions([saved.storyboardImg]); }
           if (saved.pageLayers?.length) setPageLayers(saved.pageLayers);
@@ -159,21 +214,43 @@ export default function BookWorkspace({ bookSpec, onReset }) {
     finally { setGenerating(""); }
   };
 
-  const mainCharPhotos = bookSpec?.characters?.find((c) => c.role === "main character")?.reference_photos
-    || bookSpec?.reference_photos || [];
-
-  const genChar = async () => {
-    setGenerating("Generating character sheet...");
-    addLog("Generating character sheet...");
+  const genChar = async (charIndex) => {
+    if (!bookPlan?.character_designs?.length) {
+      addLog("No character designs available");
+      return;
+    }
+    const designs = bookPlan.character_designs;
+    const idx = charIndex != null ? charIndex : 0;
+    const design = designs[idx];
+    if (!design) return;
+    const charName = bookSpec?.characters?.[idx]?.name || `Character ${idx + 1}`;
+    setGenerating(`Generating character sheet for ${charName}...`);
+    addLog(`Generating character sheet for ${charName}...`);
     try {
-      const refs = mainCharPhotos.length > 0
-        ? [...mainCharPhotos, ...(curStyle ? [curStyle] : [])]
+      const photos = bookSpec?.characters?.[idx]?.reference_photos || [];
+      const refs = photos.length > 0
+        ? [...photos, ...(curStyle ? [curStyle] : [])]
         : curStyle ? [curStyle] : undefined;
-      const img = await renderCharacterReferences(bookPlan.character_design, bookPlan.style_token, (m) => { addLog(m); setGenerating(m); }, refs);
-      setCharVersions((prev) => { const n = [...prev, img]; setCharIdx(n.length - 1); return n; });
-      addLog("Character sheet ready.");
-    } catch (err) { addLog(`Character failed: ${err.message}`); }
+      const img = await renderCharacterReferences(design, bookPlan.style_token, (m) => { addLog(m); setGenerating(m); }, refs);
+      setCharSheets((prev) => {
+        const n = [...prev];
+        while (n.length <= idx) n.push({ name: bookSpec?.characters?.[n.length]?.name || `Character ${n.length + 1}`, design: designs[n.length], versions: [], idx: 0 });
+        const entry = { ...n[idx] };
+        entry.versions = [...entry.versions, img];
+        entry.idx = entry.versions.length - 1;
+        n[idx] = entry;
+        return n;
+      });
+      addLog(`${charName} sheet ready.`);
+    } catch (err) { addLog(`${charName} failed: ${err.message}`); }
     finally { setGenerating(""); }
+  };
+
+  const genAllChars = async () => {
+    const designs = bookPlan?.character_designs || [];
+    for (let i = 0; i < designs.length; i++) {
+      await genChar(i);
+    }
   };
 
   const genStoryboard = async () => {
@@ -190,7 +267,7 @@ export default function BookWorkspace({ bookSpec, onReset }) {
   const startPages = async () => {
     const initial = bookPlan.scenes.map((scene) => ({
       scene_id: scene.id, title: scene.title, scene_type: scene.scene_type, page_text: scene.page_text,
-      layers: buildPageLayers(scene), composite: null, approved: false,
+      layers: buildPageLayers(scene, bookPlan), composite: null, approved: false,
     }));
     setPageLayers(initial);
     setCurrentScene(0);
@@ -206,12 +283,13 @@ export default function BookWorkspace({ bookSpec, onReset }) {
     addLog(`Page ${idx + 1}: generating ${page.layers.length} draft layers...`);
     const updated = [...page.layers];
     for (let li = 0; li < updated.length; li++) {
+      if (updated[li].type === "text") continue;
       if (updated[li].image_url && updated[li].quality !== "draft") continue;
       const label = `${updated[li].name} (page ${idx + 1})`;
       setGenerating(label + "...");
       addLog(`  ${label}...`);
       try {
-        const url = await renderLayerDraft(updated[li].prompt, (m) => { addLog(m); setGenerating(m); });
+        const url = await renderLayerDraft(updated[li].prompt, (m) => { addLog(m); setGenerating(m); }, null, updated[li].type);
         updated[li] = { ...updated[li], image_url: url, quality: "draft" };
       } catch (err) { addLog(`  ${updated[li].name} failed: ${err.message}`); }
     }
@@ -222,15 +300,19 @@ export default function BookWorkspace({ bookSpec, onReset }) {
     setGenerating("");
   };
 
+  const bookKey = bookSpec?._storageKey || bookSpec?.title || bookSpec?.premise?.slice(0, 30) || "untitled";
+
   const retryLayer = async (pi, li) => {
     const page = pageLayers[pi]; if (!page) return;
     const layer = page.layers[li];
     setGenerating(`Retrying "${layer.name}"...`);
     addLog(`Retrying "${layer.name}"...`);
     try {
-      const url = await renderLayerDraft(layer.prompt, (m) => { addLog(m); setGenerating(m); });
+      const attempt = await logGenerationAttempt({ bookKey, sceneId: page.scene_id, layerId: layer.id, attemptType: "retry", prompt: layer.prompt, quality: "draft", verdict: "generated" });
+      const url = await renderLayerDraft(layer.prompt, (m) => { addLog(m); setGenerating(m); }, null, layer.type);
+      if (attempt?.id) await updateVerdict(attempt.id, url ? "generated" : "failed");
       const history = [...(layer.history || []), layer.image_url].filter(Boolean);
-      const layers = [...page.layers]; layers[li] = { ...layer, image_url: url, quality: "draft", history, historyIdx: history.length };
+      const layers = [...page.layers]; layers[li] = { ...layer, image_url: url, quality: "draft", history, historyIdx: history.length, _attemptId: attempt?.id };
       const comp = await compositeScene({ ...page, layers }, bookPlan.page_dims);
       setPageLayers((prev) => { const n = [...prev]; n[pi] = { ...page, layers, composite: comp }; return n; });
     } catch (err) { addLog(`Retry failed: ${err.message}`); }
@@ -243,9 +325,11 @@ export default function BookWorkspace({ bookSpec, onReset }) {
     setGenerating(`Upgrading "${layer.name}" to HQ...`);
     addLog(`Upgrading "${layer.name}" to final...`);
     try {
-      const url = await renderLayerFinal(layer.prompt, (m) => { addLog(m); setGenerating(m); }, layer.image_url);
+      const attempt = await logGenerationAttempt({ bookKey, sceneId: page.scene_id, layerId: layer.id, attemptType: "upgrade", prompt: layer.prompt, quality: "final", verdict: "pending" });
+      const url = await renderLayerFinal(layer.prompt, (m) => { addLog(m); setGenerating(m); }, layer.image_url, layer.type);
+      if (attempt?.id) await updateVerdict(attempt.id, url ? "generated" : "failed");
       const history = [...(layer.history || []), layer.image_url].filter(Boolean);
-      const layers = [...page.layers]; layers[li] = { ...layer, image_url: url, quality: "final", history, historyIdx: history.length };
+      const layers = [...page.layers]; layers[li] = { ...layer, image_url: url, quality: "final", history, historyIdx: history.length, _attemptId: attempt?.id };
       const comp = await compositeScene({ ...page, layers }, bookPlan.page_dims);
       setPageLayers((prev) => { const n = [...prev]; n[pi] = { ...page, layers, composite: comp }; return n; });
     } catch (err) { addLog(`Upgrade failed: ${err.message}`); }
@@ -261,8 +345,10 @@ export default function BookWorkspace({ bookSpec, onReset }) {
     const history = [...(layer.history || []), layer.image_url].filter(Boolean);
     const layers = [...page.layers]; layers[li] = { ...layer, prompt: transformText, quality: "draft", history, historyIdx: history.length };
     try {
-      const url = await renderLayerDraft(transformText, (m) => { addLog(m); setGenerating(m); });
-      layers[li] = { ...layers[li], image_url: url };
+      const attempt = await logGenerationAttempt({ bookKey, sceneId: page.scene_id, layerId: layer.id, attemptType: "edit_prompt", prompt: transformText, quality: "draft", verdict: "pending" });
+      const url = await renderLayerDraft(transformText, (m) => { addLog(m); setGenerating(m); }, null, layer.type);
+      if (attempt?.id) await updateVerdict(attempt.id, url ? "generated" : "failed");
+      layers[li] = { ...layers[li], image_url: url, _attemptId: attempt?.id };
     } catch (err) { addLog(`Transform failed: ${err.message}`); }
     const comp = await compositeScene({ ...page, layers }, bookPlan.page_dims);
     setPageLayers((prev) => { const n = [...prev]; n[pi] = { ...page, layers, composite: comp }; return n; });
@@ -285,6 +371,11 @@ export default function BookWorkspace({ bookSpec, onReset }) {
 
   const approvePage = async (pi) => {
     const page = pageLayers[pi];
+    for (const layer of page.layers) {
+      if (layer._attemptId) {
+        await updateVerdict(layer._attemptId, "accepted");
+      }
+    }
     let up = { ...page, approved: true };
     if (page.layers.every((l) => l.quality === "final") && !page.refined) {
       addLog("Running refinement...");
@@ -325,6 +416,85 @@ export default function BookWorkspace({ bookSpec, onReset }) {
     if (title) await clearState(title);
     onReset();
   };
+
+  const handleExport = async () => {
+    if (exporting) return;
+    setExporting(true);
+    addLog("Exporting PDF...");
+    try {
+      await exportBookPdf({
+        title: bookPlan?.title || bookSpec?.title || "My Book",
+        pages: pageLayers,
+        productId: "landscape_10x8",
+        mode: "interior",
+      });
+      addLog("PDF downloaded!");
+    } catch (err) {
+      addLog(`Export failed: ${err.message}`);
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  const debounceLayoutSave = useCallback((page) => {
+    if (!page?.scene_id) return;
+    if (layoutSaveTimerRef.current) clearTimeout(layoutSaveTimerRef.current);
+    layoutSaveTimerRef.current = setTimeout(() => {
+      const layoutData = page.layers.map((l) => ({
+        id: l.id, name: l.name, type: l.type, x: l.x, y: l.y,
+        width: l.width, height: l.height, scale: l.scale, rotation: l.rotation,
+        z_index: l.z_index, opacity: l.opacity, style: l.style, box: l.box,
+        text_content: l.text_content,
+      }));
+      saveLayoutVersion({ bookKey, sceneId: page.scene_id, layout: layoutData });
+    }, 2000);
+  }, [bookKey]);
+
+  const updatePageLayer = useCallback((_canvasId, layerId, changes) => {
+    setPageLayers((prev) => {
+      const pi = prev.findIndex((p) => p.layers?.some((l) => l.id === layerId));
+      if (pi < 0) return prev;
+      const page = prev[pi];
+      const li = page.layers.findIndex((l) => l.id === layerId);
+      if (li < 0) return prev;
+      const layers = [...page.layers];
+      layers[li] = { ...layers[li], ...changes };
+      const comp = page.composite;
+      const updated = prev.map((p, i) => i === pi ? { ...p, layers, composite: comp } : p);
+      debounceLayoutSave(updated[pi]);
+      return updated;
+    });
+  }, [debounceLayoutSave]);
+
+  const updateLayerStyle = useCallback((layerId, styleChanges) => {
+    setPageLayers((prev) => {
+      const pi = prev.findIndex((p) => p.layers?.some((l) => l.id === layerId));
+      if (pi < 0) return prev;
+      const page = prev[pi];
+      const li = page.layers.findIndex((l) => l.id === layerId);
+      if (li < 0) return prev;
+      const layers = [...page.layers];
+      layers[li] = { ...layers[li], style: { ...(layers[li].style || DEFAULT_TEXT_STYLE), ...styleChanges } };
+      const updated = prev.map((p, i) => i === pi ? { ...p, layers } : p);
+      debounceLayoutSave(updated[pi]);
+      return updated;
+    });
+  }, [debounceLayoutSave]);
+
+  const updateLayerBox = useCallback((layerId, boxChanges) => {
+    setPageLayers((prev) => {
+      const pi = prev.findIndex((p) => p.layers?.some((l) => l.id === layerId));
+      if (pi < 0) return prev;
+      const page = prev[pi];
+      const li = page.layers.findIndex((l) => l.id === layerId);
+      if (li < 0) return prev;
+      const layers = [...page.layers];
+      layers[li] = { ...layers[li], box: { ...(layers[li].box || DEFAULT_BOX_STYLE), ...boxChanges } };
+      const updated = prev.map((p, i) => i === pi ? { ...p, layers } : p);
+      debounceLayoutSave(updated[pi]);
+      return updated;
+    });
+  }, [debounceLayoutSave]);
 
   const curPage = pageLayers[currentScene];
 
@@ -480,29 +650,56 @@ export default function BookWorkspace({ bookSpec, onReset }) {
 
   // ── Step 3: Character ───────────────────────────────────────────────────
   if (step === S.reviewCharacter) {
+    const allDesigns = bookPlan?.character_designs || [];
+    const allChars = bookSpec?.characters || [];
     return (
       <div className="main-layout">
         {genOverlay}{stepNav}
         <div className="left-panel">
-          <div className="panel-section"><h3>Character</h3><div style={{ fontSize: 11, color: "var(--phosphor)" }}>Click to edit description</div></div>
+          <div className="panel-section"><h3>Characters ({allDesigns.length})</h3><div style={{ fontSize: 11, color: "var(--phosphor)" }}>Generate reference sheets for each character</div></div>
           <div className="scroll-area" style={{ padding: 12 }}>
-            <b style={{ fontSize: 11, color: "var(--text-dim)" }}>Character description</b>
-            <Editable value={bookPlan?.character_design} onChange={(v) => updateBookPlan("character_design", v)} multiline style={{ fontSize: 12, color: "var(--text)", lineHeight: 1.5, marginTop: 4 }} />
-            {charVersions.length > 1 && (
-              <div style={{ marginTop: 8 }}><b style={{ fontSize: 11, color: "var(--text-dim)" }}>Versions ({charVersions.length})</b>
-              <VersionPicker versions={charVersions} selectedIdx={charIdx} onSelect={setCharIdx} label="Character" /></div>
-            )}
+            {allDesigns.map((design, ci) => {
+              const sheet = charSheets[ci];
+              const name = allChars[ci]?.name || `Character ${ci + 1}`;
+              const hasSheet = sheet?.versions?.length > 0;
+              return (
+                <div key={ci} style={{ marginBottom: 10, padding: 8, background: "var(--ink-2)", borderRadius: 4 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
+                    <div style={{ width: 24, height: 24, borderRadius: "50%", background: "var(--ink-3)", overflow: "hidden", flexShrink: 0 }}>
+                      {allChars[ci]?.reference_photos?.[0] ? <img src={allChars[ci].reference_photos[0]} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, color: "var(--text-dim)" }}>{ci + 1}</div>}
+                    </div>
+                    <span style={{ fontSize: 13, fontWeight: 600, flex: 1 }}>{name}</span>
+                    <span style={{ fontSize: 9, color: "var(--text-dim)" }}>{allChars[ci]?.role || "character"}</span>
+                    {hasSheet && <span style={{ fontSize: 9, color: "var(--phosphor)" }}>{sheet.versions.length} v</span>}
+                  </div>
+                  <div style={{ fontSize: 10, color: "var(--text-dim)", maxHeight: 40, overflow: "auto", marginBottom: 4 }}>{design}</div>
+                  <div style={{ display: "flex", gap: 4 }}>
+                    <button style={{ flex: 1, fontSize: 10 }} onClick={() => genChar(ci)}>{hasSheet ? "Regenerate" : "Generate Sheet"}</button>
+                    {sheet?.versions?.length > 1 && (
+                      <VersionPicker versions={sheet.versions} selectedIdx={sheet.idx} onSelect={(vi) => setCharSheets((p) => { const n = [...p]; n[ci] = { ...n[ci], idx: vi }; return n; })} label={name} />
+                    )}
+                  </div>
+                </div>
+              );
+            })}
           </div>
           <div className="panel-section" style={{ display: "flex", gap: 8 }}>
-            <button style={{ flex: 1 }} onClick={genChar}>Generate New</button>
+            <button style={{ flex: 1 }} onClick={genAllChars}>Generate All</button>
             <button className="primary" style={{ flex: 1 }} onClick={() => setStep(S.storyboard)}>Continue</button>
           </div>
         </div>
         <div className="viewport-area">
-          {curChar ? (
-            <img src={curChar} alt="Character sheet" style={{ maxWidth: "90%", maxHeight: "90%", borderRadius: 6, boxShadow: "0 8px 32px rgba(0,0,0,0.5)" }} />
+          {charSheets.some((s) => s?.versions?.length > 0) ? (
+            <div style={{ display: "flex", gap: 12, alignItems: "center", justifyContent: "center", height: "100%", padding: 24, flexWrap: "wrap" }}>
+              {charSheets.filter((s) => s?.versions?.length > 0).map((sheet, si) => (
+                <div key={si} style={{ textAlign: "center" }}>
+                  <img src={sheet.versions[sheet.idx]} alt={sheet.name} style={{ maxWidth: 300, maxHeight: 400, borderRadius: 6, boxShadow: "0 4px 16px rgba(0,0,0,0.5)" }} />
+                  <div style={{ fontSize: 11, color: "var(--text-dim)", marginTop: 4 }}>{sheet.name}</div>
+                </div>
+              ))}
+            </div>
           ) : (
-            <div className="empty-state"><div style={{ color: "var(--text-dim)", fontSize: 13 }}>No character sheet yet. Click "Generate New".</div></div>
+            <div className="empty-state"><div style={{ color: "var(--text-dim)", fontSize: 13 }}>No character sheets yet. Click "Generate All" or generate individually.</div></div>
           )}
         </div>
         <div className="right-panel"><div className="panel-section scroll-area"><h3>Log</h3>
@@ -552,6 +749,20 @@ export default function BookWorkspace({ bookSpec, onReset }) {
 
   // ── Step 5: Pages ───────────────────────────────────────────────────────
   if (step === S.pages || step === S.done) {
+    const pageCanvas = bookPlan?.page_dims
+      ? { id: curPage?.scene_id || "canvas", width: bookPlan.page_dims.w, height: bookPlan.page_dims.h, background_color: "#FFFFFF" }
+      : null;
+    const canvasLayers = (curPage?.layers || []).map((l) => ({
+      ...l,
+      image_path: l.image_url,
+      visible: true,
+      locked: false,
+      opacity: l.opacity ?? 1,
+      scale: l.scale ?? 1,
+      rotation: l.rotation ?? 0,
+    }));
+    const selLayer = selectedLayerId ? curPage?.layers?.find((l) => l.id === selectedLayerId) : null;
+
     return (
       <div className="main-layout">
         {genOverlay}{stepNav}
@@ -580,18 +791,26 @@ export default function BookWorkspace({ bookSpec, onReset }) {
               </div>
             ))}
           </div>
-          <div className="panel-section"><button style={{ width: "100%" }} onClick={handleReset}>Start Over</button></div>
+          <div className="panel-section" style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+            {step === S.done && (
+              <button className="primary" style={{ width: "100%", fontSize: 13, padding: "10px 0" }} onClick={handleExport} disabled={exporting}>
+                {exporting ? "Exporting..." : "Export PDF"}
+              </button>
+            )}
+            <button style={{ width: "100%" }} onClick={handleReset}>Start Over</button>
+          </div>
         </div>
         <div className="viewport-area">
-          {curPage?.composite ? (
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100%", padding: 24 }}>
-              <img src={curPage.composite} alt={curPage.title} style={{ maxWidth: "100%", maxHeight: "100%", borderRadius: 6, boxShadow: "0 8px 32px rgba(0,0,0,0.5)" }} />
-            </div>
+          {pageCanvas && curPage ? (
+            <CanvasViewport
+              canvas={pageCanvas}
+              layers={canvasLayers}
+              selectedLayerId={selectedLayerId}
+              onSelectLayer={setSelectedLayerId}
+              onUpdateLayer={updatePageLayer}
+            />
           ) : (
             <div className="empty-state"><div className="status-dot generating" style={{ width: 16, height: 16 }} /><div style={{ color: "var(--phosphor)", fontSize: 13 }}>Rendering...</div></div>
-          )}
-          {curPage?.page_text && (
-            <div style={{ position: "absolute", bottom: 24, left: "50%", transform: "translateX(-50%)", maxWidth: "80%", background: "rgba(0,0,0,0.7)", backdropFilter: "blur(8px)", padding: "12px 20px", borderRadius: 8, textAlign: "center", fontSize: 15, lineHeight: 1.6, color: "var(--text)" }}>{curPage.page_text}</div>
           )}
           <div style={{ position: "absolute", top: 12, right: 12, background: "var(--ink-2)", padding: "4px 10px", borderRadius: 4, fontSize: 11, fontFamily: "var(--font)", color: "var(--text-dim)" }}>Page {currentScene + 1} / {pageLayers.length}</div>
         </div>
@@ -604,30 +823,87 @@ export default function BookWorkspace({ bookSpec, onReset }) {
                 <span style={{ fontSize: 10, padding: "2px 6px", borderRadius: 3, background: "var(--ink-3)", color: "var(--phosphor)", fontFamily: "var(--font)" }}>{curPage.scene_type}</span>
                 <div style={{ marginTop: 12 }}>
                   {(curPage.layers || []).map((layer, li) => (
-                    <div key={layer.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 4px", background: selectedLayer === li ? "var(--phosphor-bg)" : "transparent", borderRadius: 4, marginBottom: 2, cursor: "pointer" }} onClick={() => setSelectedLayer(li)}>
-                      <div style={{ width: 8, height: 8, borderRadius: "50%", flexShrink: 0, background: layer.quality === "final" ? "var(--phosphor)" : layer.image_url ? "var(--amber)" : "var(--ink-5)" }} />
-                      <div style={{ flex: 1, minWidth: 0 }}><div style={{ fontSize: 12 }}>{layer.name}</div><div style={{ fontSize: 10, color: "var(--text-dim)" }}>{layer.quality}</div></div>
-                      <div style={{ display: "flex", gap: 2 }}>
-                        <button style={{ fontSize: 9, padding: "1px 4px" }} onClick={(e) => { e.stopPropagation(); retryLayer(currentScene, li); }}>Retry</button>
-                        <button style={{ fontSize: 9, padding: "1px 4px" }} onClick={(e) => { e.stopPropagation(); setTransformingLayer({ page: currentScene, layer: li }); setTransformText(layer.prompt); }}>Edit</button>
-                        {layer.quality !== "final" && layer.image_url && (
-                          <button style={{ fontSize: 9, padding: "1px 4px", color: "var(--phosphor)" }} onClick={(e) => { e.stopPropagation(); upgradeLayer(currentScene, li); }}>HQ</button>
-                        )}
+                    <div key={layer.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 4px", background: selectedLayerId === layer.id ? "var(--phosphor-bg)" : "transparent", borderRadius: 4, marginBottom: 2, cursor: "pointer" }} onClick={() => setSelectedLayerId(layer.id)}>
+                      <div style={{ width: 8, height: 8, borderRadius: "50%", flexShrink: 0, background: layer.type === "text" ? "var(--phosphor)" : layer.quality === "final" ? "var(--phosphor)" : layer.image_url ? "var(--amber)" : "var(--ink-5)" }} />
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontSize: 12 }}>{layer.name}</div>
+                        <div style={{ fontSize: 10, color: "var(--text-dim)" }}>
+                          {layer.type === "text" ? "canvas text" : layer.quality}
+                        </div>
                       </div>
+                      {layer.type !== "text" && (
+                        <div style={{ display: "flex", gap: 2 }}>
+                          <button style={{ fontSize: 9, padding: "1px 4px" }} onClick={(e) => { e.stopPropagation(); retryLayer(currentScene, li); }}>Retry</button>
+                          <button style={{ fontSize: 9, padding: "1px 4px" }} onClick={(e) => { e.stopPropagation(); setTransformingLayer({ page: currentScene, layer: li }); setTransformText(layer.prompt); }}>Edit</button>
+                          {layer.quality !== "final" && layer.image_url && (
+                            <button style={{ fontSize: 9, padding: "1px 4px", color: "var(--phosphor)" }} onClick={(e) => { e.stopPropagation(); upgradeLayer(currentScene, li); }}>HQ</button>
+                          )}
+                        </div>
+                      )}
                     </div>
                   ))}
                 </div>
-                {selectedLayer != null && curPage.layers?.[selectedLayer] && (
+                {selLayer && selLayer.type === "text" && (
+                  <div style={{ marginTop: 8, padding: 8, background: "var(--ink-2)", borderRadius: 4 }}>
+                    <div style={{ fontSize: 10, color: "var(--text-dim)", marginBottom: 6, fontWeight: 600 }}>TEXT STYLE</div>
+                    <div style={{ marginBottom: 6 }}>
+                      <label style={{ fontSize: 10, color: "var(--text-dim)", display: "block", marginBottom: 2 }}>Font</label>
+                      <select value={selLayer.style?.font_family || "Quicksand"} onChange={(e) => updateLayerStyle(selLayer.id, { font_family: e.target.value })} style={{ width: "100%", fontSize: 11 }}>
+                        {GOOGLE_FONTS.map((f) => <option key={f} value={f}>{f}</option>)}
+                      </select>
+                    </div>
+                    <div style={{ display: "flex", gap: 6, marginBottom: 6 }}>
+                      <div style={{ flex: 1 }}>
+                        <label style={{ fontSize: 10, color: "var(--text-dim)", display: "block", marginBottom: 2 }}>Size</label>
+                        <input type="number" value={selLayer.style?.font_size || 14} min={8} max={120} onChange={(e) => updateLayerStyle(selLayer.id, { font_size: parseInt(e.target.value) || 14 })} style={{ width: "100%", fontSize: 11 }} />
+                      </div>
+                      <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+                        <button style={{ fontSize: 10, padding: "2px 6px", fontWeight: selLayer.style?.font_weight === "bold" ? 700 : 400, background: selLayer.style?.font_weight === "bold" ? "var(--phosphor-bg)" : undefined }} onClick={() => updateLayerStyle(selLayer.id, { font_weight: selLayer.style?.font_weight === "bold" ? "normal" : "bold" })}>B</button>
+                        <button style={{ fontSize: 10, padding: "2px 6px", fontStyle: selLayer.style?.font_style === "italic" ? "italic" : "normal", background: selLayer.style?.font_style === "italic" ? "var(--phosphor-bg)" : undefined }} onClick={() => updateLayerStyle(selLayer.id, { font_style: selLayer.style?.font_style === "italic" ? "normal" : "italic" })}>I</button>
+                      </div>
+                    </div>
+                    <div style={{ display: "flex", gap: 6, marginBottom: 6 }}>
+                      <div style={{ flex: 1 }}>
+                        <label style={{ fontSize: 10, color: "var(--text-dim)", display: "block", marginBottom: 2 }}>Color</label>
+                        <input type="color" value={selLayer.style?.color || "#333333"} onChange={(e) => updateLayerStyle(selLayer.id, { color: e.target.value })} style={{ width: "100%", height: 24, padding: 0, border: "1px solid var(--border)" }} />
+                      </div>
+                      <div style={{ flex: 1 }}>
+                        <label style={{ fontSize: 10, color: "var(--text-dim)", display: "block", marginBottom: 2 }}>Align</label>
+                        <select value={selLayer.style?.text_align || "center"} onChange={(e) => updateLayerStyle(selLayer.id, { text_align: e.target.value })} style={{ width: "100%", fontSize: 11 }}>
+                          <option value="left">Left</option>
+                          <option value="center">Center</option>
+                          <option value="right">Right</option>
+                        </select>
+                      </div>
+                    </div>
+                    <div style={{ marginBottom: 6 }}>
+                      <label style={{ fontSize: 10, color: "var(--text-dim)", display: "block", marginBottom: 2 }}>Line Height: {selLayer.style?.line_height || 1.4}</label>
+                      <input type="range" min="0.8" max="3" step="0.1" value={selLayer.style?.line_height || 1.4} onChange={(e) => updateLayerStyle(selLayer.id, { line_height: parseFloat(e.target.value) })} style={{ width: "100%" }} />
+                    </div>
+                    <div style={{ marginBottom: 6 }}>
+                      <label style={{ fontSize: 10, color: "var(--text-dim)", display: "block", marginBottom: 2 }}>Box Background</label>
+                      <div style={{ display: "flex", gap: 4 }}>
+                        <input type="color" value={(() => { const c = selLayer.box?.background_color || "rgba(255,255,255,0.85)"; return c.startsWith("#") ? c : "#ffffff"; })()} onChange={(e) => updateLayerBox(selLayer.id, { background_color: e.target.value })} style={{ width: 32, height: 24, padding: 0, border: "1px solid var(--border)" }} />
+                        <button style={{ fontSize: 9, padding: "2px 6px" }} onClick={() => updateLayerBox(selLayer.id, { background_color: "transparent" })}>None</button>
+                      </div>
+                    </div>
+                    <div style={{ marginBottom: 6 }}>
+                      <label style={{ fontSize: 10, color: "var(--text-dim)", display: "block", marginBottom: 2 }}>Text Content</label>
+                      <textarea value={selLayer.text_content || ""} onChange={(e) => updatePageLayer(null, selLayer.id, { text_content: e.target.value })} style={{ width: "100%", fontSize: 11, minHeight: 60 }} />
+                    </div>
+                  </div>
+                )}
+                {selLayer && selLayer.type !== "text" && (
                   <div style={{ marginTop: 8, padding: 8, background: "var(--ink-2)", borderRadius: 4 }}>
                     <div style={{ fontSize: 10, color: "var(--text-dim)", marginBottom: 4 }}>PROMPT</div>
-                    <div style={{ fontSize: 11, lineHeight: 1.4, maxHeight: 80, overflow: "auto" }}>{curPage.layers[selectedLayer].prompt}</div>
-                    {curPage.layers[selectedLayer].image_url && <img src={curPage.layers[selectedLayer].image_url} alt="" style={{ width: "100%", marginTop: 6, borderRadius: 4 }} />}
-                    {(curPage.layers[selectedLayer].history?.length > 0) && (
+                    <div style={{ fontSize: 11, lineHeight: 1.4, maxHeight: 80, overflow: "auto" }}>{selLayer.prompt}</div>
+                    {selLayer.image_url && <img src={selLayer.image_url} alt="" style={{ width: "100%", marginTop: 6, borderRadius: 4 }} />}
+                    {(selLayer.history?.length > 0) && (
                       <div style={{ marginTop: 6 }}>
-                        <div style={{ fontSize: 10, color: "var(--text-dim)", marginBottom: 3 }}>VERSIONS ({curPage.layers[selectedLayer].history.length} prior)</div>
+                        <div style={{ fontSize: 10, color: "var(--text-dim)", marginBottom: 3 }}>VERSIONS ({selLayer.history.length} prior)</div>
                         <div style={{ display: "flex", gap: 3, flexWrap: "wrap" }}>
-                          {curPage.layers[selectedLayer].history.map((hUrl, vi) => (
-                            <div key={vi} onClick={() => revertLayer(currentScene, selectedLayer, vi)} style={{
+                          {selLayer.history.map((hUrl, vi) => (
+                            <div key={vi} onClick={() => revertLayer(currentScene, curPage.layers.indexOf(selLayer), vi)} style={{
                               width: 36, height: 36, borderRadius: 3, overflow: "hidden", cursor: "pointer",
                               border: "1px solid var(--border)", opacity: 0.7,
                             }}>

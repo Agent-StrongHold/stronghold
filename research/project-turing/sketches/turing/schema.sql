@@ -143,6 +143,20 @@ CREATE TABLE IF NOT EXISTS voice_section (
 );
 
 
+-- RSS seen items: O(1) dedup guard that survives restarts.
+-- Keyed on (self_id, feed_url, item_id); first_seen_at is informational only.
+CREATE TABLE IF NOT EXISTS rss_seen_item (
+    self_id      TEXT NOT NULL,
+    feed_url     TEXT NOT NULL,
+    item_id      TEXT NOT NULL,
+    first_seen_at TEXT NOT NULL,
+    PRIMARY KEY (self_id, feed_url, item_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_rss_seen_self_feed
+    ON rss_seen_item (self_id, feed_url);
+
+
 -- Conversation turns: per-session user/assistant history for in-session
 -- context retrieval. Embeddings populated lazily by the retrieval layer.
 CREATE TABLE IF NOT EXISTS conversation_turn (

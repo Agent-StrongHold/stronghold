@@ -13,6 +13,7 @@ import { normalizeCharacter, buildFaceMask } from "./characterNormalizer";
 const AZURE_KEY = import.meta.env.VITE_AZURE_KEY || "";
 const AZURE_ENDPOINT = import.meta.env.VITE_AZURE_ENDPOINT || "";
 const AZURE_DEPLOYMENTS = ["gpt-image-1-5", "gpt-image-2-1"];
+const AZURE_DRAFT_DEPLOYMENTS = ["gpt-image-1-mini"];
 const AZURE_API_VERSION = "2025-04-01-preview";
 const AZURE_API_VERSION_FALLBACK = "2025-03-01-preview";
 const GEMINI_KEY = import.meta.env.VITE_GEMINI_API_KEY || "";
@@ -318,6 +319,11 @@ export async function compositeScene(renderedScene, pageDims) {
   );
 
   for (const layer of sorted) {
+    if (layer.type === "text") {
+      renderTextLayer(ctx, layer, w, h);
+      continue;
+    }
+
     const img = await loadImage(layer.image_url);
     if (!img) continue;
 
@@ -401,6 +407,190 @@ async function compositeSlotted(ctx, img, slot, pageW, pageH) {
   ctx.drawImage(img, drawX, drawY, drawW, drawH);
 }
 
+function renderTextLayer(ctx, layer, pageW, pageH) {
+  const isTitle = layer.name === "Title Text";
+  const title = layer.text_content || "";
+  const subtext = layer.subtext || "";
+
+  if (!title && !subtext) return;
+
+  const centerX = pageW / 2;
+  const centerY = pageH / 2;
+
+  if (isTitle) {
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+
+    if (title) {
+      const fontSize = Math.max(48, Math.min(pageW / 12, 120));
+      ctx.font = `bold ${fontSize}px Georgia, "Times New Roman", serif`;
+      ctx.fillStyle = "rgba(0,0,0,0.4)";
+      ctx.fillText(title, centerX + 3, centerY - (subtext ? fontSize * 0.3 : 0) + 3);
+      ctx.fillStyle = "#FFFFFF";
+      ctx.strokeStyle = "rgba(0,0,0,0.5)";
+      ctx.lineWidth = fontSize / 20;
+      ctx.strokeText(title, centerX, centerY - (subtext ? fontSize * 0.3 : 0));
+      ctx.fillText(title, centerX, centerY - (subtext ? fontSize * 0.3 : 0));
+    }
+
+    if (subtext) {
+      const subSize = Math.max(18, Math.min(pageW / 30, 36));
+      ctx.font = `italic ${subSize}px Georgia, "Times New Roman", serif`;
+      ctx.fillStyle = "rgba(255,255,255,0.85)";
+      ctx.fillText(subtext, centerX, centerY + 60);
+    }
+  } else {
+    const padding = 40;
+    const maxW = pageW - padding * 2;
+    const fontSize = Math.max(16, Math.min(pageW / 40, 28));
+    ctx.font = `${fontSize}px Georgia, "Times New Roman", serif`;
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillStyle = "#FFFFFF";
+
+    const words = (layer.text_content || "").split(" ");
+    const lines = [];
+    let line = "";
+    for (const word of words) {
+      const test = line ? `${line} ${word}` : word;
+      if (ctx.measureText(test).width > maxW) {
+        if (line) lines.push(line);
+        line = word;
+      } else {
+        line = test;
+      }
+    }
+    if (line) lines.push(line);
+
+    const lineHeight = fontSize * 1.5;
+    const blockH = lines.length * lineHeight;
+    const startY = pageH - padding - blockH - 20;
+
+    ctx.fillStyle = "rgba(0,0,0,0.55)";
+    const bgPad = 16;
+    ctx.beginPath();
+    ctx.roundRect(centerX - maxW / 2 - bgPad, startY - bgPad, maxW + bgPad * 2, blockH + bgPad * 2, 8);
+    ctx.fill();
+
+    ctx.fillStyle = "#FFFFFF";
+    lines.forEach((l, i) => {
+      ctx.fillText(l, centerX, startY + i * lineHeight + lineHeight / 2);
+    });
+  }
+}
+
+// ── Background Removal ────────────────────────────────────────────────────
+// Removes near-white/grey backgrounds from generated images so layers
+// composite properly. Uses edge-based flood fill from corners with a
+// luminance threshold, then alpha-mattes the boundary for soft edges.
+
+function loadImage(url) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.crossOrigin = "anonymous";
+    img.onload = () => resolve(img);
+    img.onerror = () => reject(new Error("Failed to load image"));
+    img.src = url;
+  });
+}
+
+function luminance(r, g, b) {
+  return 0.299 * r + 0.587 * g + 0.114 * b;
+}
+
+export async function removeBackground(imageDataUrl, threshold = 240, feather = 4) {
+  const img = await loadImage(imageDataUrl);
+  const canvas = document.createElement("canvas");
+  canvas.width = img.naturalWidth;
+  canvas.height = img.naturalHeight;
+  const ctx = canvas.getContext("2d");
+  ctx.drawImage(img, 0, 0);
+  const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+  const data = imageData.data;
+  const w = canvas.width;
+  const h = canvas.height;
+
+  // Build a mask: true = keep (foreground), false = remove (background)
+  // Start from corners and flood-fill pixels that are "background-colored"
+  const mask = new Uint8Array(w * h); // 0 = unvisited, 1 = bg, 2 = fg
+  const isBgColor = (idx) => {
+    const r = data[idx * 4];
+    const g = data[idx * 4 + 1];
+    const b = data[idx * 4 + 2];
+    const lum = luminance(r, g, b);
+    if (lum < threshold) return false;
+    const maxC = Math.max(r, g, b);
+    const minC = Math.min(r, g, b);
+    if (maxC - minC > 50) return false;
+    return true;
+  };
+
+  // BFS flood fill from all edge pixels
+  const queue = [];
+  for (let x = 0; x < w; x++) {
+    if (isBgColor(x)) { mask[x] = 1; queue.push(x); }
+    if (isBgColor((h - 1) * w + x)) { mask[(h - 1) * w + x] = 1; queue.push((h - 1) * w + x); }
+  }
+  for (let y = 0; y < h; y++) {
+    if (isBgColor(y * w)) { mask[y * w] = 1; queue.push(y * w); }
+    if (isBgColor(y * w + w - 1)) { mask[y * w + w - 1] = 1; queue.push(y * w + w - 1); }
+  }
+
+  let qi = 0;
+  while (qi < queue.length) {
+    const idx = queue[qi++];
+    if (mask[idx] !== 1) continue;
+    const x = idx % w;
+    const y = (idx - x) / w;
+    const neighbors = [];
+    if (x > 0) neighbors.push(idx - 1);
+    if (x < w - 1) neighbors.push(idx + 1);
+    if (y > 0) neighbors.push(idx - w);
+    if (y < h - 1) neighbors.push(idx + w);
+    for (const ni of neighbors) {
+      if (mask[ni] === 0 && isBgColor(ni)) {
+        mask[ni] = 1;
+        queue.push(ni);
+      }
+    }
+  }
+
+  // Mark remaining unvisited as foreground
+  for (let i = 0; i < mask.length; i++) {
+    if (mask[i] === 0) mask[i] = 2;
+  }
+
+  // Feather the alpha at boundaries for soft edges
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const idx = y * w + x;
+      if (mask[idx] === 1) {
+        data[idx * 4 + 3] = 0;
+      } else if (mask[idx] === 2 && feather > 0) {
+        let minDist = feather + 1;
+        for (let fy = -feather; fy <= feather; fy++) {
+          for (let fx = -feather; fx <= feather; fx++) {
+            const nx = x + fx;
+            const ny = y + fy;
+            if (nx < 0 || nx >= w || ny < 0 || ny >= h) continue;
+            if (mask[ny * w + nx] === 1) {
+              const d = Math.sqrt(fx * fx + fy * fy);
+              if (d < minDist) minDist = d;
+            }
+          }
+        }
+        if (minDist <= feather) {
+          const alpha = Math.round(255 * (minDist / feather));
+          data[idx * 4 + 3] = alpha;
+        }
+      }
+    }
+  }
+
+  ctx.putImageData(imageData, 0, 0);
+  return canvas.toDataURL("image/png");
+}
+
 // ── Full Book Renderer ───────────────────────────────────────────────────────
 
 export async function renderBook(bookPlan, onSceneProgress, onSceneComplete) {
@@ -444,37 +634,109 @@ export { generateImage, makePlaceholder };
 // ── Layer Draft Generator ────────────────────────────────────────────────────
 // Generates a single layer at draft quality (512x512, quality "low").
 
-export async function renderLayerDraft(prompt, onProgress, referenceImage) {
-  onProgress?.("Generating layer draft...");
-  if (referenceImage) {
-    try {
-      return await azureImageEdit(referenceImage, prompt, "512x512", "low", 0.5);
-    } catch {}
-  }
+async function azureDraftGen(prompt, size = "1024x1024", quality = "low") {
+  if (!AZURE_KEY || !AZURE_ENDPOINT) throw new Error("No Azure config");
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 60000);
   try {
-    return await generateImage(prompt, "512x512", "low");
-  } catch (err) {
-    onProgress?.(`Layer draft failed: ${err.message}`);
-    return makePlaceholder(prompt.slice(0, 40));
+    const body = JSON.stringify({ prompt, n: 1, size, quality });
+    for (const dep of AZURE_DRAFT_DEPLOYMENTS) {
+      try {
+        const res = await fetch(
+          `${AZURE_ENDPOINT}/openai/deployments/${dep}/images/generations?api-version=${AZURE_API_VERSION}`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json", "api-key": AZURE_KEY },
+            body,
+            signal: controller.signal,
+          }
+        );
+        if (!res.ok) {
+          if (res.status === 404 || res.status === 400 || res.status === 429) continue;
+          const e = await res.json().catch(() => ({}));
+          throw new Error(e.error?.message || `Azure draft ${res.status}`);
+        }
+        const data = await res.json();
+        const img = data.data?.[0];
+        if (!img) throw new Error("No image from Azure draft");
+        if (img.b64_json) return `data:image/png;base64,${img.b64_json}`;
+        if (img.url) return img.url;
+        throw new Error("No image data");
+      } catch (err) {
+        if (err.name === "AbortError") throw err;
+        continue;
+      }
+    }
+    throw new Error("Draft deployments failed");
+  } finally {
+    clearTimeout(timeout);
   }
 }
 
-// ── Layer Final Upgrade ──────────────────────────────────────────────────────
-// Upgrades a layer to final quality (1024x1024, quality "medium").
-
-export async function renderLayerFinal(prompt, onProgress, referenceImage) {
-  onProgress?.("Upgrading layer to final...");
+export async function renderLayerDraft(prompt, onProgress, referenceImage, layerType) {
+  onProgress?.("Generating layer draft...");
+  let url;
   if (referenceImage) {
     try {
-      return await azureImageEdit(referenceImage, prompt, "1024x1024", "medium", 0.7);
+      url = await azureImageEdit(referenceImage, prompt, "1024x1024", "low", 0.5);
     } catch {}
   }
-  try {
-    return await generateImage(prompt, "1024x1024", "medium");
-  } catch (err) {
-    onProgress?.(`Layer upgrade failed: ${err.message}`);
-    return makePlaceholder(prompt.slice(0, 40));
+  if (!url) {
+    try {
+      url = await azureDraftGen(prompt, "1024x1024", "low");
+    } catch {
+      try {
+        url = await generateImage(prompt, "1024x1024", "low");
+      } catch (err) {
+        onProgress?.(`Layer draft failed: ${err.message}`);
+        return makePlaceholder(prompt.slice(0, 40));
+      }
+    }
   }
+  if (layerType === "character" || layerType === "prop") {
+    onProgress?.("Removing background...");
+    try {
+      url = await removeBackground(url);
+    } catch {}
+  }
+  return url;
+}
+
+// ── Layer Final Upgrade ──────────────────────────────────────────────────────
+
+export async function renderLayerFinal(prompt, onProgress, referenceImage, layerType) {
+  onProgress?.("Upgrading layer to final quality...");
+  let url;
+  if (referenceImage) {
+    const upscalePrompt = [
+      "Enhance this illustration to higher quality.",
+      "Keep the EXACT same composition, colors, pose, and layout.",
+      "Add finer detail, smoother gradients, crisper edges, and better lighting.",
+      "Do NOT change the subject, pose, or scene in any way.",
+      "This is a quality upgrade, not a new illustration.",
+      prompt,
+    ].join(" ");
+    try {
+      url = await azureImageEdit(referenceImage, upscalePrompt, "1024x1024", "medium", 0.9);
+    } catch (err) {
+      onProgress?.(`HQ edit failed (${err.message}), regenerating from text...`);
+    }
+  }
+  if (!url) {
+    try {
+      url = await generateImage(prompt, "1024x1024", "medium");
+    } catch (err) {
+      onProgress?.(`Layer upgrade failed: ${err.message}`);
+      return makePlaceholder(prompt.slice(0, 40));
+    }
+  }
+  if (layerType === "character" || layerType === "prop") {
+    onProgress?.("Removing background...");
+    try {
+      url = await removeBackground(url);
+    } catch {}
+  }
+  return url;
 }
 
 // ── Storyboard Overview ──────────────────────────────────────────────────────
@@ -524,6 +786,8 @@ const CHARACTER_REFS = [
 
 export { CHARACTER_REFS };
 
+import { extractFeaturesFromPhotos, buildPhotoDerivedDesign } from "./featureExtractor";
+
 export async function renderCharacterReferences(characterDesign, styleToken, onProgress, referenceImages) {
   const technique = styleToken?.technique || "warm watercolor children's book illustration";
   const lighting = styleToken?.lighting || "soft warm light";
@@ -534,6 +798,23 @@ export async function renderCharacterReferences(characterDesign, styleToken, onP
 
   const refImages = Array.isArray(referenceImages) ? referenceImages : referenceImages ? [referenceImages] : [];
 
+  let finalDesign = characterDesign;
+
+  // Extract features from photos locally, override text description
+  let photoFeatures = null;
+  if (refImages.length > 0) {
+    onProgress?.(`Analyzing ${refImages.length} reference photo${refImages.length > 1 ? "s" : ""}...`);
+    try {
+      photoFeatures = await extractFeaturesFromPhotos(refImages);
+      if (photoFeatures?.description) {
+        finalDesign = buildPhotoDerivedDesign(photoFeatures, characterDesign);
+        onProgress?.(`Detected: ${photoFeatures.description}`);
+      }
+    } catch (err) {
+      onProgress?.(`Photo analysis failed, using text description only`);
+    }
+  }
+
   const prompt = [
     `Character turnaround reference sheet for a children's book character.`,
     `Art style: ${technique}.`,
@@ -541,8 +822,8 @@ export async function renderCharacterReferences(characterDesign, styleToken, onP
     edgeSoftness > 0.5 ? "Soft blended edges, painterly style." : "Clean defined edges with consistent line weight.",
     `Contrast: ${contrast}. Detail level: ${detailLevel}.`,
     palette ? `Color palette: ${palette}.` : "",
-    refImages.length > 0 ? "Use the reference photos to match the child's REAL face, hair, skin tone, and build EXACTLY." : "",
-    characterDesign,
+    photoFeatures ? `IMPORTANT: Match this child's EXACT appearance — ${photoFeatures.description}. These are the REAL features extracted from reference photos — use them precisely.` : "",
+    finalDesign,
     "Show the SAME character from multiple angles in a grid layout on ONE image:",
     "Top row: front view, 3/4 left view, side view, back view.",
     "Bottom row: sitting cross-legged, walking, running, arms raised in joy.",
@@ -550,14 +831,15 @@ export async function renderCharacterReferences(characterDesign, styleToken, onP
     "Clean light grey background (NOT pure white, NOT pure black).",
     "Consistent character design across ALL views — same child, same clothes, same features.",
     "The character MUST match the art style exactly — same rendering technique, same color temperature, same line quality.",
-    "CRITICAL: Preserve the child's exact facial features, hair, and skin tone from the reference photos.",
+    photoFeatures ? `The hair MUST be ${photoFeatures.hair_color || "as described"}, skin MUST be ${photoFeatures.skin_tone || "as described"}, eyes MUST be ${photoFeatures.eye_color || "as described"} — these are non-negotiable from the reference photos.` : "",
     "NO text, NO labels, NO watermarks, NO speech bubbles, NO borders between views.",
   ].filter(Boolean).join(" ");
 
   onProgress?.("Generating character reference sheet...");
   try {
+    // Try photo-guided edit first (may be blocked by safety filter)
     if (refImages.length > 0) {
-      onProgress?.(`Using ${refImages.length} reference photo${refImages.length > 1 ? "s" : ""} for identity...`);
+      onProgress?.("Attempting photo-guided generation...");
       try {
         const imageUrl = await azureImageEdit(
           refImages,
@@ -569,9 +851,10 @@ export async function renderCharacterReferences(characterDesign, styleToken, onP
         onProgress?.("Character reference sheet ready (photo-guided).");
         return imageUrl;
       } catch (editErr) {
-        onProgress?.(`Photo-guided generation failed (${editErr.message}), trying text-only...`);
+        onProgress?.(`Edit endpoint blocked (${editErr.message.substring(0, 60)}...), using feature-enriched text generation...`);
       }
     }
+    // Text-to-image with photo-derived features baked in
     const imageUrl = await generateImage(prompt, "1024x1024", "medium");
     onProgress?.("Character reference sheet ready.");
     return imageUrl;

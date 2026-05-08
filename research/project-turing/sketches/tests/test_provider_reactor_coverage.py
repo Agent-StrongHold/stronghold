@@ -127,9 +127,12 @@ class TestLiteLLMProviderComplete:
         result = provider.complete("test")
         assert result == "retry ok"
 
-    def test_5xx_retry_also_fails(self) -> None:
+    def test_5xx_retry_also_fails(self, monkeypatch) -> None:
+        monkeypatch.setattr("time.sleep", lambda _: None)
         provider = self._make_provider(
             responses=[
+                httpx.Response(500),
+                httpx.Response(503),
                 httpx.Response(500),
                 httpx.Response(503),
             ]

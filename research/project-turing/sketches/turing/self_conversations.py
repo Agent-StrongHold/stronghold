@@ -100,8 +100,8 @@ def check_quota(repo, self_id: str, user_id: str, now: datetime | None = None) -
     return used < AGENT_DAILY_QUOTA
 
 
-def increment_quota(repo, self_id: str, user_id: str) -> None:
-    now = datetime.now(UTC)
+def increment_quota(repo, self_id: str, user_id: str, now: datetime | None = None) -> None:
+    now = now or datetime.now(UTC)
     date_str = now.strftime("%Y-%m-%d")
     existing = repo.conn.execute(
         "SELECT count FROM conversation_quotas WHERE self_id = ? AND user_id = ? AND quota_date = ?",
