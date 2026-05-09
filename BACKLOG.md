@@ -7,25 +7,27 @@
 - `turing-NNN` — `AgentTuring`
 - `sh-NNN` — `stronghold`
 
-Maintained per [`engine#ADR-030`](https://github.com/BlakeMatthews-dev/maistro-engine/blob/main/docs/adr/ADR-030-four-repo-governance.md). Status follows [`engine#ADR-031`](https://github.com/BlakeMatthews-dev/maistro-engine/blob/main/docs/adr/ADR-031-front-matter-and-registry.md). Gap markers per [`engine/docs/INVENTORY-ADRS-SPECS.md`](https://github.com/BlakeMatthews-dev/maistro-engine/blob/main/docs/INVENTORY-ADRS-SPECS.md).
+Cross-repo references use `[repo#item-id]` notation.
+
+Maintained per [`engine#ADR-030`](https://github.com/BlakeMatthews-dev/maistro-engine/blob/main/docs/adr/ADR-030-four-repo-governance.md). Status follows [`engine#ADR-031`](https://github.com/BlakeMatthews-dev/maistro-engine/blob/main/docs/adr/ADR-031-front-matter-and-registry.md) lifecycle. Gap markers per [`docs/INVENTORY-ADRS-SPECS.md`](https://github.com/BlakeMatthews-dev/maistro-engine/blob/main/docs/INVENTORY-ADRS-SPECS.md). External-library adoption per [`engine#ADR-039`](https://github.com/BlakeMatthews-dev/maistro-engine/blob/main/docs/adr/ADR-039-external-library-adoption-policy.md).
 
 ## Status legend
 
 | Marker | Meaning |
 |---|---|
-| Proposed | Open for discussion |
-| Accepted | Decision binding |
-| Implemented | Decision shipped |
+| Proposed | Open for discussion; not yet binding |
+| Accepted | Decision binding; implementation may follow |
+| Implemented | Decision shipped; production code matches |
 | Superseded | Replaced by a successor |
 | Blocked | A `blocked-by:` dependency is unmet |
-| Abandoned | Decision deliberately not taken |
+| Abandoned | Decision deliberately not taken (kept for traceability) |
 
 ## Gap legend
 
 | Marker | Meaning |
 |---|---|
 | `gap-spec` | No spec or ADR captures this decision yet |
-| `gap-test` | Spec/ADR exists; no test covers it |
+| `gap-test` | Spec/ADR exists; no test (or test stub) covers it |
 | `gap-impl` | Spec/ADR + test exist; production code does not match |
 
 ---
@@ -35,22 +37,16 @@ Maintained per [`engine#ADR-030`](https://github.com/BlakeMatthews-dev/maistro-e
 ### Foundation (M1)
 
 **[engine-001] Registry CI tooling — Accepted; `gap-impl` — v1.0 M1**
-- Front-matter validator + cross-repo link checker + registry generator + GitHub Action
-- Warn-only → hard fail at day 30
 
 **[engine-002] INVENTORY auto-regenerated — Proposed — v1.0 M1**
 
 **[engine-003] Front-matter on existing engine ADRs — Accepted; gradual — v1.0 M1**
 
-**[engine-004] CONTRIBUTING.md and convention docs — Proposed — v1.0 M1**
+**[engine-004] CONTRIBUTING.md and convention docs — Proposed — v1.0 M1** — includes ADR-039
 
 ### Templates (M2)
 
-**[engine-010] Copier template `single-tenant-multi-user` — Accepted; `gap-impl` — v1.0 M2**
-
-**[engine-011] Copier template `autonoetic` — Accepted; `gap-impl` — v1.0 M2**
-
-**[engine-012] Copier template `multi-tenant` — Accepted; `gap-impl` — v1.0 M2**
+**[engine-010..012] Three Copier templates — Accepted; `gap-impl` — v1.0 M2**
 
 **[engine-013] Two-stream release pipeline — Proposed — v1.0 M2**
 
@@ -65,28 +61,22 @@ Maintained per [`engine#ADR-030`](https://github.com/BlakeMatthews-dev/maistro-e
 ### Substrate code parity (M4)
 
 **[engine-030] Ontology Semantic facet — Accepted; `gap-impl` — v1.0 M4**
-- Per `[engine#ADR-036]`. v1.0 ships Semantic only
 
 **[engine-031] Observability primitives — Accepted; `gap-impl` — v1.0 M4**
-- Per `[engine#ADR-037]`. 12 spans, 6 metrics, 5 event topics
 
 **[engine-032] Reliability primitives — Accepted; `gap-impl` — v1.0 M4**
-- Per `[engine#ADR-038]`. retry/circuit-breaker/fallback/SLO/healthchecks
 
 ### Contracts (M5)
 
 **[engine-040] Pydantic boundary contracts — Proposed — v1.0 M5**
-- ≥95% mutation kill rate at v1.0
 
-**[engine-041] Hypothesis behavioral property tests — Proposed — v1.0 M5**
-- ≥80% kill rate
+**[engine-041] Hypothesis behavioral property tests — Proposed — v1.0 M5** — Promptfoo service-boundary integration possible
 
 **[engine-042] Pact-style cross-service contracts — Proposed — v1.0 M5**
-- ≥75% kill rate
 
 **[engine-043] Mutation-testing CI wiring — Proposed — v1.0 M5**
 
-### v1.1–v2.0 (engine)
+### v1.1–v2.0 (engine — original)
 
 **[engine-050] Cross-product agent portability proof — Proposed — v1.1**
 
@@ -96,9 +86,9 @@ Maintained per [`engine#ADR-030`](https://github.com/BlakeMatthews-dev/maistro-e
 
 **[engine-060] Memory v2 (if surfaced) — Proposed — v1.2**
 
-**[engine-061] DSPy-style task signatures evaluation — Proposed — v1.2**
+**[engine-061] DSPy task signatures — Proposed — v1.2**
 
-**[engine-062] Mid-session model switching primitive — Proposed — v1.2**
+**[engine-062] Mid-session model switching — Proposed — v1.2**
 
 **[engine-070] Ontology Kinetic facet — Proposed — v2.0**
 
@@ -108,7 +98,7 @@ Maintained per [`engine#ADR-030`](https://github.com/BlakeMatthews-dev/maistro-e
 
 **[engine-073] Tournament-based agent evolution wired to production routing — Proposed — v2.0**
 
-### Discovered gaps (engine)
+### Discovered gaps (engine — original)
 
 **[engine-080] Pact tooling choice — Proposed**
 
@@ -122,67 +112,84 @@ Maintained per [`engine#ADR-030`](https://github.com/BlakeMatthews-dev/maistro-e
 
 **[engine-085] Trace export to long-term storage — Proposed**
 
+### NEW — from May 2026 catalog review (engine)
+
+**[engine-090] Chat-UI integration contract — Proposed; `gap-spec` — v1.1**
+- OpenAI-compatible + **A2UI for rich UI generation + MCP for tools**
+- Substrate: `BlakeMatthews-dev/A2UI` (Apache 2.0, v0.8 preview)
+- Tested against OWUI, LibreChat, Lobe Chat as render targets
+- Defuses Open WebUI 50-user attribution clause for stronghold tenants
+
+**[engine-091] A2UI version-pin substrate confirmation — Proposed — v1.1**
+
+**[engine-092] CLI-Anything skills bundle — Proposed; `gap-impl` — v1.1**
+- 35+ HKUDS/CLI-Anything pre-generated harnesses; service-boundary per `engine#ADR-039`
+
+**[engine-093] Self-CLI generation — Proposed — v1.2**
+
+**[engine-094] MCP server registry survey + catalog seed — Proposed — v1.0 M3**
+
+**[engine-095] Default skills bundle — Proposed; `gap-impl` — v1.0 M3**
+
+**[engine-096] Tournament training-data labeling pipeline — Proposed; `gap-spec` — v1.2**
+- Pattern reference: Adala
+
+**[engine-097] Hyperagent graph runtime substrate — Proposed; `gap-impl` — v1.2**
+- Promote from `[maistro-200]` to engine substrate
+
+**[engine-098] Memory drift detection — Proposed; `gap-spec` — v1.1**
+- Pattern reference: `compemperor/engram`
+
 ---
 
 ## `Project_mAIstro` items
 
 ### v1.0 — multi-user with hard isolation + setup wizard
 
-**[maistro-001] Setup wizard — Proposed — v1.0**
-- `S-139`. v1.0 critical path. Acceptance: < 30 min for new household
+**[maistro-001] Setup wizard — Proposed — v1.0** — `S-139`. v1.0 critical path
 
 **[maistro-002] Per-user memory isolation — Proposed — v1.0**
-- Property test: cross-user retrieval is structurally impossible
 
-**[maistro-003] Multi-user auth (Keycloak / JWT) — Proposed — v1.0**
-- Specs: `S-018`, `S-019`, `S-024`
+**[maistro-003] Multi-user auth — Proposed — v1.0** — Possible AuthX integration
 
 **[maistro-004] Native install + Podman + systemd — Proposed — v1.0**
-- Specs: `S-147`, `S-148`
 
 **[maistro-005] Tailscale-native networking — Proposed — v1.0**
-- Spec: `S-153`
 
-**[maistro-006] Setup-wizard property test — Proposed — v1.0**
-
-**[maistro-007] Per-user isolation property test — Proposed — v1.0**
+**[maistro-006/007] v1.0 property tests — Proposed**
 
 ### Documentation hygiene
 
-**[maistro-090] Front-matter on mAIstro specs — Proposed; `gap-spec` — v1.0 (warn-only)**
-- 91 specs; `S-NNN` → `SPEC-NNN` on touch
+**[maistro-090..092, 095] Front-matter, Substrate recasts, Copier bootstrap — Proposed/Accepted**
 
-**[maistro-091] Memory specs `Substrate:` recast — Proposed; `gap-impl` — v1.0 M3**
-- `S-008` → `[engine#ADR-018]` · `S-009` → `[engine#ADR-016]` · `S-032` → `[engine#ADR-016]` · `S-033` → `[engine#ADR-017]`
-
-**[maistro-092] Catalog specs `Substrate:` recast — Proposed; `gap-impl` — v1.0 M3**
-- `S-005` → `[engine#ADR-009]` · `S-138` → `[engine#ADR-005/006/009]`
-
-**[maistro-095] Copier bootstrap — Proposed; `gap-impl` — v1.0 M2**
-
-### v1.1–v2.0 (mAIstro)
+### v1.1–v2.0 (mAIstro — original)
 
 **[maistro-100] Voice + email + Alexa channels — Proposed — v1.1**
 
-**[maistro-101] Hardware-signing integration — Proposed — v1.1**
-- Spec: `S-150`. Substrate: `[engine#ADR-022]`
+**[maistro-101..103] Hardware-signing / trust root / DID-VC — Proposed — v1.1**
 
-**[maistro-102] Internal trust root — Proposed — v1.1**
-- Spec: `S-155`. Substrate: `[engine#ADR-026]`
+**[maistro-200] Hyperagent graph runtime — Proposed — v1.2** — substrate is `[engine-097]`
 
-**[maistro-103] DID/VC agent identity — Proposed — v1.1**
-- Spec: `S-152`. Substrate: `[engine#ADR-024]`
-
-**[maistro-200] Hyperagent graph runtime — Proposed — v1.2**
-- Spec: `S-145`
-
-**[maistro-201] Node-graph designer (low-code) — Proposed — v1.2**
-- Spec: `S-159`
+**[maistro-201] Node-graph designer (low-code) — Proposed — v1.2** — **adopt Flowise via service bridge**
 
 **[maistro-202] Human-as-node HITL primitive — Proposed — v1.2**
-- Spec: `S-158`
 
 **[maistro-300] Cross-self portability for households — Proposed — v2.0**
+
+### NEW — from May 2026 catalog review (mAIstro)
+
+**[maistro-150] Prediction-pool feature for Conductor-to-Conductor play — Proposed — v1.2**
+- Wraps `Khamel83/vig` (TypeScript / Cloudflare; service-boundary)
+- First user-facing exercise of cross-deployment A2A
+
+**[maistro-151] Cross-deployment A2A test scenario — Proposed — v1.1**
+
+**[maistro-400] Davinci-canvas backend expansion — Proposed; `gap-impl` — v1.1**
+- `fal-mcp-server` (FLUX, SD, MusicGen) for generation
+- `cli-anything-gimp` for editing; `cli-anything-libreoffice` for book-builder layout
+- All service-boundary per `engine#ADR-039`
+
+**[maistro-401] Davinci-canvas frontend completion — Proposed; `gap-impl` — v1.1**
 
 ---
 
@@ -192,87 +199,31 @@ Full v1.0 detail in [`AgentTuring/ROADMAP-v1.0.md`](https://github.com/BlakeMatt
 
 ### v1.0 — measurable autonoesis
 
-**[turing-001] HEXACO-24 + weekly retest — Proposed; `gap-impl` — v1.0 M1**
-- Drift bound ≤ 0.05 L₂ weekly
+**[turing-001..004] HEXACO + mood + drives + ontology registration — Proposed; `gap-impl` — v1.0 M1**
 
-**[turing-002] Mood vector with decay + bounded delta — Proposed; `gap-impl` — v1.0 M1**
+**[turing-010..013] 7-tier memory + provenance — Proposed; `gap-impl` — v1.0 M2**
 
-**[turing-003] Drive store with reinforcement and decay — Proposed; `gap-impl` — v1.0 M1**
-
-**[turing-004] SelfModel/Mood/Drive ontology registration — Proposed; `gap-impl` — v1.0 M1**
-- Blocked-by: `[engine-030]`
-
-**[turing-010] 7-tier memory implementation — Proposed; `gap-impl` — v1.0 M2**
-- Substrate: `[engine#ADR-016/017]`
-
-**[turing-011] Weight floors REGRET (≥0.6) WISDOM (≥0.9) — Proposed; `gap-impl` — v1.0 M2**
-
-**[turing-012] Activation graph with self-authored edges — Proposed; `gap-impl` — v1.0 M2**
-
-**[turing-013] Todo → episode provenance enforcement — Proposed; `gap-impl` — v1.0 M2**
-
-**[turing-020] Continuous self-talk loop — Accepted (spec); `gap-impl` — v1.0 M3**
-
-**[turing-021] Awareness loop hz tunable — Proposed — v1.0 M3**
-
-**[turing-022] Memory consolidation at idle — Accepted (spec); `gap-impl` — v1.0 M3**
-
-**[turing-023] Dossier generation — Accepted (spec); `gap-impl` — v1.0 M3**
+**[turing-020..023] Self-talk loop + dossier + memory consolidation — Accepted (specs); `gap-impl` — v1.0 M3**
 
 **[turing-030..034] Five property tests — Proposed — v1.0 M4**
-- Identity continuity, narrative consistency, decision provenance, mood plausibility, memory floor preservation
 
 **[turing-035] 30-day staging run (acceptance gate) — Proposed — v1.0 M4**
-- Depends on `[engine-032]`
 
-**[turing-040] Reading-order docs aligned with template — Proposed — v1.0 M5**
-
-**[turing-041] Strip Stronghold-only content — Proposed; `gap-impl` — v1.0 M5**
-- Coordinated with `[sh-021]`
-
-**[turing-042] Migrate K8S-* records out — Accepted; `gap-impl` — v1.0 M5**
-
-**[turing-043] Bootstrap into autonoetic Copier template — Proposed; `gap-impl` — v1.0 M5**
+**[turing-040..043] Polish + bootstrap — Proposed/Accepted; `gap-impl` — v1.0 M5**
 
 ### Documentation hygiene (Turing)
 
-**[turing-090] Front-matter on Turing specs — Proposed; `gap-spec` — v1.0 (warn-only)**
-
-**[turing-091] Memory specs `Substrate:` recast — Accepted; `gap-impl` — v1.0 M3**
-
-**[turing-092] Project Turing research consolidation — Proposed — v1.0**
-
-**[turing-095] Adopt contract markers — Proposed — v1.0 M5**
+**[turing-090..092, 095] Front-matter, Substrate recasts, contract markers — Proposed/Accepted**
 
 ### v1.1–v2.0 (Turing)
 
-**[turing-050] Lineage queries — Proposed — v1.1**
+**[turing-050..053] Lineage / dream / phantom / adversarial hardening — Proposed — v1.1**
 
-**[turing-051] Dream loop — Proposed — v1.1**
+**[turing-060..062] RASO inner loop — Proposed — v1.2** — 062 substrate: `[engine-096]`
 
-**[turing-052] Phantom execution — Proposed — v1.1**
+**[turing-070..072] RASO meta-agent — Proposed — v1.3**
 
-**[turing-053] Adversarial hardening of self-model — Proposed — v1.1**
-
-**[turing-060] `epic-13-hyperagents-meta-level` formalised — Proposed — v1.2**
-
-**[turing-061] RASO inner cycle wired to self-talk — Proposed — v1.2**
-
-**[turing-062] Tournament evolution scaffolding (internal-only) — Proposed — v1.2**
-
-**[turing-070] Meta-agent that modifies activation graph — Proposed — v1.3**
-
-**[turing-071] Parameter-sensitivity learner — Proposed — v1.3**
-
-**[turing-072] Self-modification gate — Proposed — v1.3**
-
-**[turing-080] Self-model export / import — Proposed — v2.0**
-
-**[turing-081] Long-horizon recall with confidence calibration — Proposed — v2.0**
-
-**[turing-082] Synthesised mood + drives from imported episodic record — Proposed — v2.0**
-
-**[turing-083] Confidence-calibrated routing — Proposed — v2.0**
+**[turing-080..083] Cross-self portability + long-horizon recall — Proposed — v2.0**
 
 ### Discovered gaps (Turing)
 
@@ -285,10 +236,8 @@ Full v1.0 detail in [`AgentTuring/ROADMAP-v1.0.md`](https://github.com/BlakeMatt
 ### Items deferred / abandoned (Turing)
 
 **[turing-200] Production deployment — Abandoned**
-- Turing is experimental; production is `stronghold`'s job
 
 **[turing-201] Multi-tenant Turing — Abandoned**
-- Structurally incompatible with autonoetic posture
 
 ---
 
@@ -298,29 +247,13 @@ Full v1.0 detail in [`stronghold/ROADMAP-v1.0.md`](ROADMAP-v1.0.md).
 
 ### v1.0 — compliance-first
 
-**[sh-001] Multi-tenant catalog wrapper — Proposed; `gap-impl` — v1.0 W1**
-- Wraps engine simple form per `[engine#ADR-035]`
+**[sh-001..003] Multi-tenant catalog wrapper + namespacing + cross-tenant import — Proposed; `gap-impl` — v1.0 W1**
 
-**[sh-002] Tenant-scoped namespacing — Proposed — v1.0 W1**
+**[sh-010..012] OPA / Cedar / Sentinel policy adapters — Proposed; `gap-impl` — v1.0 W2**
 
-**[sh-003] Cross-tenant catalog import (with consent) — Proposed — v1.0 W1**
+**[sh-020..021] Receive K8S-* records + absorb stronghold-only content — Accepted/Proposed; `gap-impl` — v1.0 W3**
 
-**[sh-010] OPA / Rego policy adapter — Proposed; `gap-impl` — v1.0 W2**
-- Hot-reload, < 1ms p99 at 1000 RPS
-
-**[sh-011] Cedar policy adapter — Proposed; `gap-impl` — v1.0 W2**
-
-**[sh-012] Sentinel policy bridge — Proposed — v1.0 W2**
-
-**[sh-020] Receive K8S-* records (renumbered, with substrate refs) — Accepted; `gap-impl` — v1.0 W3**
-
-**[sh-021] Absorb stronghold-only content from AgentTuring strip — Proposed — v1.0 W3**
-
-**[sh-030] COMPLIANCE.md OWASP Agentic Top 10 — Proposed; `gap-impl` — v1.0 W4**
-
-**[sh-031] COMPLIANCE.md NIST AI RMF stub — Proposed — v1.0 W4**
-
-**[sh-032] COMPLIANCE.md EU AI Act stub — Proposed — v1.0 W4**
+**[sh-030..032] COMPLIANCE.md OWASP + NIST + EU AI Act — Proposed; `gap-impl` — v1.0 W4** — AT-10 anchored to `[engine#ADR-039]`
 
 **[sh-040] Two-tenant red-team CI — Proposed; `gap-impl` — v1.0 W5**
 
@@ -331,21 +264,18 @@ Full v1.0 detail in [`stronghold/ROADMAP-v1.0.md`](ROADMAP-v1.0.md).
 **[sh-070] v1.0 acceptance suite green — Proposed — v1.0 W8**
 
 **[sh-080] Bootstrap into multi-tenant Copier template — Proposed; `gap-impl` — v1.0 W8**
-- Blocked-by: `[engine-012]`
 
 ### Documentation hygiene (Stronghold)
 
-**[sh-090] Front-matter on Stronghold specs — Proposed; `gap-spec` — v1.0 (warn-only)**
+**[sh-090, 095] Front-matter + contract markers — Proposed**
 
-**[sh-095] Adopt contract markers — Proposed — v1.0 M5**
-
-### v1.1–v2.0 (Stronghold)
+### v1.1–v2.0 (Stronghold — original)
 
 **[sh-100] Trust-tier auto-promotion gates — Proposed — v1.1**
 
 **[sh-101] Forge iteration loop (stronghold side) — Proposed — v1.1**
 
-**[sh-102] Tournament evolution wired to internal-only routing — Proposed — v1.1**
+**[sh-102] Tournament evolution wired to internal-only routing — Proposed — v1.1** — Substrate: `[engine-096]`
 
 **[sh-200] Forge test→iterate loop — Proposed — v1.2**
 
@@ -363,13 +293,28 @@ Full v1.0 detail in [`stronghold/ROADMAP-v1.0.md`](ROADMAP-v1.0.md).
 
 ### Discovered gaps (Stronghold)
 
-**[sh-500] Policy evaluation latency under load — Proposed — v1.0 W2**
+**[sh-500..503] Policy latency, K8S churn, consent flow design, OWASP evidence — Proposed — v1.0**
 
-**[sh-501] K8S-* migration churn — Proposed — v1.0 W3**
+### NEW — from May 2026 catalog review (Stronghold)
 
-**[sh-502] Cross-tenant catalog consent flow design — Proposed — v1.0 W1**
+**[sh-600] CLI-Hub federation — Proposed; `gap-impl` — v1.1**
+- Multi-tenant catalog ingests from `clianything.cc` (HKUDS) with tenant-scoped enable/disable + audit
 
-**[sh-503] OWASP Agentic Top 10 evidence completeness — Proposed — v1.0 W4**
+**[sh-601] Forge × CLI-Anything pairing — Proposed; `gap-impl` — v1.2**
+- Forge invokes CLI-Anything when a skill request maps to existing software; output skills are source-derived
+
+**[sh-602] A2UI render layer for stronghold tenants — Proposed — v1.0 W4**
+- Implements `[engine-090]` chat-UI integration contract for tenants
+- Resolves Open WebUI 50-user attribution clause concern
+
+**[sh-603] Default skills bundle for tenants — Proposed; `gap-impl` — v1.0 W1**
+- Inherits `[engine-095]` plus tenant-scoping + policy bindings
+
+**[sh-604] Promptfoo as eval-substrate CI tool — Proposed — v1.0 W5**
+- Service-boundary tool per `engine#ADR-039`
+
+**[sh-605] Open Interpreter as sandboxed code execution — Proposed — v1.0 W2**
+- Service-boundary candidate via MCP for stronghold sandbox isolation
 
 ---
 
@@ -380,3 +325,4 @@ Full v1.0 detail in [`stronghold/ROADMAP-v1.0.md`](ROADMAP-v1.0.md).
 - When an item is shipped, mark `Implemented` and link the PR.
 - When an item is no longer relevant, mark `Abandoned` with a one-line reason. Don't delete.
 - Once `engine-001` (registry CI) ships, this BACKLOG is regenerated from front-matter.
+- External-library decisions follow `engine#ADR-039`.
