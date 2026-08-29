@@ -409,8 +409,9 @@ async function loadKnights() {
       h3.className = 'text-lg';
       h3.textContent = title;
       const mottoP = document.createElement('p');
-      mottoP.className = 'text-xs text-[var(--iron-light)] italic';
-      mottoP.textContent = '"' + motto + '"';
+      mottoP.className = 'text-xs text-[var(--iron-light)] italic line-clamp-2';
+        mottoP.title = motto;
+        mottoP.textContent = '\"' + motto + '\"';
       infoDiv.appendChild(h3);
       infoDiv.appendChild(mottoP);
       leftSide.appendChild(sigilDiv);
@@ -565,7 +566,9 @@ function _mkAgentMPCard(item) {
 
   var desc = document.createElement('div');
   desc.style.cssText = 'color:var(--iron-light);margin-bottom:8px;min-height:2.4em;';
-  desc.textContent = item.description || 'No description';
+    desc.className = 'line-clamp-2';
+    desc.title = item.description || 'No description';
+    desc.textContent = item.description || 'No description';
   body.appendChild(desc);
 
   var meta = document.createElement('div');
